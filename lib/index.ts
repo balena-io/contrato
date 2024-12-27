@@ -13,7 +13,6 @@ import { BlueprintLayout, BlueprintObject, ContractObject } from './types';
 import Contract from './contract';
 import Blueprint from './blueprint';
 import { buildTemplate } from './partials';
-import { parse as parseCardinality } from './cardinality';
 
 export {
 	BlueprintLayout,
@@ -22,7 +21,6 @@ export {
 	Contract,
 	Blueprint,
 	buildTemplate,
-	parseCardinality,
 };
 
 /**

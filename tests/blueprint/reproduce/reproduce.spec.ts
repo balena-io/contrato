@@ -43,7 +43,7 @@ describe('Blueprint reproduce', () => {
 					testCase.blueprint.layout,
 					testCase.blueprint.skeleton,
 				);
-				const result = blueprint.reproduce(container);
+				const result = [...blueprint.reproduce(container)];
 				expect(testCase.contexts).to.deep.equal(_.invokeMap(result, 'toJSON'));
 			});
 		},

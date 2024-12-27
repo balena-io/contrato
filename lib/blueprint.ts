@@ -329,36 +329,6 @@ export default class Blueprint extends Contract {
 	}
 
 	/**
-	 * @summary Reproduce the blueprint in a universe
-	 * @function
-	 * @name module:contrato.Blueprint#reproduce
-	 * @public
-	 *
-	 * @description
-	 * This method will generate a set of contexts that consist of
-	 * every possible valid combination that matches the blueprint
-	 * layout.
-	 *
-	 * @param {Object} contract - contract
-	 * @returns {Object[]} valid contexts
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 * contract.addChildren([ ... ])
-	 *
-	 * const blueprint = new Blueprint({
-	 *   'hw.device-type': 1,
-	 *   'arch.sw': 1
-	 * })
-	 *
-	 * const contexts = blueprint.reproduceAsIterable(contract)
-	 * contexts.forEach((context) => {
-	 *   console.log(context.toJSON());
-	 * })
-	 */
-	reproduce(contract: Contract, asIterable?: false): Contract[];
-
-	/**
 	 * @summary Reproduce the blueprint in a universe and return as an iterable
 	 * @function
 	 * @name module:contrato.Blueprint#reproduce
@@ -373,7 +343,6 @@ export default class Blueprint extends Contract {
 	 * universe of contracts.
 	 *
 	 * @param {Object} contract - contract
-	 * @param {boolean} asIterable - flag to indicate that the result should be an iterable
 	 * @returns {Iterable<Object>} - an iterable over the valid contexts
 	 *
 	 * @example
@@ -385,24 +354,12 @@ export default class Blueprint extends Contract {
 	 *   'arch.sw': 1
 	 * })
 	 *
-	 * const contexts = blueprint.reproduceAsIterable(contract)
+	 * const contexts = blueprint.reproduce(contract)
 	 * for (const context of contexts) {
 	 *   console.log(context.toJSON());
 	 * }
 	 */
-	reproduce(contract: Contract, asIterable: true): IterableIterator<Contract>;
-	reproduce(
-		contract: Contract,
-		asIterable?: boolean,
-	): IterableIterator<Contract> | Contract[];
-	reproduce(
-		contract: Contract,
-		asIterable = false,
-	): IterableIterator<Contract> | Contract[] {
-		if (!asIterable) {
-			return [...this.reproduce(contract, true)];
-		}
-
+	reproduce(contract: Contract): IterableIterator<Contract> {
 		const layout = this.metadata.layout;
 		const combinations = reduce(
 			layout.finite.selectors,

@@ -1,0 +1,24 @@
+{
+	"slug": "jetson-nano",
+	"version": "1",
+	"type": "hw.device-type",
+	"aliases": [],
+	"name": "Nvidia Jetson Nano SD-CARD",
+	"data": {
+		"arch": "aarch64",
+		"hdmi": true,
+		"led": false,
+		"connectivity": {
+			"bluetooth": false,
+			"wifi": false
+		},
+		"storage": {
+			"internal": false
+		},
+		"flashProtocol": "jetsonFlash",
+		"media": {
+			"defaultBoot": "sdcard"
+		},
+		"is_private": false
+	}
+}

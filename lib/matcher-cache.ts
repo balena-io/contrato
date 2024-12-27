@@ -178,7 +178,7 @@ export default class MatcherCache {
 	 *
 	 * cache1.merge(cache2)
 	 */
-	merge(cache: MatcherCache): MatcherCache {
+	merge(cache: MatcherCache): this {
 		for (const type of cache.getTypes()) {
 			if (this.data[type]) {
 				this.resetType(type);

@@ -79,6 +79,6 @@ export const build = (contract: ContractObject): ContractObject[] => {
 							),
 						),
 					),
-				[],
+				[] as ContractObject[],
 			);
 };

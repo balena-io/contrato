@@ -11,7 +11,7 @@ import isString from 'lodash/isString';
 import map from 'lodash/map';
 import mapValues from 'lodash/mapValues';
 
-import type { ContractObject } from './types/types';
+import type { ContractObject } from './types';
 
 /**
  * @module template
@@ -62,7 +62,7 @@ const deepMapValues = (
  * @type {RegExp}
  * @constant
  */
-const TEMPLATE_REGEXP: RegExp = /\{\{(.+?)\}\}/g;
+const TEMPLATE_REGEXP = /\{\{(.+?)\}\}/g;
 /**
  * @summary Compile contract templates
  * @function

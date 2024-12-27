@@ -20,8 +20,8 @@ import { compare } from 'semver';
 
 import Contract from './contract';
 import { parse } from './cardinality';
-import type { BlueprintLayout, BlueprintObject } from './types/types';
-import { BLUEPRINT } from './types/types';
+import type { BlueprintLayout, BlueprintObject } from './types';
+import { BLUEPRINT } from './types';
 import {
 	cartesianProductWith,
 	flatten as flattenIterator,

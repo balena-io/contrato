@@ -9,11 +9,7 @@
  * @public
  */
 
-import {
-	BlueprintLayout,
-	BlueprintObject,
-	ContractObject,
-} from './types/types';
+import { BlueprintLayout, BlueprintObject, ContractObject } from './types';
 import Contract from './contract';
 import Blueprint from './blueprint';
 import Universe from './universe';

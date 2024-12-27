@@ -4,7 +4,19 @@
  * Proprietary and confidential.
  */
 
-import type { components } from './cuetypes';
+interface components {
+	schemas: {
+		Blueprint: components['schemas']['Contract'] & { [key: string]: any } & {
+			type?: 'meta.blueprint';
+			layout?: components['schemas']['BlueprintLayout'];
+			skeleton?: { [key: string]: any };
+		};
+		BlueprintLayout: { [key: string]: any };
+		Contract: {
+			type: string;
+		} & { [key: string]: any };
+	};
+}
 
 export type ContractObject = components['schemas']['Contract'];
 export type BlueprintObject = components['schemas']['Blueprint'];

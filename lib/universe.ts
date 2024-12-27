@@ -3,7 +3,7 @@ import { promises as fs } from 'fs';
 import type { Stats } from 'fs';
 
 import Contract from './contract';
-import { UNIVERSE } from './types/types';
+import { UNIVERSE } from './types';
 
 /**
  * @summary recursively find all files under the directory that match the given filter

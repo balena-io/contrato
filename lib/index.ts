@@ -69,9 +69,3 @@ export function query(
 ): IterableIterator<Contract> {
 	return new Blueprint(layout, skeleton).reproduce(universe);
 }
-
-export const sequence = (
-	universe: Contract,
-	layout: BlueprintLayout,
-	skeleton: object,
-) => new Blueprint(layout, skeleton).sequence(universe);

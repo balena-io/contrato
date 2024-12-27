@@ -20,7 +20,7 @@ import range from 'lodash/range';
 import reduce from 'lodash/reduce';
 import some from 'lodash/some';
 import uniqWith from 'lodash/uniqWith';
-import { bigCombination } from 'js-combinatorics';
+import { Combination } from 'js-combinatorics';
 import { compare, satisfies, valid, validRange } from 'semver';
 
 import { isValid } from './json-schema';
@@ -896,7 +896,7 @@ export default class Contract {
 			Math.min(cardinality.to, contracts.length) + 1,
 		);
 		return flatMap(rang, (tcardinality) => {
-			return bigCombination(contracts, tcardinality).toArray();
+			return new Combination(contracts, tcardinality).toArray();
 		});
 	}
 	/**

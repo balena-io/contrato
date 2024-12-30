@@ -1032,8 +1032,97 @@ export default class Contract {
 			[] as Contract[],
 		);
 	}
+
+	private isRequirementSatisfied(
+		requirement: Contract,
+		options: { types?: Set<string> } = {},
+	): boolean {
+		// Utilities
+		const shouldEvaluateType = (type: string) =>
+			options.types ? options.types.has(type) : true;
+
+		/**
+		 * @summary Check if a matcher is satisfied
+		 * @function
+		 * @public
+		 *
+		 * @param {Object} matcher - matcher contract
+		 * @returns {Boolean} whether the matcher is satisfied
+		 *
+		 * @example
+		 * const matcher = Contract.createMatcher({
+		 *   type: 'sw.os',
+		 *   slug: 'debian'
+		 * })
+		 *
+		 * if (hasMatch(matcher)) {
+		 *   console.log('This matcher is satisfied!')
+		 * }
+		 */
+		const hasMatch = (matcher: Contract): boolean => {
+			// TODO: Write a function similar to findContracts
+			// that stops as soon as it finds one match
+			return (
+				this.findChildren(matcher).length > 0 ||
+				this.findChildrenWithCapabilities(matcher).length > 0
+			);
+		};
+
+		if (requirement.raw.operation === 'or') {
+			// (3.1) Note that we should only consider disjuncts
+			// of types we are allowed to check. We can make
+			// such transformation here, so we can then consider
+			// the disjunction as fulfilled if there are no
+			// remaining disjuncts.
+			const disjuncts = filter(requirement.raw.data.getAll(), (disjunct) => {
+				return shouldEvaluateType(disjunct.raw.data.type);
+			});
+			// (3.2) An empty disjuction means that this particular
+			// requirement is fulfilled, so we can carry on.
+			// A disjunction naturally contains a list of further
+			// requirements we need to check for. If at least one
+			// of the members is fulfilled, we can proceed with
+			// next requirement.
+			if (disjuncts.length === 0 || some(disjuncts, hasMatch)) {
+				return true;
+			}
+			// (3.3) If no members were fulfilled, then we know
+			// that this requirement was not fullfilled, so it will be returned
+			return false;
+		} else if (requirement.raw.operation === 'not') {
+			// (3.4) Note that we should only consider disjuncts
+			// of types we are allowed to check. We can make
+			// such transformation here, so we can then consider
+			// the disjunction as fulfilled if there are no
+			// remaining disjuncts.
+			// (3.5) We fail the requirement if the set of negated
+			// disjuncts is not empty, and we have at least one of
+			// them in the context.
+			if (
+				some(requirement.raw.data.getAll(), (disjunct) => {
+					return (
+						shouldEvaluateType(disjunct.raw.data.type) && hasMatch(disjunct)
+					);
+				})
+			) {
+				return false;
+			}
+			return true;
+		}
+		// (4) If we should evaluate this requirement and it is not fullfilled
+		// it will be returned
+		if (
+			shouldEvaluateType(requirement.raw.data.type) &&
+			!hasMatch(requirement)
+		) {
+			return false;
+		}
+
+		return true;
+	}
+
 	/**
-	 * @summary Check if a child contract is satisfied when applied to this contract
+	 * @summary Get a list of child requirements that are not satisfied by this contract
 	 * @function
 	 * @name module:contrato.Contract#satisfiesChildContract
 	 * @public
@@ -1041,7 +1130,7 @@ export default class Contract {
 	 * @param {Object} contract - child contract
 	 * @param {Object} [options] - options
 	 * @param {Set} [options.types] - the types to consider (all by default)
-	 * @returns {Boolean} whether the contract is satisfied
+	 * @returns list of unsatisfied requirements
 	 *
 	 * @example
 	 * const contract = new Contract({ ... })
@@ -1087,96 +1176,33 @@ export default class Contract {
 	 */
 	getNotSatisfiedChildRequirements(
 		contract: Contract,
-		options: { types: Set<string> } = { types: new Set() },
-	): any[] {
-		const conjuncts = reduce(
-			contract.getChildren(),
-			(accumulator, child) => {
-				return accumulator.concat(
-					child.metadata.requirements.compiled.getAll(),
-				);
-			},
-			contract.metadata.requirements.compiled.getAll(),
-		);
+		options: { types?: Set<string> } = {},
+	) {
+		const conjuncts: Contract[] = contract.metadata.requirements.compiled
+			.getAll()
+			.concat(
+				contract
+					.getChildren()
+					.flatMap((child) => child.metadata.requirements.compiled.getAll()),
+			);
 		// (1) If the top level list of conjuncts is empty,
 		// then we can assume the requirements are fulfilled
 		// and stop without doing any further computations.
 		if (conjuncts.length === 0) {
 			return [];
 		}
-		// Utilities
-		const shouldEvaluateType = (type: string) =>
-			options.types ? options.types.has(type) : true;
 
-		const requirements: any[] = [];
-		/**
-		 * @summary Check if a matcher is satisfied
-		 * @function
-		 * @public
-		 *
-		 * @param {Object} matcher - matcher contract
-		 * @returns {Boolean} whether the matcher is satisfied
-		 *
-		 * @example
-		 * const matcher = Contract.createMatcher({
-		 *   type: 'sw.os',
-		 *   slug: 'debian'
-		 * })
-		 *
-		 * if (hasMatch(matcher)) {
-		 *   console.log('This matcher is satisfied!')
-		 * }
-		 */
-		const hasMatch = (matcher: Contract): boolean => {
-			// TODO: Write a function similar to findContracts
-			// that stops as soon as it finds one match
-			return (
-				this.findChildren(matcher).length > 0 ||
-				this.findChildrenWithCapabilities(matcher).length > 0
-			);
-		};
 		// (2) The requirements are specified as a list of objects,
 		// so lets iterate through those.
 		// This function uses a for loop instead of a more functional
 		// construct for performance reasons, given that we can freely
 		// break out of the loop as soon as possible.
-		for (const conjunct of conjuncts) {
-			if (conjunct.raw.operation === 'or') {
-				// (3.1) Note that we should only consider disjuncts
-				// of types we are allowed to check. We can make
-				// such transformation here, so we can then consider
-				// the disjunction as fulfilled if there are no
-				// remaining disjuncts.
-				const disjuncts = filter(conjunct.raw.data.getAll(), (disjunct) => {
-					return shouldEvaluateType(disjunct.raw.data.type);
-				});
-				// (3.2) An empty disjuction means that this particular
-				// requirement is fulfilled, so we can carry on.
-				// A disjunction naturally contains a list of further
-				// requirements we need to check for. If at least one
-				// of the members is fulfilled, we can proceed with
-				// next requirement.
-				if (disjuncts.length === 0 || some(map(disjuncts, hasMatch))) {
-					continue;
-				}
-				// (3.3) If no members were fulfilled, then we know
-				// that this requirement was not fullfilled, so it will be returned
-				requirements.push(conjunct.raw.data);
-			}
-			// (4) If we should evaluate this requirement and it is not fullfilled
-			// it will be returned
-			if (shouldEvaluateType(conjunct.raw.data.type) && !hasMatch(conjunct)) {
-				requirements.push(conjunct.raw.data);
-			} else if (!shouldEvaluateType(conjunct.raw.data.type)) {
-				// If this requirement is not evaluated, because of missing contracts,
-				// it will also be returned.
-				requirements.push(conjunct.raw.data);
-			}
-		}
+		return conjuncts
+			.filter((conjunct) => !this.isRequirementSatisfied(conjunct, options))
+			.map((conjunct) => conjunct.raw.data);
 		// (5) If we reached this far, then it means that all the
 		// requirements were checked, and they were all satisfied,
 		// so this is good to go!
-		return requirements;
 	}
 	/**
 	 * @summary Check if a child contract is satisfied when applied to this contract
@@ -1235,97 +1261,29 @@ export default class Contract {
 		contract: Contract,
 		options: { types?: Set<string> } = {},
 	): boolean {
-		const conjuncts = reduce(
-			contract.getChildren(),
-			(accumulator, child) => {
-				return accumulator.concat(
-					child.metadata.requirements.compiled.getAll(),
-				);
-			},
-			contract.metadata.requirements.compiled.getAll(),
-		);
+		const conjuncts: Contract[] = contract.metadata.requirements.compiled
+			.getAll()
+			.concat(
+				contract
+					.getChildren()
+					.flatMap((child) => child.metadata.requirements.compiled.getAll()),
+			);
+
 		// (1) If the top level list of conjuncts is empty,
 		// then we can assume the requirements are fulfilled
 		// and stop without doing any further computations.
 		if (conjuncts.length === 0) {
 			return true;
 		}
-		// Utilities
-		const shouldEvaluateType = (type: string) =>
-			options.types ? options.types.has(type) : true;
-		/**
-		 * @summary Check if a matcher is satisfied
-		 * @function
-		 * @public
-		 *
-		 * @param {Object} matcher - matcher contract
-		 * @returns {Boolean} whether the matcher is satisfied
-		 *
-		 * @example
-		 * const matcher = Contract.createMatcher({
-		 *   type: 'sw.os',
-		 *   slug: 'debian'
-		 * })
-		 *
-		 * if (hasMatch(matcher)) {
-		 *   console.log('This matcher is satisfied!')
-		 * }
-		 */
-		const hasMatch = (matcher: Contract): boolean =>
-			// TODO: Write a function similar to findContracts
-			// that stops as soon as it finds one match
-			this.findChildren(matcher).length > 0;
+
 		// (2) The requirements are specified as a list of objects,
 		// so lets iterate through those.
 		// This function uses a for loop instead of a more functional
 		// construct for performance reasons, given that we can freely
 		// break out of the loop as soon as possible.
 		for (const conjunct of conjuncts) {
-			if (conjunct.raw.operation === 'or') {
-				// (3.1) Note that we should only consider disjuncts
-				// of types we are allowed to check. We can make
-				// such transformation here, so we can then consider
-				// the disjunction as fulfilled if there are no
-				// remaining disjuncts.
-				const disjuncts = filter(conjunct.raw.data.getAll(), (disjunct) => {
-					return shouldEvaluateType(disjunct.raw.data.type);
-				});
-				// (3.2) An empty disjuction means that this particular
-				// requirement is fulfilled, so we can carry on.
-				// A disjunction naturally contains a list of further
-				// requirements we need to check for. If at least one
-				// of the members is fulfilled, we can proceed with
-				// next requirement.
-				if (disjuncts.length === 0 || some(map(disjuncts, hasMatch))) {
-					continue;
-				}
-				// (3.3) If no members were fulfilled, then we know
-				// the whole contract is unsatisfied, so there's no
-				// reason to keep checking the remaining requirements.
-				return false;
-			} else if (conjunct.raw.operation === 'not') {
-				// (3.4) Note that we should only consider disjuncts
-				// of types we are allowed to check. We can make
-				// such transformation here, so we can then consider
-				// the disjunction as fulfilled if there are no
-				// remaining disjuncts.
-				const disjuncts = filter(conjunct.raw.data.getAll(), (disjunct) => {
-					return shouldEvaluateType(disjunct.raw.data.type);
-				});
-				// (3.5) We fail the requirement if the set of negated
-				// disjuncts is not empty, and we have at least one of
-				// them in the context.
-				if (disjuncts.length > 0 && some(map(disjuncts, hasMatch))) {
-					return false;
-				}
-				continue;
-			}
-			// (4) If we reached this point, then we know we're dealing
-			// with a conjunct from the top level *AND* operator.
-			// Since a logical "and" means that all elements must be
-			// fulfilled, we can return right away if one of these
-			// was not satisfied.
-			if (shouldEvaluateType(conjunct.raw.data.type) && !hasMatch(conjunct)) {
+			// (3-4) stop looking if an unsatisfied requirement is found
+			if (!this.isRequirementSatisfied(conjunct, options)) {
 				return false;
 			}
 		}

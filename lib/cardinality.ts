@@ -23,7 +23,7 @@ import trim from 'lodash/trim';
  * @type {Number}
  * @constant
  */
-const ORDERED_LIST_LENGTH: number = 2;
+const ORDERED_LIST_LENGTH = 2;
 
 /**
  * @summary Parse a contracts cardinality tuple/string/number

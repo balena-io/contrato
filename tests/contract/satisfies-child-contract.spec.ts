@@ -769,6 +769,160 @@ describe('Contract satisfiesChildContract', () => {
 		).to.be.true;
 	});
 
+	it('should return true given two fulfilled requirements from a context declaring capabilities with `provides`', () => {
+		const container = new Contract({
+			type: 'foo',
+			slug: 'bar',
+		});
+
+		const contract1 = new Contract({
+			type: 'meta.context',
+			slug: 'test',
+			provides: [
+				{
+					type: 'sw.os',
+					slug: 'debian',
+					version: 'wheezy',
+				},
+				{
+					type: 'arch.sw',
+					slug: 'amd64',
+					version: '1',
+				},
+			],
+		});
+
+		container.addChild(contract1);
+
+		expect(
+			container.satisfiesChildContract(
+				new Contract({
+					name: 'Node.js',
+					slug: 'nodejs',
+					type: 'sw.stack',
+					requires: [
+						{
+							slug: 'debian',
+							type: 'sw.os',
+						},
+						{
+							or: [
+								{
+									slug: 'amd64',
+									type: 'arch.sw',
+								},
+								{
+									slug: 'i386',
+									type: 'arch.sw',
+								},
+							],
+						},
+					],
+				}),
+			),
+		).to.be.true;
+	});
+
+	it('should return true given one fulfilled requirements from a context declaring capabilities with `provides` and one selected type', () => {
+		const container = new Contract({
+			type: 'foo',
+			slug: 'bar',
+		});
+
+		const contract1 = new Contract({
+			type: 'meta.context',
+			slug: 'test',
+			provides: [
+				{
+					type: 'sw.os',
+					slug: 'debian',
+					version: 'wheezy',
+				},
+			],
+		});
+
+		container.addChild(contract1);
+
+		expect(
+			container.satisfiesChildContract(
+				new Contract({
+					name: 'Node.js',
+					slug: 'nodejs',
+					type: 'sw.stack',
+					requires: [
+						{
+							slug: 'debian',
+							type: 'sw.os',
+						},
+						{
+							or: [
+								{
+									slug: 'amd64',
+									type: 'arch.sw',
+								},
+								{
+									slug: 'i386',
+									type: 'arch.sw',
+								},
+							],
+						},
+					],
+				}),
+				{ types: new Set(['sw.os']) },
+			),
+		).to.be.true;
+	});
+
+	it('should return false given only one fulfilled requirements from a context declaring capabilities with `provides`', () => {
+		const container = new Contract({
+			type: 'foo',
+			slug: 'bar',
+		});
+
+		const contract1 = new Contract({
+			type: 'meta.context',
+			slug: 'test',
+			provides: [
+				{
+					type: 'sw.os',
+					slug: 'debian',
+					version: 'wheezy',
+				},
+			],
+		});
+
+		container.addChild(contract1);
+
+		const child = new Contract({
+			name: 'Node.js',
+			slug: 'nodejs',
+			type: 'sw.stack',
+			requires: [
+				{
+					slug: 'debian',
+					type: 'sw.os',
+				},
+				{
+					or: [
+						{
+							slug: 'amd64',
+							type: 'arch.sw',
+						},
+						{
+							slug: 'i386',
+							type: 'arch.sw',
+						},
+					],
+				},
+			],
+		});
+
+		expect(container.satisfiesChildContract(child)).to.be.false;
+		expect(container.getNotSatisfiedChildRequirements(child)).to.have.lengthOf(
+			1,
+		);
+	});
+
 	it('should return false given one unfulfilled requirement from a context with a composite contract', () => {
 		const container = new Contract({
 			type: 'foo',

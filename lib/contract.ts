@@ -648,8 +648,8 @@ export default class Contract {
 			// the list of hashes we should check against.
 			const match = matches(omit(matcher.raw.data, ['slug', 'version']));
 			const versionMatch = matcher.raw.data.version;
-			if (contract.raw.capabilities) {
-				for (const capability of contract.raw.capabilities) {
+			if (contract.raw.provides) {
+				for (const capability of contract.raw.provides) {
 					if (match(capability)) {
 						if (versionMatch) {
 							if (valid(capability.version) && validRange(versionMatch)) {

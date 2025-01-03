@@ -28,7 +28,7 @@ describe('Blueprint reproduce', () => {
 			'requirements-simple-2-aliases',
 		],
 		(testName) => {
-			// eslint-disable-next-line @typescript-eslint/no-var-requires
+			// eslint-disable-next-line @typescript-eslint/no-require-imports
 			const testCase = require(`./${testName}.json`);
 
 			it(testName, () => {
@@ -43,7 +43,7 @@ describe('Blueprint reproduce', () => {
 					testCase.blueprint.layout,
 					testCase.blueprint.skeleton,
 				);
-				const result = blueprint.reproduce(container);
+				const result = [...blueprint.reproduce(container)];
 				expect(testCase.contexts).to.deep.equal(_.invokeMap(result, 'toJSON'));
 			});
 		},

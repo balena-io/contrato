@@ -27,7 +27,7 @@ import uniq from 'lodash/uniq';
 import flow from 'lodash/flow';
 
 import Contract from './contract';
-import type { ContractObject } from './types/types';
+import type { ContractObject } from './types';
 import { cartesianProductWith, stripExtraBlankLines } from './utils';
 
 const hb = promisedHandlebars(handlebars);
@@ -167,8 +167,8 @@ hb.registerHelper('import', async (options) => {
 			const safeContent = new hb.SafeString(
 				partialContent.slice(0, partialContent.length - 1),
 			);
-			const builtContent = await hb.compile(safeContent.toString())(
-				options.data.root,
+			const builtContent = await Promise.resolve(
+				hb.compile(safeContent.toString())(options.data.root),
 			);
 			return new hb.SafeString(builtContent);
 		} catch (err) {
@@ -248,5 +248,7 @@ export const buildTemplate = async (
 		context.toJSON().children,
 	);
 
-	return stripExtraBlankLines(await hb.compile(template)(data));
+	return stripExtraBlankLines(
+		await Promise.resolve(hb.compile(template)(data)),
+	);
 };

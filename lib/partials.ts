@@ -167,8 +167,8 @@ hb.registerHelper('import', async (options) => {
 			const safeContent = new hb.SafeString(
 				partialContent.slice(0, partialContent.length - 1),
 			);
-			const builtContent = await Promise.resolve(
-				hb.compile(safeContent.toString())(options.data.root),
+			const builtContent = await hb.compile(safeContent.toString())(
+				options.data.root,
 			);
 			return new hb.SafeString(builtContent);
 		} catch (err) {
@@ -248,7 +248,5 @@ export const buildTemplate = async (
 		context.toJSON().children,
 	);
 
-	return stripExtraBlankLines(
-		await Promise.resolve(hb.compile(template)(data)),
-	);
+	return stripExtraBlankLines(await hb.compile(template)(data));
 };

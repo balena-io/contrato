@@ -6,39 +6,6 @@ import Contract from './contract';
 import { UNIVERSE } from './types/types';
 
 /**
- * @summary Run the callback function concurrently on elements from the given iterator
- * @function
- * @memberof module:universe
- *
- * Gets up to `concurrency` elements from the given iterator and apply the asynchronous function
- * concurrently using `Promise.all`.
- *
- * If at any point the call to the callback fails, the function will throw the error
- *
- * @param it - iterator of elements to go traverse
- * @param callbackFn - a function to execute for each element in the iterator
- * @param concurrency - number of elements to apply the function at the same time. Default to 1
- */
-export async function concurrentForEach<T>(
-	it: IterableIterator<T>,
-	callbackFn: (t: T) => PromiseLike<void>,
-	concurrency = 1,
-): Promise<void> {
-	const run = async () => {
-		const next = it.next();
-		if (next.value && !next.done) {
-			await callbackFn(next.value);
-			await run();
-		}
-	};
-	const runs = [];
-	for (let i = 0; i < concurrency; i++) {
-		runs.push(run());
-	}
-	await Promise.all(runs);
-}
-
-/**
  * @summary recursively find all files under the directory that match the given filter
  * @function
  * @memberof module:universe
@@ -103,24 +70,25 @@ export class Universe extends Contract {
 				path.extname(filePath) === '.json' && filter(filePath, stat),
 		);
 
+		const { default: pMap } = await import('p-map');
+
 		const universe = new Universe();
-		const children: Contract[] = [];
-		await concurrentForEach(
-			allFiles.values(),
-			async (file) => {
-				const contents = await fs.readFile(file, { encoding: 'utf8' });
-				let source = JSON.parse(contents);
-
-				if (canonicalOnly) {
-					// Ignore aliases
-					const { aliases, ...obj } = source;
-					source = obj;
-				}
-
-				children.push(...Contract.build(source));
-			},
-			10,
-		);
+		const children = (
+			await pMap(
+				allFiles,
+				async (file) => {
+					const contents = await fs.readFile(file, { encoding: 'utf8' });
+					let source = JSON.parse(contents);
+					if (canonicalOnly) {
+						// Ignore aliases
+						const { aliases, ...obj } = source;
+						source = obj;
+					}
+					return Contract.build(source);
+				},
+				{ concurrency: 10 },
+			)
+		).flat();
 
 		universe.addChildren(children);
 

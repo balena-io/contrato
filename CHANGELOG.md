@@ -5,6 +5,11 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## v0.0.6 - 2018-08-17
 
+## 0.11.0 - 2025-01-10
+
+* Use p-map rather than custom concurrentForEach [Felipe Lalanne]
+* Add class to work with a Universe of contracts [Felipe Lalanne]
+
 ## 0.10.0 - 2024-12-20
 
 * Remove skhema as dependency [Felipe Lalanne]

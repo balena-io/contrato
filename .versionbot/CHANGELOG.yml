@@ -1,4 +1,28 @@
 - commits:
+    - subject: Use p-map rather than custom concurrentForEach
+      hash: 20c9f26832f3cfafd44699e733b8fb4297bf2a35
+      body: ""
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Add class to work with a Universe of contracts
+      hash: 7d64ad522697d3387a2c79810f1da7a301ad8c93
+      body: >
+        The helper class includes a `fromFs` function, that allows to build a
+        universe
+
+        of contracts searching for JSON files under a directory.
+      footer:
+        Change-type: minor
+        change-type: minor
+      author: Felipe Lalanne
+      nested: []
+  version: 0.11.0
+  title: ""
+  date: 2025-01-10T18:49:22.651Z
+- commits:
     - subject: Remove skhema as dependency
       hash: dffa41e7e81399c03b612a5205e221460b30d7b9
       body: >

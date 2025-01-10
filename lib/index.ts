@@ -16,6 +16,7 @@ import {
 } from './types/types';
 import Contract from './contract';
 import Blueprint from './blueprint';
+import Universe from './universe';
 import { buildTemplate } from './partials';
 import { parse as parseCardinality } from './cardinality';
 
@@ -25,6 +26,7 @@ export {
 	BlueprintObject,
 	Contract,
 	Blueprint,
+	Universe,
 	buildTemplate,
 	parseCardinality,
 };

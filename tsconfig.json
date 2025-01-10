@@ -1,7 +1,7 @@
 {
 	"compilerOptions": {
-		"module": "commonjs",
-		"esModuleInterop": true,
+		"module": "Node16",
+		"moduleResolution": "node16",
 		"outDir": "build",
 		"noUnusedParameters": true,
 		"noUnusedLocals": true,
@@ -13,5 +13,8 @@
 		"skipLibCheck": true,
 		"resolveJsonModule": true
 	},
-	"include": ["lib/**/*.ts", "typings/**/*.ts"]
+	"include": [
+		"lib/**/*.ts",
+		"typings/**/*.ts"
+	]
 }

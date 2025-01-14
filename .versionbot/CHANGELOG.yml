@@ -1,4 +1,100 @@
 - commits:
+    - subject: Improve promised-handlebars types
+      hash: 1fc585730057b7eb77a77b16c31e9965ac0f5a3f
+      body: ""
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Stop exporting parseCardinality function
+      hash: 70a51dff705686aa5d83fc88f65a2da19949c305
+      body: |
+        The function falls outside the capabilities of the library
+      footer:
+        Change-type: minor
+        change-type: minor
+      author: Felipe Lalanne
+      nested: []
+    - subject: Remove Blueprint.sequence
+      hash: eb484f815fc5e076f9a3068be0b9573b99972829
+      body: |
+        Introduced on #13, it seems to be related to keyframes in the context
+        of [Katapult](https://github.com/product-os/katapult). While the
+        functionality is quite advanced, there doesn't seem to be an application
+        for it anymore
+      footer:
+        Change-type: minor
+        change-type: minor
+      author: Felipe Lalanne
+      nested: []
+    - subject: Remove non-iterable version of Blueprint.reproduce
+      hash: eb07809c55bd1dab886e7f68e88ad4f469e63438
+      body: |
+        An array result is easily expanded from the iterator by using the spread
+        operator. The non-iterable version is used only on the supervisor and
+        will be replaced soon.
+      footer:
+        Change-type: minor
+        change-type: minor
+      author: Felipe Lalanne
+      nested: []
+    - subject: Update object-hash to v3
+      hash: 27ee92847a759508ac9a26a9d6aaf68d94181a99
+      body: ""
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Update semver dependency
+      hash: 56c3695b7c075de25dbef1749e9852649bde66e0
+      body: ""
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Update js-combinatorics to v2
+      hash: 434e65a01e12b9ba26e51be97a0b36ee0c097053
+      body: |
+        Replaced the use of `bigCombination` by the new `Combination` iterator.
+        The library can now handle big arrays without the need for a specific
+        `big` function.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Update balena-lint to v9
+      hash: a74168a88820626c400b212935342c954cbb70b5
+      body: |
+        Includes code updates to comply with the latest linting requirements
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Remove dependency on cuelang for type generation
+      hash: 8232e06997ec32a0d41586c72762f1adf10fe878
+      body: >
+        The base types are relatively static (they have not been modified since
+        fb379949c2749e2b0fce40d24b764abaf02b0c64).
+
+        There is not really a need for automated type generation via cue.
+
+
+        This will also allow us to archive
+        https://github.com/product-os/cuelang-js
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+  version: 0.12.0
+  title: ""
+  date: 2025-01-14T12:39:29.390Z
+- commits:
     - subject: Use p-map rather than custom concurrentForEach
       hash: 20c9f26832f3cfafd44699e733b8fb4297bf2a35
       body: ""

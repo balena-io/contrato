@@ -5,6 +5,18 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## v0.0.6 - 2018-08-17
 
+## 0.12.0 - 2025-01-14
+
+* Improve promised-handlebars types [Felipe Lalanne]
+* Stop exporting parseCardinality function [Felipe Lalanne]
+* Remove Blueprint.sequence [Felipe Lalanne]
+* Remove non-iterable version of Blueprint.reproduce [Felipe Lalanne]
+* Update object-hash to v3 [Felipe Lalanne]
+* Update semver dependency [Felipe Lalanne]
+* Update js-combinatorics to v2 [Felipe Lalanne]
+* Update balena-lint to v9 [Felipe Lalanne]
+* Remove dependency on cuelang for type generation [Felipe Lalanne]
+
 ## 0.11.0 - 2025-01-10
 
 * Use p-map rather than custom concurrentForEach [Felipe Lalanne]

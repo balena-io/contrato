@@ -21,14 +21,14 @@ import mergeWith from 'lodash/mergeWith';
 import omit from 'lodash/omit';
 import reduce from 'lodash/reduce';
 
-import type { ContractObject } from './types/types';
+import type { ContractObject } from './types';
 
 /**
  * @summary The name of the contract property that contains variants
  * @type {String}
  * @constant
  */
-const VARIANTS_PROPERTY: string = 'variants';
+const VARIANTS_PROPERTY = 'variants';
 
 /**
  * @summary Build contract variants

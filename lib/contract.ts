@@ -20,15 +20,15 @@ import range from 'lodash/range';
 import reduce from 'lodash/reduce';
 import some from 'lodash/some';
 import uniqWith from 'lodash/uniqWith';
-import { bigCombination } from 'js-combinatorics';
+import { Combination } from 'js-combinatorics';
 import { compare, satisfies, valid, validRange } from 'semver';
 
 import { isValid } from './json-schema';
 import ObjectSet from './object-set';
 import MatcherCache from './matcher-cache';
 import { hashObject } from './hash';
-import type { ContractObject } from './types/types';
-import { MATCHER } from './types/types';
+import type { ContractObject } from './types';
+import { MATCHER } from './types';
 import { compileContract } from './template';
 import { build as buildVariants } from './variants';
 import { build as buildChildrentree } from './children-tree';
@@ -896,7 +896,7 @@ export default class Contract {
 			Math.min(cardinality.to, contracts.length) + 1,
 		);
 		return flatMap(rang, (tcardinality) => {
-			return bigCombination(contracts, tcardinality).toArray();
+			return new Combination(contracts, tcardinality).toArray();
 		});
 	}
 	/**

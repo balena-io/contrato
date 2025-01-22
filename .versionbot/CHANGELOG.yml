@@ -1,4 +1,16 @@
 - commits:
+    - subject: Update library documentation
+      hash: bad800ad03a21e522a9de9eb96ecf23240c588c8
+      body: ""
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+  version: 0.12.1
+  title: ""
+  date: 2025-01-22T13:59:46.167Z
+- commits:
     - subject: Improve promised-handlebars types
       hash: 1fc585730057b7eb77a77b16c31e9965ac0f5a3f
       body: ""

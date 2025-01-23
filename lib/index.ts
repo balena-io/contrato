@@ -13,6 +13,7 @@ import { BlueprintLayout, BlueprintObject, ContractObject } from './types';
 import Contract from './contract';
 import Blueprint from './blueprint';
 import Universe from './universe';
+import ObjectSet from './object-set';
 import { buildTemplate } from './partials';
 
 export {
@@ -22,6 +23,10 @@ export {
 	Contract,
 	Blueprint,
 	Universe,
+	// this is exported as is one of the return types of
+	// Contract.getNotSatisfiedChildRequirements
+	// TODO: remove this comment once the library has correct typings
+	ObjectSet,
 	buildTemplate,
 };
 

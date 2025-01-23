@@ -1,4 +1,17 @@
 - commits:
+    - subject: Remove docs folder
+      hash: 5c322c87d9a263c7580621a8592f0d9ee5b4e023
+      body: |
+        The docs live in a branch that is auto-generated via the CI
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+  version: 0.12.2
+  title: ""
+  date: 2025-01-23T01:57:51.075Z
+- commits:
     - subject: Update library documentation
       hash: bad800ad03a21e522a9de9eb96ecf23240c588c8
       body: ""

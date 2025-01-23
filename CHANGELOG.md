@@ -5,6 +5,10 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## v0.0.6 - 2018-08-17
 
+## 0.12.2 - 2025-01-23
+
+* Remove docs folder [Felipe Lalanne]
+
 ## 0.12.1 - 2025-01-22
 
 * Update library documentation [Felipe Lalanne]

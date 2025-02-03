@@ -32,7 +32,7 @@ if (osContract.satisfiesChildContract(serviceContract)) {
 }
 ```
 
-[![API Documentation](https://github.com/balena-io/contrato/actions/workflows/docs.yml/badge.svg)](https://balena-io.github.io/contrato/modules/contrato.html)
+[![API Documentation](https://github.com/balena-io/contrato/actions/workflows/docs.yml/badge.svg)](https://balena-io.github.io/contrato/index.html)
 
 ## About contracts
 
@@ -235,7 +235,7 @@ For example
 
 A single template can be used to generate multiple contracts using the `variants` property on the Contract specification. A good example of this is in the [Alpine OS contract template](https://github.com/balena-io/contracts/blob/master/contracts/sw.os/alpine/contract.json) describes the combination of different architecture builds for a list of versions and can be compiled into a set of contracts. See also the [NodeJS contract](https://github.com/balena-io/contracts/blob/master/contracts/sw.stack/node/contract.json) for a more complex example.
 
-In Contrato, the template can be compiled into concrete contracts using the [Contract.build](https://balena-io.github.io/contrato/classes/contrato.contract.html#build) function.
+In Contrato, the template can be compiled into concrete contracts using the [Contract.build](https://balena-io.github.io/contrato/classes/Contract.html#build) function.
 
 ```ts
 import { Contract } from 'contrato';
@@ -248,7 +248,7 @@ const contracts = Contract.build({ slug: 'mycontract' /* ... */ });
 
 A universe is a composite contract that conforms the collection of "things" being operated on. For instance, the set of contracts on [balena-io/contracts](https://github.com/balena-io/contracts) compose the universe of Balena's contracts containing the knowledge about device types, architectures, OS versions and software stacks available to Balena and its products.
 
-Contrato provides the [Universe type](https://balena-io.github.io/contrato/classes/universe.html) for working with a universe of contracts.
+Contrato provides the [Universe type](https://balena-io.github.io/contrato/classes/Universe.html) for working with a universe of contracts.
 
 ```ts
 import { Contract, Universe } from 'contrato';
@@ -319,7 +319,7 @@ Example: generate OS install instructions from a context.
 {{/compare}}
 ```
 
-Contracts can be rendered with contrato using the [buildTemplate](https://balena-io.github.io/contrato/modules/contrato.html#buildtemplate) function
+Contracts can be rendered with contrato using the [buildTemplate](https://balena-io.github.io/contrato/functions/buildTemplate.html) function
 
 ```ts
 import { buildTemplate } from 'contrato';

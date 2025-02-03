@@ -1,4 +1,16 @@
 - commits:
+    - subject: Fix README links to API docs
+      hash: 17ec483b055f1c88f66236515a96c24b239e9ecd
+      body: ""
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+  version: 0.12.3
+  title: ""
+  date: 2025-02-03T18:37:49.831Z
+- commits:
     - subject: Remove docs folder
       hash: 5c322c87d9a263c7580621a8592f0d9ee5b4e023
       body: |

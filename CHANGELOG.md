@@ -5,6 +5,10 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## v0.0.6 - 2018-08-17
 
+## 0.12.3 - 2025-02-03
+
+* Fix README links to API docs [Felipe Lalanne]
+
 ## 0.12.2 - 2025-01-23
 
 * Remove docs folder [Felipe Lalanne]

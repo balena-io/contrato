@@ -1,4 +1,39 @@
 - commits:
+    - subject: Fix bug when using array cardinalities
+      hash: a79b696a23f88a9dd42178d7ae1bdb3d4669265a
+      body: |
+        Using array cardinalities would result in the blueprint using the
+        `Array.filter` function as the filter for the selector, causing the
+        filtered set to always have size 0
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Rename contract `capabilities` property to `provides`
+      hash: d1a29e741595b883ae30b7cfa759bbbe8fcc9420
+      body: |
+        This lines up better with the original specification and how contracts
+        are being used by the OS
+      footer:
+        Change-type: minor
+        change-type: minor
+      author: Felipe Lalanne
+      nested: []
+    - subject: Unify requirement matching in Contract
+      hash: 7879bb5d2a8f75656b983cab4a054797562b610e
+      body: |
+        This removes some code duplication between `satisfiesChildContract` and
+        `getNotSatisfiedRequirements`
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+  version: 0.13.0
+  title: ""
+  date: 2025-02-05T10:58:25.849Z
+- commits:
     - subject: Fix README links to API docs
       hash: 17ec483b055f1c88f66236515a96c24b239e9ecd
       body: ""

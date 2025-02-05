@@ -5,6 +5,12 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## v0.0.6 - 2018-08-17
 
+## 0.13.0 - 2025-02-05
+
+* Fix bug when using array cardinalities [Felipe Lalanne]
+* Rename contract `capabilities` property to `provides` [Felipe Lalanne]
+* Unify requirement matching in Contract [Felipe Lalanne]
+
 ## 0.12.3 - 2025-02-03
 
 * Fix README links to API docs [Felipe Lalanne]

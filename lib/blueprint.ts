@@ -50,7 +50,8 @@ export default class Blueprint extends Contract {
 			(accumulator: any, value, type) => {
 				const selector = {
 					cardinality: parse(value.cardinality || value) as any,
-					filter: value.filter,
+					// Array has its own `filter` function, which we need to ignore
+					filter: Array.isArray(value) ? undefined : value.filter,
 					type: value.type || type,
 					version: value.version,
 				};

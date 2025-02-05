@@ -15,6 +15,10 @@ import Blueprint from './blueprint';
 import Universe from './universe';
 import { buildTemplate } from './partials';
 
+// this is exported as is one of the return types of
+// Contract.getNotSatisfiedChildRequirements
+// TODO: remove this comment once the library has correct typings
+export { default as ObjectSet } from './object-set';
 export {
 	BlueprintLayout,
 	ContractObject,

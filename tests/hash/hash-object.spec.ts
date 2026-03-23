@@ -11,12 +11,10 @@ import { hashObject } from '../../lib/hash';
 describe('hashObject', () => {
 	it('should return a string', () => {
 		expect(
-			_.isString(
-				hashObject({
-					foo: 'bar',
-				}),
-			),
-		).to.be.true;
+			hashObject({
+				foo: 'bar',
+			}),
+		).to.be.a('string');
 	});
 
 	it('should not care about properties order', () => {

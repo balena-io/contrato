@@ -9,19 +9,13 @@ import * as fs from 'fs';
 import path from 'path';
 import handlebars from 'handlebars';
 import promisedHandlebars from 'promised-handlebars';
-import first from 'lodash/first';
 import invokeMap from 'lodash/invokeMap';
-import join from 'lodash/join';
-import last from 'lodash/last';
 import map from 'lodash/map';
 import merge from 'lodash/merge';
 import range from 'lodash/range';
-import reduce from 'lodash/reduce';
 import sortBy from 'lodash/sortBy';
 import split from 'lodash/split';
 import take from 'lodash/take';
-import thru from 'lodash/thru';
-import trim from 'lodash/trim';
 import uniq from 'lodash/uniq';
 
 import flow from 'lodash/flow';
@@ -76,71 +70,62 @@ export const findPartial = (
 	return flow(
 		(structure: string[]) =>
 			map(structure, (type) => {
-				const children: Contract[] = context.getChildrenByType(type);
-				const contracts = flow(
-					(childrenRaw: Contract[]) =>
-						map(childrenRaw, (contract) => {
-							// We need to replace the alias slug with canonical slug when finding partial
-							// since the aliases will use canonical slug to avoid duplication.
-							const rawContract = contract.toJSON();
-							rawContract.slug = contract.getCanonicalSlug();
-							return new Contract(rawContract);
-						}),
-					(childrenContracts: Contract[]) =>
-						sortBy(childrenContracts, (contract) => contract.getSlug()),
-				)(children);
+				const children = context.getChildrenByType(type);
+				const contracts = sortBy(
+					children.map((contract) => {
+						// We need to replace the alias slug with canonical slug when finding partial
+						// since the aliases will use canonical slug to avoid duplication.
+						const rawContract = contract.toJSON();
+						rawContract.slug = contract.getCanonicalSlug();
+						return new Contract(rawContract);
+					}),
+					(contract) => contract.getSlug(),
+				);
 
 				return [
-					join(invokeMap(contracts, 'getReferenceString'), REFERENCE_DELIMITER),
-					join(invokeMap(contracts, 'getSlug'), REFERENCE_DELIMITER),
+					invokeMap(contracts, 'getReferenceString').join(REFERENCE_DELIMITER),
+					invokeMap(contracts, 'getSlug').join(REFERENCE_DELIMITER),
 				];
 			}),
-		(structureReferences: string[][]) =>
-			thru(structureReferences, (combinations) => {
-				const products = [
-					...cartesianProductWith<string, string[]>(
-						combinations,
-						(accumulator: string[], element: string) => {
-							accumulator.push(element);
-							return accumulator;
-						},
-						[[]],
-					),
-				];
+		(structureReferences: string[][]) => {
+			const products = [
+				...cartesianProductWith<string, string[]>(
+					structureReferences,
+					(accumulator: string[], element: string) => {
+						accumulator.push(element);
+						return accumulator;
+					},
+					[[]],
+				),
+			];
 
-				const slices = reduce(
-					range(options.structure.length, 1, -1),
-					(accumulator, slice) =>
-						accumulator.concat(invokeMap(products, 'slice', 0, slice)),
-					[] as string[],
-				);
+			const slices = range(options.structure.length, 1, -1).reduce<string[]>(
+				(accumulator, slice) =>
+					accumulator.concat(invokeMap(products, 'slice', 0, slice)),
+				[],
+			);
 
-				const fallbackPaths = combinations.reduce<
-					Array<Array<string | undefined>>
-				>(
-					(accumulator, _, index, collection) =>
-						map(
-							[
-								// For some reason typescript does not infer correctly the return
-								// type of first
-								map<string[], string | undefined>(collection, first),
-								map(collection, (x) => last(x)),
-							],
-							(list) => take(list, index + 1),
-						).concat(accumulator),
-					[],
-				);
+			const fallbackPaths = structureReferences.reduce<string[][]>(
+				(accumulator, _, index, collection) =>
+					[
+						map(collection, (x) => x[0]),
+						map(collection, (x) => x[x.length - 1]),
+					]
+						.map((list) => take(list, index + 1))
+						.concat(accumulator),
+				[],
+			);
 
-				return (products as Array<Array<string | undefined>>)
-					.concat(slices)
-					.concat(fallbackPaths);
-			})
-				.map((references) => [join(references, REFERENCE_DELIMITER), name])
+			return (products as Array<Array<string | undefined>>)
+				.concat(slices)
+				.concat(fallbackPaths)
+				.map((references) => [references.join(REFERENCE_DELIMITER), name])
 				.concat([[name]])
 				.map((paths) => {
 					const absolutePath = [options.baseDirectory].concat(paths);
 					return `${path.join(...absolutePath)}.tpl`;
-				}),
+				});
+		},
 		uniq,
 	)(options.structure);
 };
@@ -150,7 +135,9 @@ hb.registerHelper('import', async (options) => {
 
 	const partialPaths = findPartial(options.hash.partial, settings.context, {
 		baseDirectory: path.join(settings.directory, options.hash.combination),
-		structure: map(split(options.hash.combination, REFERENCE_DELIMITER), trim),
+		structure: split(options.hash.combination, REFERENCE_DELIMITER).map((s) =>
+			s.trim(),
+		),
 	});
 
 	for (const partialPath of partialPaths) {

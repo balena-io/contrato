@@ -4,7 +4,6 @@
  * Proprietary and confidential.
  */
 
-import concat from 'lodash/concat';
 import get from 'lodash/get';
 import set from 'lodash/set';
 import type Contract from './contract';
@@ -103,7 +102,7 @@ export default class MatcherCache {
 	 */
 	get(matcher: Contract): any {
 		const path = getMatcherCachePath(matcher);
-		return get(this.data, concat(path, ['value']), null);
+		return get(this.data, [...path, 'value'], null);
 	}
 
 	/**

@@ -4,19 +4,14 @@
  * Proprietary and confidential.
  */
 
-import first from 'lodash/first';
-import isArray from 'lodash/isArray';
-import last from 'lodash/last';
-import values from 'lodash/values';
-
 import { hashObject } from './hash';
 
 /**
  * @ignore
  */
 export default class ObjectSet {
-	cache: any;
-	data: any;
+	cache: { size: number };
+	data: Record<string, object>;
 	/**
 	 * @summary A data structure to represent a set of objects
 	 * @name ObjectSet
@@ -38,9 +33,9 @@ export default class ObjectSet {
 		};
 		this.data = {};
 		for (const object of objects) {
-			if (isArray(object)) {
-				const firstObj = first(object);
-				const lastObj = last(object);
+			if (Array.isArray(object)) {
+				const firstObj = object[0];
+				const lastObj = object[object.length - 1];
 				if (firstObj && lastObj) {
 					this.add(firstObj, lastObj);
 				}
@@ -147,7 +142,7 @@ export default class ObjectSet {
 	 * })
 	 */
 	getAll(): object[] {
-		return values(this.data);
+		return Object.values(this.data);
 	}
 	/**
 	 * @summary Calculate the intersection between two object sets

@@ -5,7 +5,6 @@
  */
 
 import isEmpty from 'lodash/isEmpty';
-import trim from 'lodash/trim';
 import clone from 'lodash/clone';
 
 /**
@@ -269,4 +268,4 @@ export function* cartesianProductWith<T, V>(
  * const stripped = utils.stripExtraBlankLines('...')
  */
 export const stripExtraBlankLines = (text: string): string =>
-	trim(text.replace(/(\r?\n){3,}/g, '\n\n'));
+	text.replace(/(\r?\n){3,}/g, '\n\n').trim();

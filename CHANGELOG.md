@@ -5,6 +5,11 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## v0.0.6 - 2018-08-17
 
+## 0.13.1 - 2026-03-23
+
+* Add id-token: write permission for NPM OIDC publishing [Pagan Gazzard]
+* Update dependencies and fix linting [Pagan Gazzard]
+
 ## 0.13.0 - 2025-02-05
 
 * Fix bug when using array cardinalities [Felipe Lalanne]

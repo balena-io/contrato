@@ -1,4 +1,24 @@
 - commits:
+    - subject: "Add id-token: write permission for NPM OIDC publishing"
+      hash: 5625abf9641874b044b1246fde5afdcd46f5ee95
+      body: ""
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Pagan Gazzard
+      nested: []
+    - subject: Update dependencies and fix linting
+      hash: 16643d0c4107824fc8ab7172f2c0a24c29c62052
+      body: ""
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Pagan Gazzard
+      nested: []
+  version: 0.13.1
+  title: ""
+  date: 2026-03-23T16:29:10.999Z
+- commits:
     - subject: Fix bug when using array cardinalities
       hash: a79b696a23f88a9dd42178d7ae1bdb3d4669265a
       body: |

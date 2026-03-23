@@ -1,4 +1,16 @@
 - commits:
+    - subject: Reduce lodash usage
+      hash: b425d42c8cb80f6c7453365660c674be69265d00
+      body: ""
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Pagan Gazzard
+      nested: []
+  version: 0.13.2
+  title: ""
+  date: 2026-03-23T17:51:10.647Z
+- commits:
     - subject: "Add id-token: write permission for NPM OIDC publishing"
       hash: 5625abf9641874b044b1246fde5afdcd46f5ee95
       body: ""

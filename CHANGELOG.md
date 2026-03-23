@@ -5,6 +5,10 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## v0.0.6 - 2018-08-17
 
+## 0.13.2 - 2026-03-23
+
+* Reduce lodash usage [Pagan Gazzard]
+
 ## 0.13.1 - 2026-03-23
 
 * Add id-token: write permission for NPM OIDC publishing [Pagan Gazzard]

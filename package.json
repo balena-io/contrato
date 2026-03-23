@@ -2,7 +2,7 @@
   "name": "@balena/contrato",
   "version": "0.13.0",
   "description": "The official contract implementation",
-  "homepage": "https://github.com/product-os/contrato",
+  "homepage": "https://github.com/balena-io/contrato",
   "main": "build/index.js",
   "types": "build/index.d.ts",
   "keywords": [
@@ -13,10 +13,10 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/product-os/contrato.git"
+    "url": "git+https://github.com/balena-io/contrato.git"
   },
   "bugs": {
-    "url": "https://github.com/product-os/contrato/issues"
+    "url": "https://github.com/balena-io/contrato/issues"
   },
   "files": [
     "build/"

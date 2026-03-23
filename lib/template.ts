@@ -5,10 +5,7 @@
  */
 
 import get from 'lodash/get';
-import isArray from 'lodash/isArray';
 import isPlainObject from 'lodash/isPlainObject';
-import isString from 'lodash/isString';
-import map from 'lodash/map';
 import mapValues from 'lodash/mapValues';
 
 import type { ContractObject } from './types';
@@ -110,7 +107,7 @@ export const compileContract = (
 	return deepMapValues(
 		contract,
 		(value: any, key: string[]) => {
-			if (isString(value)) {
+			if (typeof value === 'string') {
 				if (options.blacklist) {
 					const checkKey = isMultiLevelBlacklist ? key.join('.') : key[0];
 					for (const path of options.blacklist) {
@@ -133,8 +130,8 @@ export const compileContract = (
 					},
 				);
 			}
-			if (isArray(value)) {
-				return map(value as ContractObject[], (object, index) =>
+			if (Array.isArray(value)) {
+				return (value as ContractObject[]).map((object, index) =>
 					compileContract(object, options, contract, [
 						...key,
 						index.toString(),

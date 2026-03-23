@@ -4,18 +4,12 @@
  * Proprietary and confidential.
  */
 
-import concat from 'lodash/concat';
-import defaults from 'lodash/defaults';
 import filter from 'lodash/filter';
-import first from 'lodash/first';
-import flatMap from 'lodash/flatMap';
 import intersectionWith from 'lodash/intersectionWith';
 import isEqual from 'lodash/isEqual';
-import keys from 'lodash/keys';
 import map from 'lodash/map';
 import matches from 'lodash/matches';
 import omit from 'lodash/omit';
-import partial from 'lodash/partial';
 import range from 'lodash/range';
 import reduce from 'lodash/reduce';
 import some from 'lodash/some';
@@ -75,10 +69,7 @@ export default class Contract {
 		this.interpolate({
 			rehash: false,
 		});
-		defaults(options, {
-			hash: true,
-		});
-		if ((options as any).hash) {
+		if ((options as any).hash ?? true) {
 			this.hash();
 		}
 	}
@@ -150,7 +141,7 @@ export default class Contract {
 				});
 				continue;
 			}
-			const operand = first(keys(conjunct));
+			const operand = Object.keys(conjunct)[0];
 			if (operand) {
 				const matchers = new ObjectSet();
 				for (const disjunct of conjunct[operand]) {
@@ -192,11 +183,8 @@ export default class Contract {
 			// on children using the master contract as a root.
 			blacklist: new Set(['children']),
 		});
-		defaults(options, {
-			rehash: true,
-		});
 		this.rebuild();
-		if ((options as any).rehash) {
+		if ((options as any).rehash ?? true) {
 			this.hash();
 		}
 		return this;
@@ -407,14 +395,10 @@ export default class Contract {
 		this.metadata.children.map[contract.metadata.hash] = contract;
 		this.metadata.children.byType[type].add(contract.metadata.hash);
 		this.metadata.children.searchCache.resetType(type);
-		defaults(options, {
-			rehash: true,
-			rebuild: true,
-		});
-		if ((options as any).rebuild) {
+		if ((options as any).rebuild ?? true) {
 			this.rebuild();
 		}
-		if ((options as any).rehash) {
+		if ((options as any).rehash ?? true) {
 			this.hash();
 		}
 		return this;
@@ -438,9 +422,6 @@ export default class Contract {
 	 * contract.removeChild(child)
 	 */
 	removeChild(contract: Contract, options: object = {}): this {
-		defaults(options, {
-			rehash: true,
-		});
 		const type = contract.getType();
 		const childHash = contract.metadata.hash;
 		if (!this.raw.children || !this.metadata.children.map[childHash]) {
@@ -463,7 +444,7 @@ export default class Contract {
 		}
 		this.metadata.children.searchCache.resetType(contract.getType());
 		this.rebuild();
-		if ((options as any).rehash) {
+		if ((options as any).rehash ?? true) {
 			this.hash();
 		}
 		return this;
@@ -494,9 +475,6 @@ export default class Contract {
 		if (!contracts) {
 			return this;
 		}
-		defaults(options, {
-			rehash: true,
-		});
 		for (const contract of contracts) {
 			this.addChild(contract, {
 				// For performance reasons. If this is set to true,
@@ -509,7 +487,7 @@ export default class Contract {
 			});
 		}
 		this.rebuild();
-		if ((options as any).rehash) {
+		if ((options as any).rehash ?? true) {
 			this.hash();
 		}
 		return this;
@@ -863,9 +841,8 @@ export default class Contract {
 		// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 		const cardinality = options['cardinality'] || options;
 		if (options['filter']) {
-			const filterValidator = partial(isValid, options['filter']);
-			contracts = filter(contracts, (con) => {
-				return filterValidator(con.raw);
+			contracts = contracts.filter((con) => {
+				return isValid(options['filter'], con.raw);
 			});
 		}
 		if (contracts.length > 0) {
@@ -879,7 +856,7 @@ export default class Contract {
 						Math.min(contracts.length, cardinality.to),
 					);
 				} else {
-					contracts = filter(contracts, (con) => {
+					contracts = contracts.filter((con) => {
 						return satisfies(con.raw.version, options['version']);
 					});
 				}
@@ -902,7 +879,7 @@ export default class Contract {
 			cardinality.from,
 			Math.min(cardinality.to, contracts.length) + 1,
 		);
-		return flatMap(rang, (tcardinality) => {
+		return rang.flatMap((tcardinality) => {
 			return new Combination(contracts, tcardinality).toArray();
 		});
 	}
@@ -1090,7 +1067,7 @@ export default class Contract {
 			// requirements we need to check for. If at least one
 			// of the members is fulfilled, we can proceed with
 			// next requirement.
-			if (disjuncts.length === 0 || some(disjuncts, hasMatch)) {
+			if (disjuncts.length === 0 || disjuncts.some(hasMatch)) {
 				return true;
 			}
 			// (3.3) If no members were fulfilled, then we know
@@ -1365,8 +1342,7 @@ export default class Contract {
 					contract.metadata.requirements.types,
 				)
 			) {
-				requirements = concat(
-					requirements,
+				requirements = requirements.concat(
 					map(contract.metadata.requirements.compiled.getAll(), 'data'),
 				);
 				continue;
@@ -1377,7 +1353,7 @@ export default class Contract {
 					types: (options as any).types,
 				},
 			);
-			requirements = concat(requirements, contractRequirements);
+			requirements = requirements.concat(contractRequirements);
 		}
 		return requirements;
 	}
@@ -1464,24 +1440,20 @@ export default class Contract {
 	 */
 	static build(source: ContractObject): Contract[] {
 		const rawContracts = buildVariants(source);
-		return reduce(
-			rawContracts,
-			(accumulator, variant) => {
-				// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-				const aliases = variant['aliases'] || [];
-				const obj = omit(variant, ['aliases']) as ContractObject;
-				const contracts = map(aliases, (alias) => {
-					return new Contract(
-						Object.assign({}, obj, {
-							canonicalSlug: obj['slug'],
-							slug: alias,
-						}),
-					);
-				});
-				contracts.push(new Contract(obj));
-				return accumulator.concat(contracts);
-			},
-			[] as Contract[],
-		);
+		return rawContracts.reduce<Contract[]>((accumulator, variant) => {
+			// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+			const aliases = variant['aliases'] || [];
+			const obj = omit(variant, ['aliases']) as ContractObject;
+			const contracts = map(aliases, (alias) => {
+				return new Contract(
+					Object.assign({}, obj, {
+						canonicalSlug: obj['slug'],
+						slug: alias,
+					}),
+				);
+			});
+			contracts.push(new Contract(obj));
+			return accumulator.concat(contracts);
+		}, []);
 	}
 }

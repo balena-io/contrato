@@ -7,12 +7,6 @@
 import initial from 'lodash/initial';
 import isEqual from 'lodash/isEqual';
 import isInteger from 'lodash/isInteger';
-import isNumber from 'lodash/isNumber';
-import isString from 'lodash/isString';
-import join from 'lodash/join';
-import size from 'lodash/size';
-import some from 'lodash/some';
-import trim from 'lodash/trim';
 
 /**
  * @module cardinality
@@ -59,12 +53,12 @@ const ORDERED_LIST_LENGTH = 2;
 export const parse = (
 	input: Array<string | number> | string | number,
 ): { from: number; to: number; finite: boolean } => {
-	if (isNumber(input)) {
+	if (typeof input === 'number') {
 		return parse([input, input]);
 	}
 
-	if (isString(input)) {
-		const normalizedInput = trim(input);
+	if (typeof input === 'string') {
+		const normalizedInput = input.trim();
 
 		if (normalizedInput === '*') {
 			return parse([0, Infinity]);
@@ -80,28 +74,26 @@ export const parse = (
 			return parse([num, num]);
 		}
 
-		return parse([parseInt(join(initial(normalizedInput), ''), 10), Infinity]);
+		return parse([parseInt(initial(normalizedInput).join(''), 10), Infinity]);
 	}
 
 	const [from, to] = input;
 
 	// Alias an asterisk to Infinity
-	if (typeof to === 'string' && trim(to) === '*') {
+	if (typeof to === 'string' && to.trim() === '*') {
 		return parse([from, Infinity]);
 	}
 
 	if (
 		typeof from === 'string' ||
 		typeof to === 'string' ||
-		some([
-			isEqual(input, [0, 0]),
-			from < 0,
-			to < 0,
-			size(input) !== ORDERED_LIST_LENGTH,
-			from > to,
-			!isInteger(from),
-			!isInteger(to) && to !== Infinity,
-		])
+		isEqual(input, [0, 0]) ||
+		from < 0 ||
+		to < 0 ||
+		input.length !== ORDERED_LIST_LENGTH ||
+		from > to ||
+		!isInteger(from) ||
+		(!isInteger(to) && to !== Infinity)
 	) {
 		throw new Error(`Invalid cardinality: ${input}`);
 	}

@@ -14,12 +14,8 @@
  * @module variants
  */
 
-import concat from 'lodash/concat';
-import isArray from 'lodash/isArray';
-import map from 'lodash/map';
 import mergeWith from 'lodash/mergeWith';
 import omit from 'lodash/omit';
-import reduce from 'lodash/reduce';
 
 import type { ContractObject } from './types';
 
@@ -69,17 +65,15 @@ export const build = (contract: ContractObject): ContractObject[] => {
 
 	return variants.length === 0
 		? [base]
-		: reduce(
-				variants,
+		: variants.reduce<ContractObject[]>(
 				(accumulator, variation) =>
-					concat(
-						accumulator,
-						map(build(variation), (template) =>
+					accumulator.concat(
+						build(variation).map((template) =>
 							mergeWith({}, base, template, (object, source) =>
-								isArray(object) ? concat(object, source) : undefined,
+								Array.isArray(object) ? object.concat(source) : undefined,
 							),
 						),
 					),
-				[] as ContractObject[],
+				[],
 			);
 };

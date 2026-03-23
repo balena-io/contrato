@@ -47,11 +47,15 @@ export default class Blueprint extends Contract {
 
 		this.metadata.layout = reduce(
 			this.raw.layout,
-			(accumulator: any, value, type) => {
+			(accumulator, value, type) => {
 				const selector = {
-					cardinality: parse(value.cardinality || value) as any,
+					// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+					cardinality: parse(value.cardinality || value) as ReturnType<
+						typeof parse
+					> & { type: string },
 					// Array has its own `filter` function, which we need to ignore
 					filter: Array.isArray(value) ? undefined : value.filter,
+					// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 					type: value.type || type,
 					version: value.version,
 				};
@@ -71,11 +75,11 @@ export default class Blueprint extends Contract {
 			{
 				types: new Set(),
 				finite: {
-					selectors: {},
+					selectors: {} as { [type: string]: any[] },
 					types: new Set(),
 				},
 				infinite: {
-					selectors: {},
+					selectors: {} as { [type: string]: any[] },
 					types: new Set(),
 				},
 			},

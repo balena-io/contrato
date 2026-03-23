@@ -64,6 +64,7 @@ export default class ObjectSet {
 	 * set.add({ foo: 'baz' }, { id: 'myuniqueid' })
 	 */
 	add(object: object, options: object = {}) {
+		// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 		const id = (options as any).id || hashObject(object);
 		if (this.hasId(id)) {
 			return;

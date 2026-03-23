@@ -131,6 +131,7 @@ export default class Contract {
 		 */
 		const registerMatcher = (data: any): any => {
 			const matcher = Contract.createMatcher(data);
+			// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 			if (!this.metadata.requirements.matchers[data.type]) {
 				this.metadata.requirements.matchers[data.type] = new ObjectSet();
 			}
@@ -140,6 +141,7 @@ export default class Contract {
 			this.metadata.requirements.types.add(data.type);
 			return matcher;
 		};
+		// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 		for (const conjunct of this.raw.requires || []) {
 			if (conjunct.type) {
 				const matcher = registerMatcher(conjunct);
@@ -306,6 +308,7 @@ export default class Contract {
 	 * console.log(contract.getCanonicalSlug())
 	 */
 	getCanonicalSlug(): string {
+		// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 		return this.raw.canonicalSlug || this.getSlug();
 	}
 	/**
@@ -395,6 +398,7 @@ export default class Contract {
 			this.metadata.children.byTypeSlug[type] = {};
 		}
 		for (const slug of contract.getAllSlugs()) {
+			// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 			if (!this.metadata.children.byTypeSlug[type][slug]) {
 				this.metadata.children.byTypeSlug[type][slug] = new Set();
 			}
@@ -606,6 +610,7 @@ export default class Contract {
 	 * })
 	 */
 	getChildrenByType(type: string): Contract[] {
+		// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 		if (!this.metadata.children.typeMatchers[type]) {
 			this.metadata.children.typeMatchers[type] = Contract.createMatcher({
 				type,
@@ -717,7 +722,8 @@ export default class Contract {
 			const match = matches(omit(matcher.raw.data, ['slug', 'version']));
 			const versionMatch = matcher.raw.data.version;
 			const hashes = slug
-				? contract.metadata.children.byTypeSlug[type][slug] || new Set()
+				? // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+					contract.metadata.children.byTypeSlug[type][slug] || new Set()
 				: contract.metadata.children.byType[type];
 			// Means that we are matching just the type
 			if (Object.keys(matcher.raw.data).length === 1) {
@@ -854,6 +860,7 @@ export default class Contract {
 		[index: string]: any;
 	}): Contract[][] {
 		let contracts = this.getChildrenByType(options.type);
+		// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 		const cardinality = options['cardinality'] || options;
 		if (options['filter']) {
 			const filterValidator = partial(isValid, options['filter']);
@@ -1460,6 +1467,7 @@ export default class Contract {
 		return reduce(
 			rawContracts,
 			(accumulator, variant) => {
+				// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 				const aliases = variant['aliases'] || [];
 				const obj = omit(variant, ['aliases']) as ContractObject;
 				const contracts = map(aliases, (alias) => {

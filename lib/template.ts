@@ -128,6 +128,7 @@ export const compileContract = (
 							// and checking in this way avoids creating an unnecessary object
 							return interpolation;
 						}
+						// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 						return get(root, pathArr) || interpolation;
 					},
 				);

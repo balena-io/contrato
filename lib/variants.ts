@@ -63,6 +63,7 @@ const VARIANTS_PROPERTY = 'variants';
  * })
  */
 export const build = (contract: ContractObject): ContractObject[] => {
+	// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 	const variants: ContractObject[] = contract[VARIANTS_PROPERTY] || [];
 	const base = omit(contract, [VARIANTS_PROPERTY]) as ContractObject;
 

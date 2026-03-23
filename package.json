@@ -2,7 +2,7 @@
   "name": "@balena/contrato",
   "version": "0.13.0",
   "description": "The official contract implementation",
-  "homepage": "https://github.com/product-os/contrato",
+  "homepage": "https://github.com/balena-io/contrato",
   "main": "build/index.js",
   "types": "build/index.d.ts",
   "keywords": [
@@ -13,10 +13,10 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/product-os/contrato.git"
+    "url": "git+https://github.com/balena-io/contrato.git"
   },
   "bugs": {
-    "url": "https://github.com/product-os/contrato/issues"
+    "url": "https://github.com/balena-io/contrato/issues"
   },
   "files": [
     "build/"
@@ -33,38 +33,38 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "ajv": "^8.17.1",
+    "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
-    "debug": "^3.2.6",
+    "debug": "^3.2.7",
     "handlebars": "^4.7.8",
     "js-combinatorics": "^2.1.2",
     "json-schema": "^0.4.0",
-    "lodash": "^4.17.19",
+    "lodash": "^4.17.23",
     "object-hash": "^3.0.0",
-    "p-map": "^7.0.3",
+    "p-map": "^7.0.4",
     "promised-handlebars": "^2.0.1",
-    "semver": "^7.6.3"
+    "semver": "^7.7.4"
   },
   "devDependencies": {
-    "@balena/lint": "^9.1.3",
-    "@types/chai": "^4.2.11",
-    "@types/chai-as-promised": "^7.1.2",
-    "@types/debug": "^4.1.5",
+    "@balena/lint": "^9.3.13",
+    "@types/chai": "^4.3.20",
+    "@types/chai-as-promised": "^7.1.8",
+    "@types/debug": "^4.1.13",
     "@types/json-schema": "^7.0.15",
-    "@types/lodash": "^4.14.168",
-    "@types/mocha": "^10.0.6",
-    "@types/node": "^20.12.7",
-    "@types/object-hash": "^2.1.0",
-    "@types/semver": "^7.3.5",
-    "chai": "^4.2.0",
-    "chai-as-promised": "^7.1.1",
-    "husky": "^4.2.5",
-    "lint-staged": "^10.1.7",
-    "mocha": "^10.4.0",
+    "@types/lodash": "^4.17.24",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.19.37",
+    "@types/object-hash": "^2.2.1",
+    "@types/semver": "^7.7.1",
+    "chai": "^4.5.0",
+    "chai-as-promised": "^7.1.2",
+    "husky": "^4.3.8",
+    "lint-staged": "^10.5.4",
+    "mocha": "^10.8.2",
     "rimraf": "^3.0.2",
-    "ts-node": "^8.10.1",
-    "typedoc": "^0.27.5",
-    "typescript": "^5.7.2"
+    "ts-node": "^8.10.2",
+    "typedoc": "^0.28.18",
+    "typescript": "^5.9.3"
   },
   "engines": {
     "node": ">=20.0.0",

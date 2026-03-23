@@ -124,7 +124,7 @@ export const findPartial = (
 								// For some reason typescript does not infer correctly the return
 								// type of first
 								map<string[], string | undefined>(collection, first),
-								map(collection, last),
+								map(collection, (x) => last(x)),
 							],
 							(list) => take(list, index + 1),
 						).concat(accumulator),

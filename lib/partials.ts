@@ -9,16 +9,11 @@ import * as fs from 'fs';
 import path from 'path';
 import handlebars from 'handlebars';
 import promisedHandlebars from 'promised-handlebars';
-import invokeMap from 'lodash/invokeMap';
 import map from 'lodash/map';
 import merge from 'lodash/merge';
 import range from 'lodash/range';
 import sortBy from 'lodash/sortBy';
 import split from 'lodash/split';
-import take from 'lodash/take';
-import uniq from 'lodash/uniq';
-
-import flow from 'lodash/flow';
 
 import Contract from './contract';
 import type { ContractObject } from './types';
@@ -67,56 +62,52 @@ export const findPartial = (
 	context: Contract,
 	options: { baseDirectory: string; structure: string[] },
 ): string[] => {
-	return flow(
-		(structure: string[]) =>
-			map(structure, (type) => {
-				const children = context.getChildrenByType(type);
-				const contracts = sortBy(
-					children.map((contract) => {
-						// We need to replace the alias slug with canonical slug when finding partial
-						// since the aliases will use canonical slug to avoid duplication.
-						const rawContract = contract.toJSON();
-						rawContract.slug = contract.getCanonicalSlug();
-						return new Contract(rawContract);
-					}),
-					(contract) => contract.getSlug(),
-				);
-
-				return [
-					invokeMap(contracts, 'getReferenceString').join(REFERENCE_DELIMITER),
-					invokeMap(contracts, 'getSlug').join(REFERENCE_DELIMITER),
-				];
+	const structure = options.structure;
+	const structureReferences = map(structure, (type) => {
+		const children = context.getChildrenByType(type);
+		const contracts = sortBy(
+			children.map((contract) => {
+				// We need to replace the alias slug with canonical slug when finding partial
+				// since the aliases will use canonical slug to avoid duplication.
+				const rawContract = contract.toJSON();
+				rawContract.slug = contract.getCanonicalSlug();
+				return new Contract(rawContract);
 			}),
-		(structureReferences: string[][]) => {
-			const products = [
-				...cartesianProductWith<string, string[]>(
-					structureReferences,
-					(accumulator: string[], element: string) => {
-						accumulator.push(element);
-						return accumulator;
-					},
-					[[]],
-				),
-			];
+			(contract) => contract.getSlug(),
+		);
 
-			const slices = range(options.structure.length, 1, -1).reduce<string[]>(
-				(accumulator, slice) =>
-					accumulator.concat(invokeMap(products, 'slice', 0, slice)),
-				[],
-			);
+		return [
+			contracts.map((c) => c.getReferenceString()).join(REFERENCE_DELIMITER),
+			contracts.map((c) => c.getSlug()).join(REFERENCE_DELIMITER),
+		];
+	});
+	const products = [
+		...cartesianProductWith<string, string[]>(
+			structureReferences,
+			(accumulator: string[], element: string) => {
+				accumulator.push(element);
+				return accumulator;
+			},
+			[[]],
+		),
+	];
 
-			const fallbackPaths = structureReferences.reduce<string[][]>(
-				(accumulator, _, index, collection) =>
-					[
-						map(collection, (x) => x[0]),
-						map(collection, (x) => x[x.length - 1]),
-					]
-						.map((list) => take(list, index + 1))
-						.concat(accumulator),
-				[],
-			);
+	const slices = range(options.structure.length, 1, -1).reduce<string[][]>(
+		(accumulator, slice) =>
+			accumulator.concat(products.map((product) => product.slice(0, slice))),
+		[],
+	);
 
-			return (products as Array<Array<string | undefined>>)
+	const fallbackPaths = structureReferences.reduce<string[][]>(
+		(accumulator, _, index, collection) =>
+			[map(collection, (x) => x[0]), map(collection, (x) => x[x.length - 1])]
+				.map((list) => list.slice(0, index + 1))
+				.concat(accumulator),
+		[],
+	);
+	return Array.from(
+		new Set(
+			(products as Array<Array<string | undefined>>)
 				.concat(slices)
 				.concat(fallbackPaths)
 				.map((references) => [references.join(REFERENCE_DELIMITER), name])
@@ -124,10 +115,9 @@ export const findPartial = (
 				.map((paths) => {
 					const absolutePath = [options.baseDirectory].concat(paths);
 					return `${path.join(...absolutePath)}.tpl`;
-				});
-		},
-		uniq,
-	)(options.structure);
+				}),
+		),
+	);
 };
 
 hb.registerHelper('import', async (options) => {

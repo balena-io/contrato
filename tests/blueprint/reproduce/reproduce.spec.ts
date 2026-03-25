@@ -44,7 +44,7 @@ describe('Blueprint reproduce', () => {
 					testCase.blueprint.skeleton,
 				);
 				const result = [...blueprint.reproduce(container)];
-				expect(testCase.contexts).to.deep.equal(_.invokeMap(result, 'toJSON'));
+				expect(testCase.contexts).to.deep.equal(result.map((r) => r.toJSON()));
 			});
 		},
 	);

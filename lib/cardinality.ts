@@ -4,9 +4,7 @@
  * Proprietary and confidential.
  */
 
-import initial from 'lodash/initial';
 import isEqual from 'lodash/isEqual';
-import isInteger from 'lodash/isInteger';
 
 /**
  * @module cardinality
@@ -74,7 +72,7 @@ export const parse = (
 			return parse([num, num]);
 		}
 
-		return parse([parseInt(initial(normalizedInput).join(''), 10), Infinity]);
+		return parse([parseInt(normalizedInput.slice(0, -1), 10), Infinity]);
 	}
 
 	const [from, to] = input;
@@ -92,8 +90,8 @@ export const parse = (
 		to < 0 ||
 		input.length !== ORDERED_LIST_LENGTH ||
 		from > to ||
-		!isInteger(from) ||
-		(!isInteger(to) && to !== Infinity)
+		!Number.isInteger(from) ||
+		(!Number.isInteger(to) && to !== Infinity)
 	) {
 		throw new Error(`Invalid cardinality: ${input}`);
 	}

@@ -4,7 +4,6 @@
  * Proprietary and confidential.
  */
 
-import concat from 'lodash/concat';
 import forEach from 'lodash/forEach';
 import reduce from 'lodash/reduce';
 
@@ -63,10 +62,10 @@ export default class Blueprint extends Contract {
 				selector.cardinality.type = selector.type;
 
 				const group = selector.cardinality.finite ? 'finite' : 'infinite';
-				accumulator[group].selectors[selector.type] = concat(
-					accumulator[group].selectors[selector.type] || [],
-					[selector],
-				);
+				accumulator[group].selectors[selector.type] = [
+					...(accumulator[group].selectors[selector.type] || []),
+					selector,
+				];
 				accumulator[group].types.add(selector.type);
 				accumulator.types.add(selector.type);
 

@@ -1,4 +1,16 @@
 - commits:
+    - subject: Further reduce lodash usage
+      hash: f05d2b5bb9d3956cf90a1d42a0c68b76e811c587
+      body: ""
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Pagan Gazzard
+      nested: []
+  version: 0.13.3
+  title: ""
+  date: 2026-03-25T14:15:39.260Z
+- commits:
     - subject: Reduce lodash usage
       hash: b425d42c8cb80f6c7453365660c674be69265d00
       body: ""

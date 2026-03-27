@@ -1362,7 +1362,10 @@ export default class Contract {
 				areSetsDisjoint(options.types, contract.metadata.requirements.types)
 			) {
 				requirements = requirements.concat(
-					map(contract.metadata.requirements.compiled.getAll(), 'data'),
+					map(
+						contract.metadata.requirements.compiled.getAll(),
+						(c) => c.raw.data,
+					),
 				);
 				continue;
 			}

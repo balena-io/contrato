@@ -28,7 +28,6 @@ import { build as buildVariants } from './variants';
 import { build as buildChildrentree } from './children-tree';
 import { getAll } from './children-tree';
 import { areSetsDisjoint } from './utils';
-import { forEach } from 'lodash';
 
 interface ContractChildrenMetadata {
 	searchCache: MatcherCache;
@@ -586,12 +585,12 @@ export default class Contract {
 	 */
 	getChildren(options: { types?: Set<string> } = {}): Contract[] {
 		const contracts: Contract[] = [];
-		forEach(this.metadata.children.map, (contract) => {
+		for (const contract of Object.values(this.metadata.children.map)) {
 			if (!options.types || options.types.has(contract.raw.type)) {
 				contracts.push(contract);
 			}
 			contracts.push(...contract.getChildren(options));
-		});
+		}
 		return contracts;
 	}
 	/**

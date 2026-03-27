@@ -4,7 +4,6 @@
  * Proprietary and confidential.
  */
 
-import forEach from 'lodash/forEach';
 import reduce from 'lodash/reduce';
 
 import Contract from './contract';
@@ -122,11 +121,11 @@ export default class Blueprint extends Contract {
 			layout.finite.selectors,
 			(accumulator, value) => {
 				let internalAccumulator = accumulator;
-				forEach(value, (option) => {
+				for (const option of value) {
 					internalAccumulator = internalAccumulator.concat([
 						contract.getChildrenCombinations(option),
 					]);
-				});
+				}
 				return internalAccumulator;
 			},
 			[] as Contract[][][],

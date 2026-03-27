@@ -9,9 +9,9 @@ import { hashObject } from './hash';
 /**
  * @ignore
  */
-export default class ObjectSet {
+export default class ObjectSet<T extends object> {
 	cache: { size: number };
-	data: Record<string, object>;
+	data: Record<string, T>;
 	/**
 	 * @summary A data structure to represent a set of objects
 	 * @name ObjectSet
@@ -27,7 +27,7 @@ export default class ObjectSet {
 	 *   { ... }
 	 * ])
 	 */
-	constructor(objects: Array<object | object[]> = []) {
+	constructor(objects: Array<T | T[]> = []) {
 		this.cache = {
 			size: 0,
 		};
@@ -58,7 +58,7 @@ export default class ObjectSet {
 	 * set.add({ foo: 'bar' })
 	 * set.add({ foo: 'baz' }, { id: 'myuniqueid' })
 	 */
-	add(object: object, options: object = {}) {
+	add(object: T, options: object = {}) {
 		// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 		const id = (options as any).id || hashObject(object);
 		if (this.hasId(id)) {
@@ -101,7 +101,7 @@ export default class ObjectSet {
 	 *   console.log('This object is there!')
 	 * }
 	 */
-	hasObject(object: object): boolean {
+	hasObject(object: T): boolean {
 		return Boolean(this.data[hashObject(object)]);
 	}
 	/**
@@ -141,7 +141,7 @@ export default class ObjectSet {
 	 *   console.log(object)
 	 * })
 	 */
-	getAll(): object[] {
+	getAll(): T[] {
 		return Object.values(this.data);
 	}
 	/**
@@ -169,7 +169,7 @@ export default class ObjectSet {
 	 * >   { bar: 'baz' }
 	 * > ]
 	 */
-	intersection(set: ObjectSet): object {
+	intersection(set: ObjectSet<T>): this {
 		for (const id of Object.keys(this.data)) {
 			if (!set.hasId(id)) {
 				Reflect.deleteProperty(this.data, id);

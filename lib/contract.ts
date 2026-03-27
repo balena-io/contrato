@@ -7,7 +7,6 @@
 import filter from 'lodash/filter';
 import intersectionWith from 'lodash/intersectionWith';
 import isEqual from 'lodash/isEqual';
-import map from 'lodash/map';
 import matches from 'lodash/matches';
 import omit from 'lodash/omit';
 import range from 'lodash/range';
@@ -1362,10 +1361,9 @@ export default class Contract {
 				areSetsDisjoint(options.types, contract.metadata.requirements.types)
 			) {
 				requirements = requirements.concat(
-					map(
-						contract.metadata.requirements.compiled.getAll(),
-						(c) => c.raw.data,
-					),
+					contract.metadata.requirements.compiled
+						.getAll()
+						.map((c) => c.raw.data),
 				);
 				continue;
 			}
@@ -1463,10 +1461,11 @@ export default class Contract {
 	static build(source: ContractObject): Contract[] {
 		const rawContracts = buildVariants(source);
 		return rawContracts.reduce<Contract[]>((accumulator, variant) => {
-			// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-			const aliases = variant['aliases'] || [];
+			const aliases = Array.isArray(variant['aliases'])
+				? variant['aliases']
+				: [];
 			const obj = omit(variant, ['aliases']) as ContractObject;
-			const contracts = map(aliases, (alias) => {
+			const contracts = aliases.map((alias) => {
 				return new Contract(
 					Object.assign({}, obj, {
 						canonicalSlug: obj['slug'],

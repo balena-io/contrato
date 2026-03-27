@@ -9,7 +9,6 @@ import * as fs from 'fs';
 import path from 'path';
 import handlebars from 'handlebars';
 import promisedHandlebars from 'promised-handlebars';
-import map from 'lodash/map';
 import merge from 'lodash/merge';
 import range from 'lodash/range';
 import sortBy from 'lodash/sortBy';
@@ -63,7 +62,7 @@ export const findPartial = (
 	options: { baseDirectory: string; structure: string[] },
 ): string[] => {
 	const structure = options.structure;
-	const structureReferences = map(structure, (type) => {
+	const structureReferences = structure.map((type) => {
 		const children = context.getChildrenByType(type);
 		const contracts = sortBy(
 			children.map((contract) => {
@@ -100,7 +99,7 @@ export const findPartial = (
 
 	const fallbackPaths = structureReferences.reduce<string[][]>(
 		(accumulator, _, index, collection) =>
-			[map(collection, (x) => x[0]), map(collection, (x) => x[x.length - 1])]
+			[collection.map((x) => x[0]), collection.map((x) => x[x.length - 1])]
 				.map((list) => list.slice(0, index + 1))
 				.concat(accumulator),
 		[],

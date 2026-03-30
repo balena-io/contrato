@@ -5,6 +5,13 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## v0.0.6 - 2018-08-17
 
+## 0.13.4 - 2026-03-30
+
+* Switch lodash map to native equivalents [Pagan Gazzard]
+* Fix `getAllNotSatisfiedChildRequirements` using wrong property for fetching requirements [Pagan Gazzard]
+* Switch lodash forEach to native equivalents [Pagan Gazzard]
+* Improve contract typings [Pagan Gazzard]
+
 ## 0.13.3 - 2026-03-25
 
 * Further reduce lodash usage [Pagan Gazzard]

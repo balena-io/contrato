@@ -1,4 +1,41 @@
 - commits:
+    - subject: Switch lodash map to native equivalents
+      hash: 8638d79d7dcd26ad4e5038842a2007c8e2f5470b
+      body: ""
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Pagan Gazzard
+      nested: []
+    - subject: Fix `getAllNotSatisfiedChildRequirements` using wrong property for
+        fetching requirements
+      hash: 54f32705dff43a83500847fe3089b9d650e7b74f
+      body: ""
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Pagan Gazzard
+      nested: []
+    - subject: Switch lodash forEach to native equivalents
+      hash: 3bd42a2ed24e3e33e384f9d575efdf2bc4262184
+      body: ""
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Pagan Gazzard
+      nested: []
+    - subject: Improve contract typings
+      hash: d179cd21e258116840bd465ef4f8fb768bf37436
+      body: ""
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Pagan Gazzard
+      nested: []
+  version: 0.13.4
+  title: ""
+  date: 2026-03-30T12:58:16.009Z
+- commits:
     - subject: Further reduce lodash usage
       hash: f05d2b5bb9d3956cf90a1d42a0c68b76e811c587
       body: ""

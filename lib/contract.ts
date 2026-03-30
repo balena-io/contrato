@@ -7,7 +7,6 @@
 import filter from 'lodash/filter';
 import intersectionWith from 'lodash/intersectionWith';
 import isEqual from 'lodash/isEqual';
-import map from 'lodash/map';
 import matches from 'lodash/matches';
 import omit from 'lodash/omit';
 import range from 'lodash/range';
@@ -28,10 +27,31 @@ import { build as buildVariants } from './variants';
 import { build as buildChildrentree } from './children-tree';
 import { getAll } from './children-tree';
 import { areSetsDisjoint } from './utils';
-import { forEach } from 'lodash';
+
+interface ContractChildrenMetadata {
+	searchCache: MatcherCache;
+	types: Set<string>;
+	map: Record<string, Contract>;
+	byType: Record<string, Set<string>>;
+	byTypeSlug: Record<string, Record<string, Set<string>>>;
+	typeMatchers: Record<string, Contract>;
+}
+
+interface ContractRequirementsMetadata {
+	matchers: Record<string, ObjectSet<Contract>>;
+	types: Set<string>;
+	compiled: ObjectSet<Contract>;
+}
+
+interface ContractMetadata {
+	hash?: string;
+	children: ContractChildrenMetadata;
+	requirements: ContractRequirementsMetadata;
+	[key: string]: any;
+}
 
 export default class Contract {
-	metadata: any;
+	metadata: ContractMetadata;
 	raw: ContractObject;
 	/**
 	 * @summary A contract data structure
@@ -51,7 +71,7 @@ export default class Contract {
 	 *   slug: 'armv7hf'
 	 * })
 	 */
-	constructor(object: ContractObject, options: object = {}) {
+	constructor(object: ContractObject, options: { hash?: boolean } = {}) {
 		this.raw = object;
 		this.metadata = {
 			children: {
@@ -62,6 +82,11 @@ export default class Contract {
 				byTypeSlug: {},
 				typeMatchers: {},
 			},
+			requirements: {
+				matchers: {},
+				types: new Set(),
+				compiled: new ObjectSet(),
+			},
 		};
 		for (const source of getAll(this.raw.children)) {
 			this.addChild(new Contract(source));
@@ -69,7 +94,7 @@ export default class Contract {
 		this.interpolate({
 			rehash: false,
 		});
-		if ((options as any).hash ?? true) {
+		if (options.hash ?? true) {
 			this.hash();
 		}
 	}
@@ -122,10 +147,7 @@ export default class Contract {
 		 */
 		const registerMatcher = (data: any): any => {
 			const matcher = Contract.createMatcher(data);
-			// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-			if (!this.metadata.requirements.matchers[data.type]) {
-				this.metadata.requirements.matchers[data.type] = new ObjectSet();
-			}
+			this.metadata.requirements.matchers[data.type] ??= new ObjectSet();
 			this.metadata.requirements.matchers[data.type].add(matcher, {
 				id: matcher.metadata.hash,
 			});
@@ -173,7 +195,7 @@ export default class Contract {
 	 * const contract = new Contract({ ... })
 	 * contract.interpolate()
 	 */
-	interpolate(options: object = { rehash: Boolean }): this {
+	interpolate(options: { rehash?: boolean } = {}): this {
 		// TODO: Find a way to keep track of whether the contract
 		// has already been fully templated, and if so, avoid
 		// running this function.
@@ -184,7 +206,7 @@ export default class Contract {
 			blacklist: new Set(['children']),
 		});
 		this.rebuild();
-		if ((options as any).rehash ?? true) {
+		if (options.rehash ?? true) {
 			this.hash();
 		}
 		return this;
@@ -375,9 +397,13 @@ export default class Contract {
 	 * const contract = new Contract({ ... })
 	 * contract.addChild(new Contract({ ... }))
 	 */
-	addChild(contract: Contract, options: object = {}): this {
+	addChild(
+		contract: Contract,
+		options: { rehash?: boolean; rebuild?: boolean } = {},
+	): this {
 		const type = contract.getType();
-		if (this.metadata.children.map[contract.metadata.hash]) {
+		const childHash = contract.metadata.hash!;
+		if (this.metadata.children.map[childHash]) {
 			return this;
 		}
 		if (!this.metadata.children.types.has(type)) {
@@ -386,19 +412,16 @@ export default class Contract {
 			this.metadata.children.byTypeSlug[type] = {};
 		}
 		for (const slug of contract.getAllSlugs()) {
-			// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-			if (!this.metadata.children.byTypeSlug[type][slug]) {
-				this.metadata.children.byTypeSlug[type][slug] = new Set();
-			}
-			this.metadata.children.byTypeSlug[type][slug].add(contract.metadata.hash);
+			this.metadata.children.byTypeSlug[type][slug] ??= new Set();
+			this.metadata.children.byTypeSlug[type][slug].add(childHash);
 		}
-		this.metadata.children.map[contract.metadata.hash] = contract;
-		this.metadata.children.byType[type].add(contract.metadata.hash);
+		this.metadata.children.map[childHash] = contract;
+		this.metadata.children.byType[type].add(childHash);
 		this.metadata.children.searchCache.resetType(type);
-		if ((options as any).rebuild ?? true) {
+		if (options.rebuild ?? true) {
 			this.rebuild();
 		}
-		if ((options as any).rehash ?? true) {
+		if (options.rehash ?? true) {
 			this.hash();
 		}
 		return this;
@@ -421,9 +444,9 @@ export default class Contract {
 	 * contract.addChild(child)
 	 * contract.removeChild(child)
 	 */
-	removeChild(contract: Contract, options: object = {}): this {
+	removeChild(contract: Contract, options: { rehash?: boolean } = {}): this {
 		const type = contract.getType();
-		const childHash = contract.metadata.hash;
+		const childHash = contract.metadata.hash!;
 		if (!this.raw.children || !this.metadata.children.map[childHash]) {
 			return this;
 		}
@@ -444,7 +467,7 @@ export default class Contract {
 		}
 		this.metadata.children.searchCache.resetType(contract.getType());
 		this.rebuild();
-		if ((options as any).rehash ?? true) {
+		if (options.rehash ?? true) {
 			this.hash();
 		}
 		return this;
@@ -471,7 +494,10 @@ export default class Contract {
 	 *   new Contract({ ... })
 	 * ])
 	 */
-	addChildren(contracts: Contract[] = [], options: object = {}): this {
+	addChildren(
+		contracts: Contract[] = [],
+		options: { rehash?: boolean } = {},
+	): this {
 		if (!contracts) {
 			return this;
 		}
@@ -487,7 +513,7 @@ export default class Contract {
 			});
 		}
 		this.rebuild();
-		if ((options as any).rehash ?? true) {
+		if (options.rehash ?? true) {
 			this.hash();
 		}
 		return this;
@@ -556,17 +582,14 @@ export default class Contract {
 	 *   console.log(child)
 	 * }
 	 */
-	getChildren(options: object = {}): Contract[] {
+	getChildren(options: { types?: Set<string> } = {}): Contract[] {
 		const contracts: Contract[] = [];
-		forEach(this.metadata.children.map, (contract) => {
-			if (
-				!(options as any).types ||
-				(options as any).types.has(contract.raw.type)
-			) {
+		for (const contract of Object.values(this.metadata.children.map)) {
+			if (!options.types || options.types.has(contract.raw.type)) {
 				contracts.push(contract);
 			}
 			contracts.push(...contract.getChildren(options));
-		});
+		}
 		return contracts;
 	}
 	/**
@@ -588,12 +611,9 @@ export default class Contract {
 	 * })
 	 */
 	getChildrenByType(type: string): Contract[] {
-		// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-		if (!this.metadata.children.typeMatchers[type]) {
-			this.metadata.children.typeMatchers[type] = Contract.createMatcher({
-				type,
-			});
-		}
+		this.metadata.children.typeMatchers[type] ??= Contract.createMatcher({
+			type,
+		});
 		return this.findChildren(this.metadata.children.typeMatchers[type]);
 	}
 	/**
@@ -700,15 +720,14 @@ export default class Contract {
 			const match = matches(omit(matcher.raw.data, ['slug', 'version']));
 			const versionMatch = matcher.raw.data.version;
 			const hashes = slug
-				? // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-					contract.metadata.children.byTypeSlug[type][slug] || new Set()
+				? (contract.metadata.children.byTypeSlug[type][slug] ?? new Set())
 				: contract.metadata.children.byType[type];
 			// Means that we are matching just the type
 			if (Object.keys(matcher.raw.data).length === 1) {
 				for (const childHash of hashes) {
 					const child = contract.getChildByHash(childHash);
 					if (!child) {
-						throw new Error('Error retreiving child');
+						throw new Error('Error retrieving child');
 					}
 					results.push(child);
 				}
@@ -1010,7 +1029,7 @@ export default class Contract {
 		}
 		return reduce(
 			result,
-			(accumulator, value: Contract[][]) => {
+			(accumulator, value) => {
 				return accumulator.concat(intersectionWith(...value, Contract.isEqual));
 			},
 			[] as Contract[],
@@ -1326,7 +1345,9 @@ export default class Contract {
 	 *
 	 * @param {@summary} options
 	 */
-	getAllNotSatisfiedChildRequirements(options: object = {}): any[] {
+	getAllNotSatisfiedChildRequirements(
+		options: { types?: Set<string> } = {},
+	): any[] {
 		let requirements: any[] = [];
 		for (const contract of this.getChildren()) {
 			// The contract object keeps track of which contract
@@ -1336,21 +1357,20 @@ export default class Contract {
 			// continue and avoid traversing through all the
 			// requirements in vain.
 			if (
-				(options as any).types &&
-				areSetsDisjoint(
-					(options as any).types,
-					contract.metadata.requirements.types,
-				)
+				options.types &&
+				areSetsDisjoint(options.types, contract.metadata.requirements.types)
 			) {
 				requirements = requirements.concat(
-					map(contract.metadata.requirements.compiled.getAll(), 'data'),
+					contract.metadata.requirements.compiled
+						.getAll()
+						.map((c) => c.raw.data),
 				);
 				continue;
 			}
 			const contractRequirements = this.getNotSatisfiedChildRequirements(
 				contract,
 				{
-					types: (options as any).types,
+					types: options.types,
 				},
 			);
 			requirements = requirements.concat(contractRequirements);
@@ -1441,10 +1461,11 @@ export default class Contract {
 	static build(source: ContractObject): Contract[] {
 		const rawContracts = buildVariants(source);
 		return rawContracts.reduce<Contract[]>((accumulator, variant) => {
-			// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-			const aliases = variant['aliases'] || [];
+			const aliases = Array.isArray(variant['aliases'])
+				? variant['aliases']
+				: [];
 			const obj = omit(variant, ['aliases']) as ContractObject;
-			const contracts = map(aliases, (alias) => {
+			const contracts = aliases.map((alias) => {
 				return new Contract(
 					Object.assign({}, obj, {
 						canonicalSlug: obj['slug'],

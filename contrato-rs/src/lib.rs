@@ -5,8 +5,10 @@
 //! contract system. Contracts represent versioned "things" (devices, OSes,
 //! stacks, etc.) with typed relationships, requirements, and capabilities.
 
+pub mod hash;
 pub mod types;
 
+pub use hash::hash_object;
 pub use types::{
     Asset, ContractCapability, ContractMatcher, ContractRequirement, ContractType, PartialContract,
     RawContract, Slug, UNIVERSE, Version, VersionReq,

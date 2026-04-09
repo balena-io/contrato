@@ -8,6 +8,7 @@
 pub mod hash;
 pub mod template;
 pub mod types;
+pub mod variants;
 
 pub use hash::hash_object;
 pub use template::compile_contract;
@@ -15,3 +16,4 @@ pub use types::{
     Asset, ContractCapability, ContractMatcher, ContractRequirement, ContractType, PartialContract,
     RawContract, Slug, UNIVERSE, Version, VersionReq,
 };
+pub use variants::build as build_variants;

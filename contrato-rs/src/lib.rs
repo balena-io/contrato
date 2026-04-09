@@ -6,9 +6,11 @@
 //! stacks, etc.) with typed relationships, requirements, and capabilities.
 
 pub mod hash;
+pub mod template;
 pub mod types;
 
 pub use hash::hash_object;
+pub use template::compile_contract;
 pub use types::{
     Asset, ContractCapability, ContractMatcher, ContractRequirement, ContractType, PartialContract,
     RawContract, Slug, UNIVERSE, Version, VersionReq,

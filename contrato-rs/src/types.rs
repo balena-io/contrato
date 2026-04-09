@@ -12,6 +12,8 @@ use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 
+use crate::children_tree::ChildrenTree;
+
 /// Type constant for universe contracts (collection of all available contracts).
 pub const UNIVERSE: &str = "meta.universe";
 
@@ -199,6 +201,7 @@ pub struct Asset {
 /// declarations (what a contract provides). Per the CUE spec, additional matching
 /// criteria should be placed in `data`, not as top-level fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ContractMatcher {
     /// The contract type to match against.
     #[serde(rename = "type")]
@@ -339,12 +342,13 @@ pub struct PartialContract {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub variants: Vec<PartialContract>,
 
-    /// Children contracts.
-    // TODO: The CUE spec defines children as `[...#Contract]` (a flat array),
-    // but the TS implementation uses a nested tree format `{type: {slug: contract}}`.
-    // Keeping as `Value` until children_tree.rs (Phase 7) handles the conversion.
+    /// Children contracts stored as a nested tree (`{type: {slug: contract}}`).
+    ///
+    /// Deserialized into a strongly typed [`ChildrenTree`] enum. Conversion
+    /// between this tree format and flat contract lists is handled by the
+    /// [`children_tree`](crate::children_tree) module.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub children: Option<Value>,
+    pub children: Option<ChildrenTree>,
 }
 
 /// A capability declaration specifying what a contract provides.
@@ -506,6 +510,27 @@ mod tests {
             }
             _ => panic!("expected Match variant"),
         }
+    }
+
+    #[test]
+    fn deserialize_contract_rejects_extra_requirement_fields() {
+        let json = json!({
+            "type": "sw.stack",
+            "slug": "nodejs",
+            "requires": [
+                {
+                    "type": "hw.device-type",
+                    "slug": "raspberry-pi",
+                    "name": "raspberry-pi",
+                }
+            ]
+        });
+
+        let err = serde_json::from_value::<RawContract>(json).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "unknown field `name`, expected one of `type`, `slug`, `version`, `data`",
+        );
     }
 
     #[test]
@@ -813,8 +838,12 @@ mod tests {
         let contract: RawContract = serde_json::from_value(json).unwrap();
         assert!(contract.body.children.is_some());
         let children = contract.body.children.as_ref().unwrap();
-        assert!(children.is_object());
-        assert!(children.get("arch").is_some());
+        match children {
+            crate::children_tree::ChildrenTree::Branch(map) => {
+                assert!(map.contains_key("arch"));
+            }
+            _ => panic!("expected Branch"),
+        }
     }
 
     #[test]
@@ -863,9 +892,19 @@ mod tests {
 
         let contract: RawContract = serde_json::from_value(json).unwrap();
         let children = contract.body.children.as_ref().unwrap();
-        let sw = children.get("arch").unwrap().get("sw").unwrap();
-        assert!(sw.get("armv7hf").is_some());
-        assert!(sw.get("armel").is_some());
+        match children {
+            crate::children_tree::ChildrenTree::Branch(root) => match root.get("arch").unwrap() {
+                crate::children_tree::ChildrenTree::Branch(arch) => match arch.get("sw").unwrap() {
+                    crate::children_tree::ChildrenTree::Branch(sw) => {
+                        assert!(sw.contains_key("armv7hf"));
+                        assert!(sw.contains_key("armel"));
+                    }
+                    _ => panic!("expected Branch at sw"),
+                },
+                _ => panic!("expected Branch at arch"),
+            },
+            _ => panic!("expected Branch at root"),
+        }
     }
 
     #[test]

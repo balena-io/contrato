@@ -11,30 +11,11 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde_json::Value;
 
+use crate::path::DottedPath;
+
 /// Regex matching `{{...}}` template expressions with non-greedy capture.
 static TEMPLATE_REGEXP: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\{\{(.+?)\}\}").expect("template regex is valid"));
-
-/// Resolves a dotted path against a JSON value.
-///
-/// Traverses nested objects following each segment of the path. Returns `None`
-/// if any segment is missing or the traversal hits a non-object value.
-///
-/// # Arguments
-/// * `root` - The JSON value to resolve the path against
-/// * `path` - Dot-separated path segments (e.g., `["data", "foo", "bar"]`)
-fn resolve_path<'a>(root: &'a Value, path: &[&str]) -> Option<&'a Value> {
-    let mut current = root;
-    for segment in path {
-        match current {
-            Value::Object(map) => {
-                current = map.get(*segment)?;
-            }
-            _ => return None,
-        }
-    }
-    Some(current)
-}
 
 /// Interpolates template expressions in a single string value.
 ///
@@ -58,9 +39,13 @@ fn interpolate_string(s: &str, root: &Value) -> String {
                 return full_match.to_string();
             }
 
-            let path: Vec<&str> = segments.collect();
+            let remaining: Vec<&str> = segments.collect();
+            if remaining.is_empty() {
+                return full_match.to_string();
+            }
 
-            match resolve_path(root, &path) {
+            let path = DottedPath::from_parts(&remaining);
+            match path.resolve(root) {
                 Some(Value::String(s)) => s.clone(),
                 Some(other) => other.to_string(),
                 None => full_match.to_string(),

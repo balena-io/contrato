@@ -272,4 +272,27 @@ describe('compileContract', () => {
 			slug: 'debian',
 		});
 	});
+
+	it('should stringify object when referenced value is an object', () => {
+		const result = compileContract({
+			type: 'distro',
+			name: '{{this.data}}',
+			slug: 'debian',
+			data: {
+				arch: 'amd64',
+			},
+		});
+
+		// JS String.replace calls .toString() on objects, producing [object Object].
+		// The Rust implementation uses JSON.stringify instead, but the key invariant
+		// is that the result remains a string, not a subtree.
+		expect(result).to.deep.equal({
+			type: 'distro',
+			name: '[object Object]',
+			slug: 'debian',
+			data: {
+				arch: 'amd64',
+			},
+		});
+	});
 });

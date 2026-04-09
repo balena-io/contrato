@@ -24,6 +24,7 @@ use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 
+use crate::path::{DottedPath, InvalidPath};
 use crate::types::RawContract;
 
 /// Error produced when [`build`] encounters conflicting tree paths.
@@ -33,9 +34,9 @@ use crate::types::RawContract;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PathConflictError {
     /// The path segment that was already occupied by a leaf node.
-    pub segment: String,
+    pub(crate) segment: String,
     /// The full dotted path that was being inserted.
-    pub path: String,
+    pub(crate) path: DottedPath,
 }
 
 impl fmt::Display for PathConflictError {
@@ -49,6 +50,45 @@ impl fmt::Display for PathConflictError {
 }
 
 impl std::error::Error for PathConflictError {}
+
+/// Error produced by [`build`] when constructing the children tree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BuildTreeError {
+    /// A dotted type path conflicted with an existing leaf node.
+    PathConflict(PathConflictError),
+    /// A type string from the children index was not a valid dotted path.
+    InvalidPath(InvalidPath),
+}
+
+impl fmt::Display for BuildTreeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BuildTreeError::PathConflict(e) => write!(f, "{e}"),
+            BuildTreeError::InvalidPath(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for BuildTreeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            BuildTreeError::PathConflict(e) => Some(e),
+            BuildTreeError::InvalidPath(e) => Some(e),
+        }
+    }
+}
+
+impl From<PathConflictError> for BuildTreeError {
+    fn from(e: PathConflictError) -> Self {
+        BuildTreeError::PathConflict(e)
+    }
+}
+
+impl From<InvalidPath> for BuildTreeError {
+    fn from(e: InvalidPath) -> Self {
+        BuildTreeError::InvalidPath(e)
+    }
+}
 
 /// A strongly typed representation of the nested children tree.
 ///
@@ -213,7 +253,7 @@ pub trait ChildrenIndex {
 ///
 /// Returns an error if a dotted type path (e.g., `sw.os`) conflicts with an
 /// already-stored leaf node at an intermediate segment.
-pub fn build(source: &impl ChildrenIndex) -> Result<ChildrenTree, PathConflictError> {
+pub fn build(source: &impl ChildrenIndex) -> Result<ChildrenTree, BuildTreeError> {
     let mut tree = BTreeMap::new();
 
     for ty in source.child_types() {
@@ -225,9 +265,10 @@ pub fn build(source: &impl ChildrenIndex) -> Result<ChildrenTree, PathConflictEr
         if type_hashes.len() == 1 {
             let hash = type_hashes.next().unwrap();
             if let Some(contract) = source.child_by_hash(hash) {
+                let path = DottedPath::try_from(ty.to_string())?;
                 set_path(
                     &mut tree,
-                    ty,
+                    &path,
                     ChildrenTree::Single(Box::new(contract.clone())),
                 )?;
             }
@@ -250,7 +291,7 @@ pub fn build(source: &impl ChildrenIndex) -> Result<ChildrenTree, PathConflictEr
                 ChildrenTree::Multiple(contracts)
             };
 
-            let path = format!("{ty}.{slug}");
+            let path = DottedPath::try_from(format!("{ty}.{slug}"))?;
             set_path(&mut tree, &path, node)?;
         }
     }
@@ -270,11 +311,11 @@ pub fn build(source: &impl ChildrenIndex) -> Result<ChildrenTree, PathConflictEr
 /// node (either `Single` or `Multiple`), since a leaf cannot contain children.
 fn set_path(
     tree: &mut BTreeMap<String, ChildrenTree>,
-    path: &str,
+    path: &DottedPath,
     node: ChildrenTree,
 ) -> Result<(), PathConflictError> {
     let mut current = tree;
-    let mut parts = path.split('.').peekable();
+    let mut parts = path.segments().peekable();
 
     while let Some(part) = parts.next() {
         if parts.peek().is_none() {
@@ -289,7 +330,7 @@ fn set_path(
             _ => {
                 return Err(PathConflictError {
                     segment: part.to_string(),
-                    path: path.to_string(),
+                    path: path.clone(),
                 });
             }
         }
@@ -301,8 +342,14 @@ fn set_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::path::DottedPath;
     use serde_json::json;
     use std::collections::{HashMap, HashSet};
+
+    /// Helper to create a [`DottedPath`] from a literal in tests.
+    fn dp(s: &str) -> DottedPath {
+        DottedPath::try_from(s).unwrap()
+    }
 
     // -----------------------------------------------------------------------
     // Test implementation of WithChildrenIndex
@@ -835,7 +882,7 @@ mod tests {
         let contract = raw_contract("test", "foo", None);
         set_path(
             &mut tree,
-            "foo",
+            &dp("foo"),
             ChildrenTree::Single(Box::new(contract.clone())),
         )
         .unwrap();
@@ -849,7 +896,7 @@ mod tests {
         let contract = raw_contract("sw.os", "debian", None);
         set_path(
             &mut tree,
-            "sw.os",
+            &dp("sw.os"),
             ChildrenTree::Single(Box::new(contract.clone())),
         )
         .unwrap();
@@ -868,13 +915,13 @@ mod tests {
         let c2 = raw_contract("sw.blob", "nodejs", None);
         set_path(
             &mut tree,
-            "sw.os",
+            &dp("sw.os"),
             ChildrenTree::Single(Box::new(c1.clone())),
         )
         .unwrap();
         set_path(
             &mut tree,
-            "sw.blob",
+            &dp("sw.blob"),
             ChildrenTree::Single(Box::new(c2.clone())),
         )
         .unwrap();
@@ -894,7 +941,7 @@ mod tests {
         let contract = raw_contract("hw.device.type", "rpi", None);
         set_path(
             &mut tree,
-            "hw.device.type",
+            &dp("hw.device.type"),
             ChildrenTree::Single(Box::new(contract.clone())),
         )
         .unwrap();
@@ -915,29 +962,27 @@ mod tests {
         let mut tree = BTreeMap::new();
         let c1 = raw_contract("sw.os", "debian", Some("wheezy"));
         let c2 = raw_contract("sw.os", "debian", Some("jessie"));
-        // Set "sw" as a Multiple leaf.
         set_path(
             &mut tree,
-            "sw",
+            &dp("sw"),
             ChildrenTree::Multiple(vec![c1.clone(), c2.clone()]),
         )
         .unwrap();
-        // Trying to nest under "sw" should fail.
         let err = set_path(
             &mut tree,
-            "sw.os",
+            &dp("sw.os"),
             ChildrenTree::Single(Box::new(raw_contract("test", "x", None))),
         )
         .unwrap_err();
         assert_eq!(err.segment, "sw");
-        assert_eq!(err.path, "sw.os");
+        assert_eq!(err.path, dp("sw.os"));
     }
 
     #[test]
     fn path_conflict_error_display() {
         let err = PathConflictError {
             segment: "sw".to_string(),
-            path: "sw.os".to_string(),
+            path: dp("sw.os"),
         };
         let msg = err.to_string();
         assert!(msg.contains("sw"));
@@ -950,17 +995,20 @@ mod tests {
         let mut tree = BTreeMap::new();
         let c1 = raw_contract("test", "foo", None);
         let c2 = raw_contract("test.nested", "bar", None);
-        // Set "sw" as a leaf.
-        set_path(&mut tree, "sw", ChildrenTree::Single(Box::new(c1.clone()))).unwrap();
-        // Trying to set "sw.os" should fail because "sw" is already a leaf.
+        set_path(
+            &mut tree,
+            &dp("sw"),
+            ChildrenTree::Single(Box::new(c1.clone())),
+        )
+        .unwrap();
         let err = set_path(
             &mut tree,
-            "sw.os",
+            &dp("sw.os"),
             ChildrenTree::Single(Box::new(c2.clone())),
         )
         .unwrap_err();
         assert_eq!(err.segment, "sw");
-        assert_eq!(err.path, "sw.os");
+        assert_eq!(err.path, dp("sw.os"));
     }
 
     // -----------------------------------------------------------------------

@@ -5,6 +5,8 @@
 //! contract system. Contracts represent versioned "things" (devices, OSes,
 //! stacks, etc.) with typed relationships, requirements, and capabilities.
 
+mod path;
+
 pub mod children_tree;
 pub mod hash;
 pub mod matcher_cache;
@@ -14,12 +16,13 @@ pub mod types;
 pub mod variants;
 
 pub use children_tree::{
-    ChildrenIndex, ChildrenTree, PathConflictError, build as build_children_tree,
+    BuildTreeError, ChildrenIndex, ChildrenTree, PathConflictError, build as build_children_tree,
     get_all as get_all_children,
 };
 pub use hash::hash_object;
 pub use matcher_cache::{Matcher, MatcherCache};
 pub use object_set::{Identifiable, ObjectSet};
+pub use path::InvalidPath;
 pub use template::compile_contract;
 pub use types::{
     Asset, ContractCapability, ContractMatcher, ContractRequirement, ContractType, PartialContract,

@@ -6,12 +6,14 @@
 //! stacks, etc.) with typed relationships, requirements, and capabilities.
 
 pub mod hash;
+pub mod matcher_cache;
 pub mod object_set;
 pub mod template;
 pub mod types;
 pub mod variants;
 
 pub use hash::hash_object;
+pub use matcher_cache::{Matcher, MatcherCache};
 pub use object_set::{Identifiable, ObjectSet};
 pub use template::compile_contract;
 pub use types::{

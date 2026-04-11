@@ -24,7 +24,7 @@ pub const UNIVERSE: &str = "meta.universe";
 ///
 /// Type strings identify the category of a contract. They use dot-separated
 /// namespacing (e.g., `hw.device-type`, `arch.sw`).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ContractType(String);
 
@@ -432,7 +432,7 @@ impl Identifiable for ContractRequirement {
 ///
 /// Used for variant definitions that get deep-merged with a base contract
 /// during expansion. The `type` and `slug` come from the base contract.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct PartialContract {
     /// Contract slug.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -503,7 +503,7 @@ pub struct ContractCapability {
 /// A full contract has a required `kind` (`type` on JSON), an optional `canonical_slug`, shared
 /// fields via [`PartialContract`], and a catch-all `extra` for round-trip
 /// fidelity of unknown top-level fields.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct RawContract {
     /// The contract type (e.g., `sw.os`, `hw.device-type`).
     #[serde(rename = "type")]

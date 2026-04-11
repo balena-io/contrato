@@ -17,9 +17,11 @@ mod variants;
 pub mod children_tree;
 pub mod contract;
 pub mod types;
+pub mod universe;
 
 pub use contract::Contract;
 pub use types::{
     Asset, ContractCapability, ContractMatcher, ContractRequirement, ContractType, PartialContract,
     RawContract, Slug, UNIVERSE, Version, VersionReq,
 };
+pub use universe::Universe;

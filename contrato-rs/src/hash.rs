@@ -1,9 +1,7 @@
 //! Deterministic hashing of contract data.
 //!
 //! Produces a stable SHA-256 hex digest for any `serde_json::Value`. Keys are
-//! sorted recursively so that property order does not affect the hash. This
-//! replaces the TypeScript `object-hash` (SHA-1) — hashes from this module are
-//! NOT compatible with the old TS hashes.
+//! sorted recursively so that property order does not affect the hash.
 
 use sha2::{Digest, Sha256};
 
@@ -15,7 +13,7 @@ use sha2::{Digest, Sha256};
 ///
 /// # Examples
 ///
-/// ```
+/// ```rust,ignore
 /// use serde_json::json;
 /// use contrato::hash::hash_object;
 ///
@@ -23,7 +21,7 @@ use sha2::{Digest, Sha256};
 /// let h2 = hash_object(&json!({"baz": 1, "foo": "bar"}));
 /// assert_eq!(h1, h2);
 /// ```
-pub fn hash_object(value: &serde_json::Value) -> String {
+pub(crate) fn hash_object(value: &serde_json::Value) -> String {
     let mut buf = String::new();
     write_canonical(value, &mut buf);
     let hash = Sha256::digest(buf.as_bytes());

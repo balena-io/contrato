@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::OnceLock;
 
 use serde::de;
 use serde::ser::SerializeMap;
@@ -13,6 +14,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 
 use crate::children_tree::ChildrenTree;
+use crate::hash::hash_object;
+use crate::object_set::Identifiable;
 
 /// Type constant for universe contracts (collection of all available contracts).
 pub const UNIVERSE: &str = "meta.universe";
@@ -43,6 +46,18 @@ impl fmt::Display for ContractType {
     }
 }
 
+impl From<&str> for ContractType {
+    fn from(s: &str) -> Self {
+        Self::new(s)
+    }
+}
+
+impl From<String> for ContractType {
+    fn from(s: String) -> Self {
+        Self::new(s)
+    }
+}
+
 /// A contract slug identifier (e.g., `debian`, `raspberry-pi`).
 ///
 /// Slugs uniquely identify a contract within its type.
@@ -68,34 +83,84 @@ impl fmt::Display for Slug {
     }
 }
 
+impl From<&str> for Slug {
+    fn from(s: &str) -> Self {
+        Self::new(s)
+    }
+}
+
+impl From<String> for Slug {
+    fn from(s: String) -> Self {
+        Self::new(s)
+    }
+}
+
 /// Internal representation of a version: either valid semver or a plain
 /// identifier (e.g., `wheezy`, `jessie`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum VersionInner {
+    /// Full three-component semver parsed directly (e.g. `"1.2.3"`).
     Semver(semver::Version),
+    /// Partial semver padded with `.0` components (e.g. `"2.31"` ->
+    /// `"2.31.0"`). The original string is kept for serialization.
+    PartialSemver {
+        parsed: semver::Version,
+        original: String,
+    },
     Identifier(String),
 }
 
-/// A contract version (e.g., `1.0.0`, `wheezy`).
+/// A contract version (e.g., `1.0.0`, `2.31`, `wheezy`).
 ///
-/// Deserialization tries semver first; if that fails, stores as an identifier.
+/// Construction tries strict semver first (`MAJOR.MINOR.PATCH`). If that
+/// fails, it pads the string with `.0` components (so `"2.31"` becomes
+/// `"2.31.0"` and `"1"` becomes `"1.0.0"`). This allows partial versions
+/// to participate in semver range comparisons while preserving the
+/// original string for serialization. Falls back to a plain identifier
+/// if padding doesn't produce valid semver either.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Version(VersionInner);
 
 impl Version {
-    /// Creates a new version by parsing the string. If it is valid semver, it
-    /// is stored as such; otherwise it is stored as a plain identifier.
+    /// Creates a new version by parsing the string. Tries strict semver
+    /// first, then pads with `.0` components, and falls back to a plain
+    /// identifier.
     pub fn new(s: impl Into<String>) -> Self {
         let s = s.into();
-        match semver::Version::parse(&s) {
-            Ok(v) => Self(VersionInner::Semver(v)),
+        if let Ok(v) = semver::Version::parse(&s) {
+            return Self(VersionInner::Semver(v));
+        }
+        // Pad partial versions: "2.31" -> "2.31.0", "1" -> "1.0.0"
+        let dot_count = s.chars().filter(|&c| c == '.').count();
+        let padded = match dot_count {
+            0 => format!("{s}.0.0"),
+            1 => format!("{s}.0"),
+            _ => return Self(VersionInner::Identifier(s)),
+        };
+        match semver::Version::parse(&padded) {
+            Ok(parsed) => Self(VersionInner::PartialSemver {
+                parsed,
+                original: s,
+            }),
             Err(_) => Self(VersionInner::Identifier(s)),
         }
     }
 
-    /// Returns `true` if this version was parsed as valid semver.
+    /// Returns `true` if this version was parsed as semver (including
+    /// partial versions that were padded).
     pub fn is_semver(&self) -> bool {
-        matches!(self.0, VersionInner::Semver(_))
+        matches!(
+            self.0,
+            VersionInner::Semver(_) | VersionInner::PartialSemver { .. }
+        )
+    }
+
+    /// Returns the parsed semver value, if any.
+    fn as_semver(&self) -> Option<&semver::Version> {
+        match &self.0 {
+            VersionInner::Semver(v) | VersionInner::PartialSemver { parsed: v, .. } => Some(v),
+            VersionInner::Identifier(_) => None,
+        }
     }
 }
 
@@ -103,6 +168,7 @@ impl fmt::Display for Version {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.0 {
             VersionInner::Semver(v) => write!(f, "{v}"),
+            VersionInner::PartialSemver { original, .. } => f.write_str(original),
             VersionInner::Identifier(s) => f.write_str(s),
         }
     }
@@ -152,6 +218,35 @@ impl VersionReq {
     pub fn is_semver_range(&self) -> bool {
         matches!(self.0, VersionReqInner::SemverRange(_))
     }
+
+    /// Returns `true` if `target` satisfies this requirement.
+    ///
+    /// The allocation-free fast paths are:
+    /// - **Semver range × semver version**: delegate to
+    ///   [`semver::VersionReq::matches`] on the already-parsed inner
+    ///   values — the common case on the validation hot path.
+    /// - **Identifier × identifier**: direct string equality on the
+    ///   stored inner strings — no allocation, no re-parse.
+    ///
+    /// The mismatched cases (identifier target against a semver
+    /// range, or vice versa) fall back to comparing the two sides'
+    /// `Display` output. This allocates, but it is the rare path —
+    /// the contract corpus either uses semver throughout or
+    /// identifier strings throughout.
+    pub fn matches(&self, target: &Version) -> bool {
+        // Fast path: both sides are semver (including padded partial versions).
+        if let (Some(v), VersionReqInner::SemverRange(r)) = (target.as_semver(), &self.0) {
+            return r.matches(v);
+        }
+        // Fast path: both sides are plain identifiers.
+        if let (VersionInner::Identifier(tv), VersionReqInner::Identifier(rv)) =
+            (&target.0, &self.0)
+        {
+            return tv == rv;
+        }
+        // Mismatched cases: fall back to string comparison.
+        target.to_string() == self.to_string()
+    }
 }
 
 impl fmt::Display for VersionReq {
@@ -160,6 +255,18 @@ impl fmt::Display for VersionReq {
             VersionReqInner::SemverRange(r) => write!(f, "{r}"),
             VersionReqInner::Identifier(s) => f.write_str(s),
         }
+    }
+}
+
+impl From<&str> for VersionReq {
+    fn from(s: &str) -> Self {
+        Self::new(s)
+    }
+}
+
+impl From<String> for VersionReq {
+    fn from(s: String) -> Self {
+        Self::new(s)
     }
 }
 
@@ -202,42 +309,177 @@ pub struct Asset {
 /// A matcher that references contracts by type and optional additional criteria.
 ///
 /// Used both as requirement targets (what a contract needs) and as capability
-/// declarations (what a contract provides). Per the CUE spec, additional matching
+/// declarations (what a contract provides). Any additional matching outside kind/slug/version
 /// criteria should be placed in `data`, not as top-level fields.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContractMatcher {
     /// The contract type to match against.
     #[serde(rename = "type")]
-    pub kind: ContractType,
+    pub(crate) kind: ContractType,
 
     /// Optional slug to match.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub slug: Option<Slug>,
+    pub(crate) slug: Option<Slug>,
 
     /// Optional version or semver range to match.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub version: Option<VersionReq>,
+    pub(crate) version: Option<VersionReq>,
 
     /// Optional structured data for deep matching.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<Value>,
+    pub(crate) data: Option<Value>,
+
+    /// Lazily computed deterministic hash of this matcher.
+    ///
+    /// Populated on first call to [`Self::hash`] and shared by the
+    /// [`Identifiable`] impl (used by [`ObjectSet`](crate::object_set::ObjectSet)
+    /// deduplication in the requirements index) and by the
+    /// [`Matcher`](crate::matcher::Matcher) impl (used by the
+    /// [`MatcherCache`](crate::matcher_cache::MatcherCache) key on the
+    /// search hot path). Both paths share one serialization + SHA-256
+    /// per unique matcher — without this cache, `find_children` pays the
+    /// full hashing cost twice per cache operation (once on `get`, once
+    /// on `insert`).
+    ///
+    /// Excluded from serde so round-tripping a matcher through JSON
+    /// yields an identical canonical form. Cloning a matcher copies
+    /// whatever cached value the source had (via `OnceLock::clone`);
+    /// two clones of the same matcher may independently populate their
+    /// own cells without affecting one another.
+    #[serde(skip)]
+    hash: OnceLock<String>,
 }
 
-/// A contract requirement — either a direct match or a boolean operation.
+impl PartialEq for ContractMatcher {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+            && self.slug == other.slug
+            && self.version == other.version
+            && self.data == other.data
+    }
+}
+
+impl ContractMatcher {
+    /// Creates a new matcher for the given contract type
+    ///
+    /// Additional criteria can be added via  [`Self::with_slug`],
+    /// [`Self::with_version`], and [`Self::with_data`].
+    pub fn new(kind: impl Into<ContractType>) -> Self {
+        Self {
+            kind: kind.into(),
+            slug: None,
+            version: None,
+            data: None,
+            hash: OnceLock::new(),
+        }
+    }
+
+    /// Restricts this matcher to contracts with the given slug.
+    pub fn with_slug(mut self, slug: impl Into<Slug>) -> Self {
+        self.slug = Some(slug.into());
+        self.hash = OnceLock::new();
+        self
+    }
+
+    /// Restricts this matcher to contracts whose version satisfies
+    /// the given requirement.
+    ///
+    /// Note that version conversion from strings uses the same rules as [`VersionReq`] deserialization,
+    /// if the input can be parsed into semver range correctly, it is treated as such, otherwise it
+    /// is treated as an identifier. This has the downside that a typo will be treated as an identifier.
+    ///
+    /// Example:
+    /// ```rust
+    /// use contrato::ContractMatcher;
+    ///
+    /// // matches any OS contract with version older than v6
+    /// let good = ContractMatcher::new("sw.os").with_version(">=6");
+    ///
+    /// // matches a contract with version exactly equal to the identifier `>>=6`
+    /// let bad = ContractMatcher::new("sw.os").with_version(">>=6");
+    /// ```
+    pub fn with_version(mut self, version: impl Into<VersionReq>) -> Self {
+        self.version = Some(version.into());
+        self.hash = OnceLock::new();
+        self
+    }
+
+    /// Restricts this matcher to contracts whose `data` deep-matches
+    /// the given payload.
+    pub fn with_data(mut self, data: Value) -> Self {
+        self.data = Some(data);
+        self.hash = OnceLock::new();
+        self
+    }
+
+    /// Returns the contract type this matcher targets.
+    pub fn kind(&self) -> &ContractType {
+        &self.kind
+    }
+
+    /// Returns the slug this matcher is restricted to, if any.
+    pub fn slug(&self) -> Option<&Slug> {
+        self.slug.as_ref()
+    }
+
+    /// Returns the version requirement this matcher is restricted to,
+    /// if any.
+    pub fn version(&self) -> Option<&VersionReq> {
+        self.version.as_ref()
+    }
+
+    /// Returns the data payload this matcher deep-matches against, if
+    /// any.
+    pub fn data(&self) -> Option<&Value> {
+        self.data.as_ref()
+    }
+
+    /// Returns the cached deterministic hash of this matcher,
+    /// computing it on first call.
+    ///
+    /// The hash is a SHA-256 digest of the matcher's canonical JSON
+    /// form — the same digest the requirements index uses to
+    /// deduplicate matchers inside an
+    /// [`ObjectSet`](crate::object_set::ObjectSet) and the same
+    /// digest `find_children` uses to key the
+    /// [`MatcherCache`](crate::matcher_cache::MatcherCache). Both
+    /// code paths route through this method, so a matcher that is
+    /// both registered as a requirement and used as a search key
+    /// pays exactly one serialization + hashing cost across its
+    /// lifetime.
+    pub(crate) fn hash(&self) -> &str {
+        self.hash.get_or_init(|| {
+            hash_object(
+                &serde_json::to_value(self).expect("ContractMatcher must serialize to JSON"),
+            )
+        })
+    }
+}
+
+/// A contract requirement — either a direct match or a boolean operation
+/// over a flat list of simple matchers.
 ///
 /// Requirements express what a contract needs. They can be:
 /// - A simple match: `{"type": "hw.device-type", "slug": "rpi"}`
 /// - A disjunction: `{"or": [{"type": "hw.device-type", "slug": "rpi"}, ...]}`
 /// - A negation: `{"not": [{"type": "sw.os", "slug": "windows"}]}`
+///
+/// The CUE schema that this type mirrors allows only one level of boolean
+/// nesting: the items inside an `or` / `not` are always simple matchers,
+/// never further boolean operations. That constraint is enforced here at
+/// the type level — `Or` / `Not` carry `Vec<ContractMatcher>`, not
+/// `Vec<ContractRequirement>`. Attempting to deserialize a nested
+/// `{"or": [{"or": [...]}]}` shape will fail with a serde error because
+/// the inner object has no `type` field.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ContractRequirement {
     /// A direct matcher requirement.
     Match(ContractMatcher),
-    /// At least one of the inner requirements must be satisfied.
-    Or(Vec<ContractRequirement>),
-    /// None of the inner requirements must be satisfied.
-    Not(Vec<ContractRequirement>),
+    /// At least one of the inner matchers must be satisfied.
+    Or(Vec<ContractMatcher>),
+    /// None of the inner matchers must be satisfied.
+    Not(Vec<ContractMatcher>),
 }
 
 impl Serialize for ContractRequirement {
@@ -268,36 +510,54 @@ impl<'de> Deserialize<'de> for ContractRequirement {
 /// Deserializes a `ContractRequirement` from a `serde_json::Value`.
 ///
 /// Inspects the JSON object for `"or"` or `"not"` keys to determine the
-/// variant. Falls back to `Match` if neither is present.
+/// variant; the inner items are deserialized as [`ContractMatcher`]s so
+/// nested boolean operations fail with a clear serde error. Falls back to
+/// `Match` when neither discriminator is present.
 fn deserialize_requirement_from_value(value: Value) -> Result<ContractRequirement, String> {
     let obj = value
         .as_object()
         .ok_or_else(|| "requirement must be a JSON object".to_string())?;
 
     if let Some(or_val) = obj.get("or") {
-        let arr = or_val
-            .as_array()
-            .ok_or_else(|| "'or' must be an array".to_string())?;
-        let items: Result<Vec<ContractRequirement>, String> = arr
-            .iter()
-            .map(|v| deserialize_requirement_from_value(v.clone()))
-            .collect();
-        return Ok(ContractRequirement::Or(items?));
+        let items: Vec<ContractMatcher> =
+            serde_json::from_value(or_val.clone()).map_err(|e| format!("'or' items: {e}"))?;
+        return Ok(ContractRequirement::Or(items));
     }
 
     if let Some(not_val) = obj.get("not") {
-        let arr = not_val
-            .as_array()
-            .ok_or_else(|| "'not' must be an array".to_string())?;
-        let items: Result<Vec<ContractRequirement>, String> = arr
-            .iter()
-            .map(|v| deserialize_requirement_from_value(v.clone()))
-            .collect();
-        return Ok(ContractRequirement::Not(items?));
+        let items: Vec<ContractMatcher> =
+            serde_json::from_value(not_val.clone()).map_err(|e| format!("'not' items: {e}"))?;
+        return Ok(ContractRequirement::Not(items));
     }
 
     let matcher: ContractMatcher = serde_json::from_value(value).map_err(|e| e.to_string())?;
     Ok(ContractRequirement::Match(matcher))
+}
+
+/// Identity for [`ContractMatcher`] used by [`ObjectSet`](crate::object_set::ObjectSet).
+///
+/// Delegates to the cached [`ContractMatcher::hash`] accessor so that
+/// `ObjectSet` deduplication (on `register_matcher`) and the search
+/// cache key (on `find_children`) share a single memoized SHA-256 per
+/// matcher instance.
+impl Identifiable for ContractMatcher {
+    fn id(&self) -> String {
+        self.hash().to_string()
+    }
+}
+
+/// Identity for [`ContractRequirement`] used by [`ObjectSet`](crate::object_set::ObjectSet).
+///
+/// The ID is a deterministic SHA-256 of the requirement's canonical JSON form.
+/// `Match`, `Or`, and `Not` variants serialize to distinct JSON shapes so they
+/// never collide; two requirements with the same variant and the same inner
+/// matchers share an ID and deduplicate inside the compiled requirements set.
+impl Identifiable for ContractRequirement {
+    fn id(&self) -> String {
+        hash_object(
+            &serde_json::to_value(self).expect("ContractRequirement must serialize to JSON"),
+        )
+    }
 }
 
 /// Contract metadata fields without a type identifier.
@@ -482,6 +742,31 @@ mod tests {
     }
 
     #[test]
+    fn version_partial_semver_two_components() {
+        let v = Version::new("2.31");
+        assert!(v.is_semver());
+        assert_eq!(v.to_string(), "2.31");
+        assert!(VersionReq::new(">=2.17").matches(&v));
+        assert!(!VersionReq::new(">=3.0").matches(&v));
+    }
+
+    #[test]
+    fn version_partial_semver_one_component() {
+        let v = Version::new("5");
+        assert!(v.is_semver());
+        assert_eq!(v.to_string(), "5");
+        assert!(VersionReq::new(">=4").matches(&v));
+        assert!(!VersionReq::new(">=6").matches(&v));
+    }
+
+    #[test]
+    fn version_partial_semver_not_a_number() {
+        let v = Version::new("abc.def");
+        assert!(!v.is_semver());
+        assert_eq!(v.to_string(), "abc.def");
+    }
+
+    #[test]
     fn version_req_semver_parsing() {
         let vr = VersionReq::new(">=1.0.0");
         assert!(vr.is_semver_range());
@@ -490,6 +775,47 @@ mod tests {
         let vr = VersionReq::new("wheezy");
         assert!(!vr.is_semver_range());
         assert_eq!(vr.to_string(), "wheezy");
+    }
+
+    #[test]
+    fn version_req_matches_semver_range_satisfies_semver_version() {
+        // Allocation-free fast path: both sides parse as semver, so
+        // `matches` dispatches through `semver::VersionReq::matches`
+        // on the parsed inner values.
+        let target = Version::new("1.2.3");
+        assert!(VersionReq::new(">=1.0.0").matches(&target));
+        assert!(VersionReq::new("^1.2.0").matches(&target));
+        assert!(VersionReq::new("=1.2.3").matches(&target));
+    }
+
+    #[test]
+    fn version_req_matches_semver_range_rejects_out_of_range() {
+        let target = Version::new("0.9.0");
+        assert!(!VersionReq::new(">=1.0.0").matches(&target));
+    }
+
+    #[test]
+    fn version_req_matches_identifier_equality() {
+        // Allocation-free fast path: both sides are identifiers, so
+        // `matches` compares the stored inner strings directly.
+        assert!(VersionReq::new("wheezy").matches(&Version::new("wheezy")));
+        assert!(!VersionReq::new("wheezy").matches(&Version::new("jessie")));
+    }
+
+    #[test]
+    fn version_req_matches_identifier_target_against_semver_range_fallback() {
+        // Mismatched case: identifier Version + semver-range
+        // VersionReq. The fallback compares `Display` outputs, so
+        // "wheezy" is compared against ">=1.0.0" and returns false.
+        assert!(!VersionReq::new(">=1.0.0").matches(&Version::new("wheezy")));
+    }
+
+    #[test]
+    fn version_req_matches_semver_target_against_identifier_req_fallback() {
+        // Mismatched case the other way: semver Version + identifier
+        // VersionReq. The fallback compares "1.0.0" against the
+        // identifier string — they differ.
+        assert!(!VersionReq::new("wheezy").matches(&Version::new("1.0.0")));
     }
 
     #[test]
@@ -575,18 +901,8 @@ mod tests {
         match &contract.body.requires[0] {
             ContractRequirement::Or(items) => {
                 assert_eq!(items.len(), 2);
-                match &items[0] {
-                    ContractRequirement::Match(m) => {
-                        assert_eq!(m.slug.as_ref().unwrap().as_str(), "raspberry-pi");
-                    }
-                    _ => panic!("expected Match inside Or"),
-                }
-                match &items[1] {
-                    ContractRequirement::Match(m) => {
-                        assert_eq!(m.slug.as_ref().unwrap().as_str(), "raspberry-pi2");
-                    }
-                    _ => panic!("expected Match inside Or"),
-                }
+                assert_eq!(items[0].slug.as_ref().unwrap().as_str(), "raspberry-pi");
+                assert_eq!(items[1].slug.as_ref().unwrap().as_str(), "raspberry-pi2");
             }
             _ => panic!("expected Or variant"),
         }
@@ -631,12 +947,7 @@ mod tests {
         match &contract.body.requires[0] {
             ContractRequirement::Not(items) => {
                 assert_eq!(items.len(), 1);
-                match &items[0] {
-                    ContractRequirement::Match(m) => {
-                        assert_eq!(m.slug.as_ref().unwrap().as_str(), "windows");
-                    }
-                    _ => panic!("expected Match inside Not"),
-                }
+                assert_eq!(items[0].slug.as_ref().unwrap().as_str(), "windows");
             }
             _ => panic!("expected Not variant"),
         }
@@ -730,6 +1041,55 @@ mod tests {
         let contract: RawContract = serde_json::from_value(input.clone()).unwrap();
         let output = serde_json::to_value(&contract).unwrap();
         assert_eq!(input, output);
+    }
+
+    #[test]
+    fn contract_matcher_hash_is_stable_and_structural() {
+        // Two structurally-identical matchers built independently
+        // must produce the same hash — that is the deduplication
+        // invariant the requirements index relies on. Two matchers
+        // that differ in any field must produce different hashes.
+        let a = ContractMatcher::new("hw.device-type").with_slug("raspberry-pi");
+        let b = ContractMatcher::new("hw.device-type").with_slug("raspberry-pi");
+        let c = ContractMatcher::new("hw.device-type").with_slug("raspberry-pi2");
+        assert_eq!(a.hash(), b.hash());
+        assert_ne!(a.hash(), c.hash());
+    }
+
+    #[test]
+    fn contract_matcher_hash_is_cached_across_calls() {
+        // The second call to `hash()` must return the same slice
+        // as the first — populating the OnceLock once, not twice.
+        // Observing identical pointer addresses is the tightest
+        // available proxy for "the inner String was reused".
+        let m = ContractMatcher::new("hw.device-type").with_slug("raspberry-pi");
+        let first = m.hash() as *const str;
+        let second = m.hash() as *const str;
+        assert_eq!(first, second, "hash cell must serve the same slice");
+    }
+
+    #[test]
+    fn contract_matcher_partial_eq_ignores_cached_hash() {
+        // Populating the cache on one matcher but not the other
+        // must not affect structural equality.
+        let a = ContractMatcher::new("hw.device-type").with_slug("raspberry-pi");
+        let b = ContractMatcher::new("hw.device-type").with_slug("raspberry-pi");
+        let _ = a.hash(); // populate a's cell, leave b's empty
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn contract_matcher_roundtrip_hash_field_is_skipped() {
+        // The `hash` field must not appear in serialized output so
+        // matchers remain round-trip clean through JSON. Verifying
+        // via serializing a minimal matcher directly.
+        let m = ContractMatcher::new("hw.device-type").with_slug("raspberry-pi");
+        let _ = m.hash(); // populate the cache before serializing
+        let output = serde_json::to_value(&m).unwrap();
+        assert_eq!(
+            output,
+            json!({"type": "hw.device-type", "slug": "raspberry-pi"})
+        );
     }
 
     #[test]

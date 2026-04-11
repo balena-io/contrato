@@ -21,7 +21,7 @@ use crate::types::RawContract;
 ///
 /// Panics if the contract cannot be serialized to JSON or if any expanded
 /// variant cannot be deserialized back into a [`ContractObject`].
-pub fn build(contract: &RawContract) -> Vec<RawContract> {
+pub(crate) fn build(contract: &RawContract) -> Vec<RawContract> {
     let value = serde_json::to_value(contract).expect("ContractObject must serialize to JSON");
     build_value(&value)
         .into_iter()
@@ -570,7 +570,6 @@ mod tests {
         // Variants are deserialized as `PartialContract`, which has no `type`
         // field. A `type` in the variant JSON is silently dropped during
         // deserialization, so the base contract's type is always preserved.
-        // This differs from the TS behavior where variants are plain objects.
         let contract: RawContract = serde_json::from_value(json!({
             "slug": "myapp",
             "type": "sw.app",

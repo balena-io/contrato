@@ -127,7 +127,7 @@ impl Contract {
     /// combinatorial expansion relies on this: ephemeral parent
     /// contracts that are only used for satisfiability checks never pay
     /// the hashing cost.
-    fn new(raw: RawContract) -> Self {
+    pub(crate) fn new(raw: RawContract) -> Self {
         let mut this = Self {
             raw,
             hash: OnceLock::new(),

@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::OnceLock;
 
 use serde::de;
 use serde::ser::SerializeMap;
@@ -13,6 +14,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 
 use crate::children_tree::ChildrenTree;
+use crate::hash::hash_object;
+use crate::object_set::Identifiable;
 
 /// Type constant for universe contracts (collection of all available contracts).
 pub const UNIVERSE: &str = "meta.universe";
@@ -152,6 +155,28 @@ impl VersionReq {
     pub fn is_semver_range(&self) -> bool {
         matches!(self.0, VersionReqInner::SemverRange(_))
     }
+
+    /// Returns `true` if `target` satisfies this requirement.
+    ///
+    /// The allocation-free fast paths are:
+    /// - **Semver range × semver version**: delegate to
+    ///   [`semver::VersionReq::matches`] on the already-parsed inner
+    ///   values — the common case on the validation hot path.
+    /// - **Identifier × identifier**: direct string equality on the
+    ///   stored inner strings — no allocation, no re-parse.
+    ///
+    /// The mismatched cases (identifier target against a semver
+    /// range, or vice versa) fall back to comparing the two sides'
+    /// `Display` output. This allocates, but it is the rare path —
+    /// the contract corpus either uses semver throughout or
+    /// identifier strings throughout.
+    pub fn matches(&self, target: &Version) -> bool {
+        match (&target.0, &self.0) {
+            (VersionInner::Semver(v), VersionReqInner::SemverRange(r)) => r.matches(v),
+            (VersionInner::Identifier(tv), VersionReqInner::Identifier(rv)) => tv == rv,
+            _ => target.to_string() == self.to_string(),
+        }
+    }
 }
 
 impl fmt::Display for VersionReq {
@@ -200,7 +225,7 @@ pub struct Asset {
 /// Used both as requirement targets (what a contract needs) and as capability
 /// declarations (what a contract provides). Per the CUE spec, additional matching
 /// criteria should be placed in `data`, not as top-level fields.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContractMatcher {
     /// The contract type to match against.
@@ -218,22 +243,111 @@ pub struct ContractMatcher {
     /// Optional structured data for deep matching.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<Value>,
+
+    /// Lazily computed deterministic hash of this matcher.
+    ///
+    /// Populated on first call to [`Self::hash`] and shared by the
+    /// [`Identifiable`] impl (used by [`ObjectSet`](crate::object_set::ObjectSet)
+    /// deduplication in the requirements index) and by the
+    /// [`Matcher`](crate::matcher::Matcher) impl (used by the
+    /// [`MatcherCache`](crate::matcher_cache::MatcherCache) key on the
+    /// search hot path). Both paths share one serialization + SHA-256
+    /// per unique matcher — without this cache, `find_children` pays the
+    /// full hashing cost twice per cache operation (once on `get`, once
+    /// on `insert`).
+    ///
+    /// Excluded from serde so round-tripping a matcher through JSON
+    /// yields an identical canonical form. Cloning a matcher copies
+    /// whatever cached value the source had (via `OnceLock::clone`);
+    /// two clones of the same matcher may independently populate their
+    /// own cells without affecting one another.
+    #[serde(skip)]
+    hash: OnceLock<String>,
 }
 
-/// A contract requirement — either a direct match or a boolean operation.
+impl PartialEq for ContractMatcher {
+    /// Compares two matchers by their typed fields, ignoring the
+    /// cached hash cell.
+    ///
+    /// Two matchers with identical `kind`, `slug`, `version`, and
+    /// `data` are equal regardless of whether either side has
+    /// populated its hash cache — equality is a property of the
+    /// canonical matcher, not of the caching state.
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+            && self.slug == other.slug
+            && self.version == other.version
+            && self.data == other.data
+    }
+}
+
+impl ContractMatcher {
+    /// Creates a new matcher with the given fields and an empty hash
+    /// cache.
+    ///
+    /// Provided as a single construction point so callers do not have
+    /// to know that `hash` is an implementation detail. The cache
+    /// starts empty; the first call to [`Self::hash`] populates it.
+    pub fn new(
+        kind: ContractType,
+        slug: Option<Slug>,
+        version: Option<VersionReq>,
+        data: Option<Value>,
+    ) -> Self {
+        Self {
+            kind,
+            slug,
+            version,
+            data,
+            hash: OnceLock::new(),
+        }
+    }
+
+    /// Returns the cached deterministic hash of this matcher,
+    /// computing it on first call.
+    ///
+    /// The hash is a SHA-256 digest of the matcher's canonical JSON
+    /// form — the same digest the requirements index uses to
+    /// deduplicate matchers inside an
+    /// [`ObjectSet`](crate::object_set::ObjectSet) and the same
+    /// digest `find_children` uses to key the
+    /// [`MatcherCache`](crate::matcher_cache::MatcherCache). Both
+    /// code paths route through this method, so a matcher that is
+    /// both registered as a requirement and used as a search key
+    /// pays exactly one serialization + hashing cost across its
+    /// lifetime.
+    pub(crate) fn hash(&self) -> &str {
+        self.hash.get_or_init(|| {
+            hash_object(
+                &serde_json::to_value(self).expect("ContractMatcher must serialize to JSON"),
+            )
+        })
+    }
+}
+
+/// A contract requirement — either a direct match or a boolean operation
+/// over a flat list of simple matchers.
 ///
 /// Requirements express what a contract needs. They can be:
 /// - A simple match: `{"type": "hw.device-type", "slug": "rpi"}`
 /// - A disjunction: `{"or": [{"type": "hw.device-type", "slug": "rpi"}, ...]}`
 /// - A negation: `{"not": [{"type": "sw.os", "slug": "windows"}]}`
+///
+/// The CUE schema that this type mirrors allows only one level of boolean
+/// nesting: the items inside an `or` / `not` are always simple matchers,
+/// never further boolean operations. That constraint is enforced here at
+/// the type level — `Or` / `Not` carry `Vec<ContractMatcher>`, not
+/// `Vec<ContractRequirement>`. Attempting to deserialize a nested
+/// `{"or": [{"or": [...]}]}` shape will fail with a serde error because
+/// the inner object has no `type` field.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ContractRequirement {
     /// A direct matcher requirement.
     Match(ContractMatcher),
-    /// At least one of the inner requirements must be satisfied.
-    Or(Vec<ContractRequirement>),
-    /// None of the inner requirements must be satisfied.
-    Not(Vec<ContractRequirement>),
+    /// At least one of the inner matchers must be satisfied.
+    Or(Vec<ContractMatcher>),
+    /// None of the inner matchers must be satisfied.
+    Not(Vec<ContractMatcher>),
 }
 
 impl Serialize for ContractRequirement {
@@ -264,36 +378,54 @@ impl<'de> Deserialize<'de> for ContractRequirement {
 /// Deserializes a `ContractRequirement` from a `serde_json::Value`.
 ///
 /// Inspects the JSON object for `"or"` or `"not"` keys to determine the
-/// variant. Falls back to `Match` if neither is present.
+/// variant; the inner items are deserialized as [`ContractMatcher`]s so
+/// nested boolean operations fail with a clear serde error. Falls back to
+/// `Match` when neither discriminator is present.
 fn deserialize_requirement_from_value(value: Value) -> Result<ContractRequirement, String> {
     let obj = value
         .as_object()
         .ok_or_else(|| "requirement must be a JSON object".to_string())?;
 
     if let Some(or_val) = obj.get("or") {
-        let arr = or_val
-            .as_array()
-            .ok_or_else(|| "'or' must be an array".to_string())?;
-        let items: Result<Vec<ContractRequirement>, String> = arr
-            .iter()
-            .map(|v| deserialize_requirement_from_value(v.clone()))
-            .collect();
-        return Ok(ContractRequirement::Or(items?));
+        let items: Vec<ContractMatcher> =
+            serde_json::from_value(or_val.clone()).map_err(|e| format!("'or' items: {e}"))?;
+        return Ok(ContractRequirement::Or(items));
     }
 
     if let Some(not_val) = obj.get("not") {
-        let arr = not_val
-            .as_array()
-            .ok_or_else(|| "'not' must be an array".to_string())?;
-        let items: Result<Vec<ContractRequirement>, String> = arr
-            .iter()
-            .map(|v| deserialize_requirement_from_value(v.clone()))
-            .collect();
-        return Ok(ContractRequirement::Not(items?));
+        let items: Vec<ContractMatcher> =
+            serde_json::from_value(not_val.clone()).map_err(|e| format!("'not' items: {e}"))?;
+        return Ok(ContractRequirement::Not(items));
     }
 
     let matcher: ContractMatcher = serde_json::from_value(value).map_err(|e| e.to_string())?;
     Ok(ContractRequirement::Match(matcher))
+}
+
+/// Identity for [`ContractMatcher`] used by [`ObjectSet`](crate::object_set::ObjectSet).
+///
+/// Delegates to the cached [`ContractMatcher::hash`] accessor so that
+/// `ObjectSet` deduplication (on `register_matcher`) and the search
+/// cache key (on `find_children`) share a single memoized SHA-256 per
+/// matcher instance.
+impl Identifiable for ContractMatcher {
+    fn id(&self) -> String {
+        self.hash().to_string()
+    }
+}
+
+/// Identity for [`ContractRequirement`] used by [`ObjectSet`](crate::object_set::ObjectSet).
+///
+/// The ID is a deterministic SHA-256 of the requirement's canonical JSON form.
+/// `Match`, `Or`, and `Not` variants serialize to distinct JSON shapes so they
+/// never collide; two requirements with the same variant and the same inner
+/// matchers share an ID and deduplicate inside the compiled requirements set.
+impl Identifiable for ContractRequirement {
+    fn id(&self) -> String {
+        hash_object(
+            &serde_json::to_value(self).expect("ContractRequirement must serialize to JSON"),
+        )
+    }
 }
 
 /// Contract metadata fields without a type identifier.
@@ -489,6 +621,47 @@ mod tests {
     }
 
     #[test]
+    fn version_req_matches_semver_range_satisfies_semver_version() {
+        // Allocation-free fast path: both sides parse as semver, so
+        // `matches` dispatches through `semver::VersionReq::matches`
+        // on the parsed inner values.
+        let target = Version::new("1.2.3");
+        assert!(VersionReq::new(">=1.0.0").matches(&target));
+        assert!(VersionReq::new("^1.2.0").matches(&target));
+        assert!(VersionReq::new("=1.2.3").matches(&target));
+    }
+
+    #[test]
+    fn version_req_matches_semver_range_rejects_out_of_range() {
+        let target = Version::new("0.9.0");
+        assert!(!VersionReq::new(">=1.0.0").matches(&target));
+    }
+
+    #[test]
+    fn version_req_matches_identifier_equality() {
+        // Allocation-free fast path: both sides are identifiers, so
+        // `matches` compares the stored inner strings directly.
+        assert!(VersionReq::new("wheezy").matches(&Version::new("wheezy")));
+        assert!(!VersionReq::new("wheezy").matches(&Version::new("jessie")));
+    }
+
+    #[test]
+    fn version_req_matches_identifier_target_against_semver_range_fallback() {
+        // Mismatched case: identifier Version + semver-range
+        // VersionReq. The fallback compares `Display` outputs, so
+        // "wheezy" is compared against ">=1.0.0" and returns false.
+        assert!(!VersionReq::new(">=1.0.0").matches(&Version::new("wheezy")));
+    }
+
+    #[test]
+    fn version_req_matches_semver_target_against_identifier_req_fallback() {
+        // Mismatched case the other way: semver Version + identifier
+        // VersionReq. The fallback compares "1.0.0" against the
+        // identifier string — they differ.
+        assert!(!VersionReq::new("wheezy").matches(&Version::new("1.0.0")));
+    }
+
+    #[test]
     fn deserialize_contract_with_simple_requires() {
         let json = json!({
             "type": "sw.stack",
@@ -571,18 +744,8 @@ mod tests {
         match &contract.body.requires[0] {
             ContractRequirement::Or(items) => {
                 assert_eq!(items.len(), 2);
-                match &items[0] {
-                    ContractRequirement::Match(m) => {
-                        assert_eq!(m.slug.as_ref().unwrap().as_str(), "raspberry-pi");
-                    }
-                    _ => panic!("expected Match inside Or"),
-                }
-                match &items[1] {
-                    ContractRequirement::Match(m) => {
-                        assert_eq!(m.slug.as_ref().unwrap().as_str(), "raspberry-pi2");
-                    }
-                    _ => panic!("expected Match inside Or"),
-                }
+                assert_eq!(items[0].slug.as_ref().unwrap().as_str(), "raspberry-pi");
+                assert_eq!(items[1].slug.as_ref().unwrap().as_str(), "raspberry-pi2");
             }
             _ => panic!("expected Or variant"),
         }
@@ -627,12 +790,7 @@ mod tests {
         match &contract.body.requires[0] {
             ContractRequirement::Not(items) => {
                 assert_eq!(items.len(), 1);
-                match &items[0] {
-                    ContractRequirement::Match(m) => {
-                        assert_eq!(m.slug.as_ref().unwrap().as_str(), "windows");
-                    }
-                    _ => panic!("expected Match inside Not"),
-                }
+                assert_eq!(items[0].slug.as_ref().unwrap().as_str(), "windows");
             }
             _ => panic!("expected Not variant"),
         }
@@ -726,6 +884,90 @@ mod tests {
         let contract: RawContract = serde_json::from_value(input.clone()).unwrap();
         let output = serde_json::to_value(&contract).unwrap();
         assert_eq!(input, output);
+    }
+
+    #[test]
+    fn contract_matcher_hash_is_stable_and_structural() {
+        // Two structurally-identical matchers built independently
+        // must produce the same hash — that is the deduplication
+        // invariant the requirements index relies on. Two matchers
+        // that differ in any field must produce different hashes.
+        let a = ContractMatcher::new(
+            ContractType::new("hw.device-type"),
+            Some(Slug::new("raspberry-pi")),
+            None,
+            None,
+        );
+        let b = ContractMatcher::new(
+            ContractType::new("hw.device-type"),
+            Some(Slug::new("raspberry-pi")),
+            None,
+            None,
+        );
+        let c = ContractMatcher::new(
+            ContractType::new("hw.device-type"),
+            Some(Slug::new("raspberry-pi2")),
+            None,
+            None,
+        );
+        assert_eq!(a.hash(), b.hash());
+        assert_ne!(a.hash(), c.hash());
+    }
+
+    #[test]
+    fn contract_matcher_hash_is_cached_across_calls() {
+        // The second call to `hash()` must return the same slice
+        // as the first — populating the OnceLock once, not twice.
+        // Observing identical pointer addresses is the tightest
+        // available proxy for "the inner String was reused".
+        let m = ContractMatcher::new(
+            ContractType::new("hw.device-type"),
+            Some(Slug::new("raspberry-pi")),
+            None,
+            None,
+        );
+        let first = m.hash() as *const str;
+        let second = m.hash() as *const str;
+        assert_eq!(first, second, "hash cell must serve the same slice");
+    }
+
+    #[test]
+    fn contract_matcher_partial_eq_ignores_cached_hash() {
+        // Populating the cache on one matcher but not the other
+        // must not affect structural equality.
+        let a = ContractMatcher::new(
+            ContractType::new("hw.device-type"),
+            Some(Slug::new("raspberry-pi")),
+            None,
+            None,
+        );
+        let b = ContractMatcher::new(
+            ContractType::new("hw.device-type"),
+            Some(Slug::new("raspberry-pi")),
+            None,
+            None,
+        );
+        let _ = a.hash(); // populate a's cell, leave b's empty
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn contract_matcher_roundtrip_hash_field_is_skipped() {
+        // The `hash` field must not appear in serialized output so
+        // matchers remain round-trip clean through JSON. Verifying
+        // via serializing a minimal matcher directly.
+        let m = ContractMatcher::new(
+            ContractType::new("hw.device-type"),
+            Some(Slug::new("raspberry-pi")),
+            None,
+            None,
+        );
+        let _ = m.hash(); // populate the cache before serializing
+        let output = serde_json::to_value(&m).unwrap();
+        assert_eq!(
+            output,
+            json!({"type": "hw.device-type", "slug": "raspberry-pi"})
+        );
     }
 
     #[test]

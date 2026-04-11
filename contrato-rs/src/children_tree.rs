@@ -32,7 +32,7 @@ use crate::types::RawContract;
 /// This occurs when a dotted type path (e.g., `sw.os`) tries to create a
 /// subtree at a segment that already holds a contract leaf.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PathConflictError {
+pub(crate) struct PathConflictError {
     /// The path segment that was already occupied by a leaf node.
     pub(crate) segment: String,
     /// The full dotted path that was being inserted.
@@ -53,7 +53,7 @@ impl std::error::Error for PathConflictError {}
 
 /// Error produced by [`build`] when constructing the children tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BuildTreeError {
+pub(crate) enum BuildTreeError {
     /// A dotted type path conflicted with an existing leaf node.
     PathConflict(PathConflictError),
     /// A type string from the children index was not a valid dotted path.
@@ -185,7 +185,7 @@ impl<'de> Deserialize<'de> for ChildrenTree {
 ///
 /// Recursively walks the tree and collects every [`RawContract`] found at leaf
 /// positions into a flat vector.
-pub fn get_all(tree: &ChildrenTree) -> Vec<RawContract> {
+pub(crate) fn get_all(tree: &ChildrenTree) -> Vec<RawContract> {
     let mut out = Vec::new();
     collect_all(tree, &mut out);
     out
@@ -207,17 +207,28 @@ fn collect_all(tree: &ChildrenTree, out: &mut Vec<RawContract>) {
 
 /// Trait exposing the children index data needed by [`build`].
 ///
-/// This decouples the tree-building logic from the concrete `ChildrenIndex`
-/// struct (defined in Phase 9), avoiding circular module dependencies.
-pub trait ChildrenIndex {
-    /// Iterates over the type strings of all child contracts.
-    /// Each type string must appear at most once.
+/// Decouples the tree-building logic from the concrete `ChildrenIndex`
+/// struct in [`crate::children`], avoiding circular module dependencies
+/// between the tree serializer and the index that stores its inputs.
+pub(crate) trait ChildrenIndex {
+    /// Iterates over the type strings of all child contracts. Each
+    /// type string must appear at most once. The iteration order is
+    /// unspecified — [`build`] only uses it to enumerate the types,
+    /// and the final tree is keyed by a `BTreeMap` that re-sorts
+    /// everything, so the caller-visible output stays deterministic.
     fn child_types(&self) -> impl Iterator<Item = &str>;
 
-    /// Returns an iterator over the unique contract hashes for the given type.
+    /// Returns an iterator over the unique contract hashes for the
+    /// given type. The iterator must yield unique values and its
+    /// `len()` must be O(1). Returns `None` if the type has no
+    /// children.
     ///
-    /// The iterator must yield unique values and its `len()` must be O(1).
-    /// Returns `None` if the type has no children.
+    /// **Consistency contract:** if this iterator's length is 1, the
+    /// same child must also be reachable from [`type_slugs`] under its
+    /// own slug. [`build`] uses the single-child case as a fast-path
+    /// that bypasses the slug branch, so any implementation that
+    /// diverges between `type_hashes` and `type_slugs` will produce a
+    /// tree shape that does not round-trip through deserialization.
     fn type_hashes(&self, ty: &str) -> Option<impl ExactSizeIterator<Item = &str>>;
 
     /// Iterates over `(slug, hash_iterator)` pairs for the given type.
@@ -253,7 +264,14 @@ pub trait ChildrenIndex {
 ///
 /// Returns an error if a dotted type path (e.g., `sw.os`) conflicts with an
 /// already-stored leaf node at an intermediate segment.
-pub fn build(source: &impl ChildrenIndex) -> Result<ChildrenTree, BuildTreeError> {
+pub(crate) fn build(source: &impl ChildrenIndex) -> Result<ChildrenTree, BuildTreeError> {
+    // `tree` is a `BTreeMap`, so the outer iteration order from
+    // `source.child_types()` does not affect the serialized output:
+    // every `set_path` call lands in a sorted-key container, and
+    // intermediate branches are `BTreeMap`s as well. Only the
+    // multi-child `Multiple` vector ordering below depends on a
+    // deterministic input — hence the explicit hash sort in that
+    // branch.
     let mut tree = BTreeMap::new();
 
     for ty in source.child_types() {
@@ -276,8 +294,18 @@ pub fn build(source: &impl ChildrenIndex) -> Result<ChildrenTree, BuildTreeError
         }
 
         // Multiple children: nest by slug under the type path.
+        //
+        // Hashes from the source index are sorted before materialization so
+        // the resulting `Multiple` vector is deterministic regardless of the
+        // underlying HashSet iteration order. This keeps the serialized
+        // `raw.children` tree — and therefore the parent contract's hash —
+        // insensitive to insertion order when multiple children share the
+        // same type and slug.
         for (slug, hashes) in source.type_slugs(ty) {
-            let contracts: Vec<RawContract> = hashes
+            let mut sorted_hashes: Vec<&str> = hashes.collect();
+            sorted_hashes.sort_unstable();
+            let contracts: Vec<RawContract> = sorted_hashes
+                .iter()
                 .filter_map(|h| source.child_by_hash(h).cloned())
                 .collect();
 
@@ -302,7 +330,7 @@ pub fn build(source: &impl ChildrenIndex) -> Result<ChildrenTree, BuildTreeError
 /// Sets a [`ChildrenTree`] node at a dotted path within a tree map, creating
 /// intermediate [`ChildrenTree::Branch`] nodes as needed.
 ///
-/// Mimics `lodash/set` behavior: `set_path(tree, "sw.os", node)` produces
+/// Example: `set_path(tree, "sw.os", node)` produces
 /// `{ "sw" => Branch({ "os" => node }) }`.
 ///
 /// # Errors
@@ -607,7 +635,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // build tests (ported from TS tests/children-tree/build.spec.ts)
+    // build tests
     // -----------------------------------------------------------------------
 
     #[test]

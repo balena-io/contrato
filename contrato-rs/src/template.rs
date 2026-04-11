@@ -103,7 +103,11 @@ fn is_blacklisted(
 /// - Single-level entries (e.g., `"name"`) match against the first path segment
 /// - Multi-level entries (e.g., `"data.foo.type"`) match against the full dotted path
 /// - Matching uses `starts_with`, so `"data"` blocks the entire `data` subtree
-pub fn compile_contract(value: &Value, blacklist: &HashSet<String>, root: Option<&Value>) -> Value {
+pub(crate) fn compile_contract(
+    value: &Value,
+    blacklist: &HashSet<String>,
+    root: Option<&Value>,
+) -> Value {
     let root = root.unwrap_or(value);
     let is_multi_level = blacklist.iter().any(|p| p.contains('.'));
     let mut breadcrumb = Vec::new();

@@ -93,9 +93,10 @@
         "slug": "artik10",
         "type": "hw.device-type",
         "name": "Samsung Artik 10",
-        "arch": "armv7hf"
+        "data": {
+          "arch": "armv7hf"
+        }
       }
     }
   }
 }
-

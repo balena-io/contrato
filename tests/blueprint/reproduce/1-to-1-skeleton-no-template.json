@@ -4,37 +4,49 @@
       "slug": "am571x-evm",
       "type": "hw.device-type",
       "name": "AM571X-EVM",
-      "arch": "armv7hf"
+      "data": {
+        "arch": "armv7hf"
+      }
     },
     {
       "slug": "apalis-imx6q",
       "type": "hw.device-type",
       "name": "Toradex Apalis",
-      "arch": "armv7hf"
+      "data": {
+        "arch": "armv7hf"
+      }
     },
     {
       "slug": "ts7700",
       "type": "hw.device-type",
       "name": "Technologic TS-7700",
-      "arch": "armel"
+      "data": {
+        "arch": "armel"
+      }
     },
     {
       "slug": "up-board",
       "type": "hw.device-type",
       "name": "UP Board",
-      "arch": "amd64"
+      "data": {
+        "arch": "amd64"
+      }
     },
     {
       "slug": "via-vab820-quad",
       "type": "hw.device-type",
       "name": "VIA vab820",
-      "arch": "armv7hf"
+      "data": {
+        "arch": "armv7hf"
+      }
     },
     {
       "slug": "zc702-zynq7",
       "type": "hw.device-type",
       "name": "Zynq zc702",
-      "arch": "armv7hf"
+      "data": {
+        "arch": "armv7hf"
+      }
     }
   ],
   "blueprint": {
@@ -56,7 +68,9 @@
             "slug": "am571x-evm",
             "type": "hw.device-type",
             "name": "AM571X-EVM",
-            "arch": "armv7hf"
+            "data": {
+              "arch": "armv7hf"
+            }
           }
         }
       }
@@ -70,7 +84,9 @@
             "slug": "apalis-imx6q",
             "type": "hw.device-type",
             "name": "Toradex Apalis",
-            "arch": "armv7hf"
+            "data": {
+              "arch": "armv7hf"
+            }
           }
         }
       }
@@ -84,7 +100,9 @@
             "slug": "ts7700",
             "type": "hw.device-type",
             "name": "Technologic TS-7700",
-            "arch": "armel"
+            "data": {
+              "arch": "armel"
+            }
           }
         }
       }
@@ -98,7 +116,9 @@
             "slug": "up-board",
             "type": "hw.device-type",
             "name": "UP Board",
-            "arch": "amd64"
+            "data": {
+              "arch": "amd64"
+            }
           }
         }
       }
@@ -112,7 +132,9 @@
             "slug": "via-vab820-quad",
             "type": "hw.device-type",
             "name": "VIA vab820",
-            "arch": "armv7hf"
+            "data": {
+              "arch": "armv7hf"
+            }
           }
         }
       }
@@ -126,7 +148,9 @@
             "slug": "zc702-zynq7",
             "type": "hw.device-type",
             "name": "Zynq zc702",
-            "arch": "armv7hf"
+            "data": {
+              "arch": "armv7hf"
+            }
           }
         }
       }

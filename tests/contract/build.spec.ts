@@ -21,18 +21,20 @@ describe('Contract build', () => {
 			},
 		});
 
-		expect(contracts).to.deep.equal([
-			new Contract({
-				name: 'Debian Wheezy',
-				slug: 'debian',
-				version: 'wheezy',
-				type: 'sw.os',
-				data: {
-					codename: 'Wheezy',
-					url: 'https://contracts.org/downloads/sw.os/debian/wheezy.tar.gz',
-				},
-			}),
-		]);
+		expect(contracts.map((c) => c.raw)).to.deep.equal(
+			[
+				new Contract({
+					name: 'Debian Wheezy',
+					slug: 'debian',
+					version: 'wheezy',
+					type: 'sw.os',
+					data: {
+						codename: 'Wheezy',
+						url: 'https://contracts.org/downloads/sw.os/debian/wheezy.tar.gz',
+					},
+				}),
+			].map((c) => c.raw),
+		);
 	});
 
 	it('should support slug and type templates', () => {
@@ -47,18 +49,20 @@ describe('Contract build', () => {
 			},
 		});
 
-		expect(contracts).to.deep.equal([
-			new Contract({
-				name: 'Debian Wheezy',
-				slug: 'debian',
-				version: 'wheezy',
-				type: 'sw.os',
-				data: {
+		expect(contracts.map((c) => c.raw)).to.deep.equal(
+			[
+				new Contract({
+					name: 'Debian Wheezy',
 					slug: 'debian',
+					version: 'wheezy',
 					type: 'sw.os',
-				},
-			}),
-		]);
+					data: {
+						slug: 'debian',
+						type: 'sw.os',
+					},
+				}),
+			].map((c) => c.raw),
+		);
 	});
 
 	it('should expand contract variants', () => {
@@ -78,23 +82,25 @@ describe('Contract build', () => {
 			],
 		});
 
-		expect(contracts).to.deep.equal([
-			new Contract({
-				slug: 'debian',
-				version: 'wheezy',
-				type: 'sw.os',
-			}),
-			new Contract({
-				slug: 'debian',
-				version: 'jessie',
-				type: 'sw.os',
-			}),
-			new Contract({
-				slug: 'debian',
-				version: 'sid',
-				type: 'sw.os',
-			}),
-		]);
+		expect(contracts.map((c) => c.raw)).to.deep.equal(
+			[
+				new Contract({
+					slug: 'debian',
+					version: 'wheezy',
+					type: 'sw.os',
+				}),
+				new Contract({
+					slug: 'debian',
+					version: 'jessie',
+					type: 'sw.os',
+				}),
+				new Contract({
+					slug: 'debian',
+					version: 'sid',
+					type: 'sw.os',
+				}),
+			].map((c) => c.raw),
+		);
 	});
 
 	it('should build contracts with variants and templates', () => {
@@ -115,26 +121,28 @@ describe('Contract build', () => {
 			],
 		});
 
-		expect(contracts).to.deep.equal([
-			new Contract({
-				name: 'debian wheezy',
-				slug: 'debian',
-				version: 'wheezy',
-				type: 'sw.os',
-			}),
-			new Contract({
-				name: 'debian jessie',
-				slug: 'debian',
-				version: 'jessie',
-				type: 'sw.os',
-			}),
-			new Contract({
-				name: 'debian sid',
-				slug: 'debian',
-				version: 'sid',
-				type: 'sw.os',
-			}),
-		]);
+		expect(contracts.map((c) => c.raw)).to.deep.equal(
+			[
+				new Contract({
+					name: 'debian wheezy',
+					slug: 'debian',
+					version: 'wheezy',
+					type: 'sw.os',
+				}),
+				new Contract({
+					name: 'debian jessie',
+					slug: 'debian',
+					version: 'jessie',
+					type: 'sw.os',
+				}),
+				new Contract({
+					name: 'debian sid',
+					slug: 'debian',
+					version: 'sid',
+					type: 'sw.os',
+				}),
+			].map((c) => c.raw),
+		);
 	});
 
 	it('should expand contract aliases', () => {
@@ -145,25 +153,27 @@ describe('Contract build', () => {
 			aliases: ['foo', 'bar'],
 		});
 
-		expect(contracts).to.deep.equal([
-			new Contract({
-				slug: 'foo',
-				version: 'jessie',
-				type: 'sw.os',
-				canonicalSlug: 'debian',
-			}),
-			new Contract({
-				slug: 'bar',
-				version: 'jessie',
-				type: 'sw.os',
-				canonicalSlug: 'debian',
-			}),
-			new Contract({
-				slug: 'debian',
-				version: 'jessie',
-				type: 'sw.os',
-			}),
-		]);
+		expect(contracts.map((c) => c.raw)).to.deep.equal(
+			[
+				new Contract({
+					slug: 'foo',
+					version: 'jessie',
+					type: 'sw.os',
+					canonicalSlug: 'debian',
+				}),
+				new Contract({
+					slug: 'bar',
+					version: 'jessie',
+					type: 'sw.os',
+					canonicalSlug: 'debian',
+				}),
+				new Contract({
+					slug: 'debian',
+					version: 'jessie',
+					type: 'sw.os',
+				}),
+			].map((c) => c.raw),
+		);
 	});
 
 	it('should build contracts with variants and aliases', () => {
@@ -182,47 +192,49 @@ describe('Contract build', () => {
 			aliases: ['foo', 'bar'],
 		});
 
-		expect(contracts).to.deep.equal([
-			new Contract({
-				name: 'debian wheezy',
-				slug: 'foo',
-				type: 'sw.os',
-				version: 'wheezy',
-				canonicalSlug: 'debian',
-			}),
-			new Contract({
-				name: 'debian wheezy',
-				slug: 'bar',
-				type: 'sw.os',
-				version: 'wheezy',
-				canonicalSlug: 'debian',
-			}),
-			new Contract({
-				name: 'debian wheezy',
-				slug: 'debian',
-				version: 'wheezy',
-				type: 'sw.os',
-			}),
-			new Contract({
-				name: 'debian jessie',
-				slug: 'foo',
-				type: 'sw.os',
-				version: 'jessie',
-				canonicalSlug: 'debian',
-			}),
-			new Contract({
-				name: 'debian jessie',
-				slug: 'bar',
-				type: 'sw.os',
-				version: 'jessie',
-				canonicalSlug: 'debian',
-			}),
-			new Contract({
-				name: 'debian jessie',
-				slug: 'debian',
-				version: 'jessie',
-				type: 'sw.os',
-			}),
-		]);
+		expect(contracts.map((c) => c.raw)).to.deep.equal(
+			[
+				new Contract({
+					name: 'debian wheezy',
+					slug: 'foo',
+					type: 'sw.os',
+					version: 'wheezy',
+					canonicalSlug: 'debian',
+				}),
+				new Contract({
+					name: 'debian wheezy',
+					slug: 'bar',
+					type: 'sw.os',
+					version: 'wheezy',
+					canonicalSlug: 'debian',
+				}),
+				new Contract({
+					name: 'debian wheezy',
+					slug: 'debian',
+					version: 'wheezy',
+					type: 'sw.os',
+				}),
+				new Contract({
+					name: 'debian jessie',
+					slug: 'foo',
+					type: 'sw.os',
+					version: 'jessie',
+					canonicalSlug: 'debian',
+				}),
+				new Contract({
+					name: 'debian jessie',
+					slug: 'bar',
+					type: 'sw.os',
+					version: 'jessie',
+					canonicalSlug: 'debian',
+				}),
+				new Contract({
+					name: 'debian jessie',
+					slug: 'debian',
+					version: 'jessie',
+					type: 'sw.os',
+				}),
+			].map((c) => c.raw),
+		);
 	});
 });

@@ -8,7 +8,9 @@
       "requires": [
         {
           "type": "hw.device-type",
-          "arch": "armel"
+          "data": {
+            "arch": "armel"
+          }
         }
       ]
     },
@@ -20,8 +22,18 @@
       "requires": [
         {
           "or": [
-            { "type": "hw.device-type", "arch": "armel" },
-            { "type": "hw.device-type", "arch": "armv7hf" }
+            {
+              "type": "hw.device-type",
+              "data": {
+                "arch": "armel"
+              }
+            },
+            {
+              "type": "hw.device-type",
+              "data": {
+                "arch": "armv7hf"
+              }
+            }
           ]
         }
       ]
@@ -30,19 +42,25 @@
       "slug": "am571x-evm",
       "type": "hw.device-type",
       "name": "AM571X-EVM",
-      "arch": "armv7hf"
+      "data": {
+        "arch": "armv7hf"
+      }
     },
     {
       "slug": "apalis-imx6q",
       "type": "hw.device-type",
       "name": "Toradex Apalis",
-      "arch": "armv7hf"
+      "data": {
+        "arch": "armv7hf"
+      }
     },
     {
       "slug": "ts7700",
       "type": "hw.device-type",
       "name": "Technologic TS-7700",
-      "arch": "armel"
+      "data": {
+        "arch": "armel"
+      }
     }
   ],
   "blueprint": {
@@ -63,7 +81,9 @@
             "slug": "ts7700",
             "type": "hw.device-type",
             "name": "Technologic TS-7700",
-            "arch": "armel"
+            "data": {
+              "arch": "armel"
+            }
           }
         },
         "sw": {
@@ -75,7 +95,9 @@
             "requires": [
               {
                 "type": "hw.device-type",
-                "arch": "armel"
+                "data": {
+                  "arch": "armel"
+                }
               }
             ]
           }
@@ -90,7 +112,9 @@
             "slug": "am571x-evm",
             "type": "hw.device-type",
             "name": "AM571X-EVM",
-            "arch": "armv7hf"
+            "data": {
+              "arch": "armv7hf"
+            }
           }
         },
         "sw": {
@@ -102,8 +126,18 @@
             "requires": [
               {
                 "or": [
-                  { "type": "hw.device-type", "arch": "armel" },
-                  { "type": "hw.device-type", "arch": "armv7hf" }
+                  {
+                    "type": "hw.device-type",
+                    "data": {
+                      "arch": "armel"
+                    }
+                  },
+                  {
+                    "type": "hw.device-type",
+                    "data": {
+                      "arch": "armv7hf"
+                    }
+                  }
                 ]
               }
             ]
@@ -119,7 +153,9 @@
             "slug": "apalis-imx6q",
             "type": "hw.device-type",
             "name": "Toradex Apalis",
-            "arch": "armv7hf"
+            "data": {
+              "arch": "armv7hf"
+            }
           }
         },
         "sw": {
@@ -131,8 +167,18 @@
             "requires": [
               {
                 "or": [
-                  { "type": "hw.device-type", "arch": "armel" },
-                  { "type": "hw.device-type", "arch": "armv7hf" }
+                  {
+                    "type": "hw.device-type",
+                    "data": {
+                      "arch": "armel"
+                    }
+                  },
+                  {
+                    "type": "hw.device-type",
+                    "data": {
+                      "arch": "armv7hf"
+                    }
+                  }
                 ]
               }
             ]
@@ -148,7 +194,9 @@
             "slug": "ts7700",
             "type": "hw.device-type",
             "name": "Technologic TS-7700",
-            "arch": "armel"
+            "data": {
+              "arch": "armel"
+            }
           }
         },
         "sw": {
@@ -160,8 +208,18 @@
             "requires": [
               {
                 "or": [
-                  { "type": "hw.device-type", "arch": "armel" },
-                  { "type": "hw.device-type", "arch": "armv7hf" }
+                  {
+                    "type": "hw.device-type",
+                    "data": {
+                      "arch": "armel"
+                    }
+                  },
+                  {
+                    "type": "hw.device-type",
+                    "data": {
+                      "arch": "armv7hf"
+                    }
+                  }
                 ]
               }
             ]

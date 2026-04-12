@@ -1,855 +1,190 @@
-/*
- * Copyright (C) Balena.io - All Rights Reserved
- * Unauthorized copying of this file, via any medium is strictly prohibited.
- * Proprietary and confidential.
- */
-
-import filter from 'lodash/filter';
 import intersectionWith from 'lodash/intersectionWith';
-import isEqual from 'lodash/isEqual';
-import matches from 'lodash/matches';
-import omit from 'lodash/omit';
 import range from 'lodash/range';
 import reduce from 'lodash/reduce';
-import some from 'lodash/some';
-import uniqWith from 'lodash/uniqWith';
 import { Combination } from 'js-combinatorics';
-import { compare, satisfies, valid, validRange } from 'semver';
+import { compare, satisfies } from 'semver';
 
+import { Contract as WasmContract } from '../contrato-wasm/pkg/contrato_wasm.js';
 import { isValid } from './json-schema';
-import ObjectSet from './object-set';
-import MatcherCache from './matcher-cache';
-import { hashObject } from './hash';
 import type { ContractObject } from './types';
-import { MATCHER } from './types';
-import { compileContract } from './template';
-import { build as buildVariants } from './variants';
-import { build as buildChildrentree } from './children-tree';
-import { getAll } from './children-tree';
-import { areSetsDisjoint } from './utils';
 
-interface ContractChildrenMetadata {
-	searchCache: MatcherCache;
-	types: Set<string>;
-	map: Record<string, Contract>;
-	byType: Record<string, Set<string>>;
-	byTypeSlug: Record<string, Record<string, Set<string>>>;
-	typeMatchers: Record<string, Contract>;
+export interface ContractMatcher {
+	type: string;
+	slug?: string;
+	version?: string;
+	data?: Record<string, any>;
 }
 
-interface ContractRequirementsMetadata {
-	matchers: Record<string, ObjectSet<Contract>>;
-	types: Set<string>;
-	compiled: ObjectSet<Contract>;
-}
-
-interface ContractMetadata {
-	hash?: string;
-	children: ContractChildrenMetadata;
-	requirements: ContractRequirementsMetadata;
-	[key: string]: any;
+function typesArg(types?: Set<string>): string[] | undefined {
+	return types ? [...types] : undefined;
 }
 
 export default class Contract {
-	metadata: ContractMetadata;
-	raw: ContractObject;
-	/**
-	 * @summary A contract data structure
-	 * @name Contract
-	 * @memberof module:contrato
-	 * @class
-	 * @public
-	 *
-	 * @param {ContractObject} object - the contract plain object
-	 * @param {Object} [options] - options
-	 * @param {Boolean} [options.hash=true] - whether to hash the contract
-	 *
-	 * @example
-	 * const contract = new Contract({
-	 *   type: 'arch.sw',
-	 *   name: 'armv7hf',
-	 *   slug: 'armv7hf'
-	 * })
-	 */
-	constructor(object: ContractObject, options: { hash?: boolean } = {}) {
-		this.raw = object;
-		this.metadata = {
-			children: {
-				searchCache: new MatcherCache(),
-				types: new Set(),
-				map: {},
-				byType: {},
-				byTypeSlug: {},
-				typeMatchers: {},
-			},
-			requirements: {
-				matchers: {},
-				types: new Set(),
-				compiled: new ObjectSet(),
-			},
-		};
-		for (const source of getAll(this.raw.children)) {
-			this.addChild(new Contract(source));
-		}
-		this.interpolate({
-			rehash: false,
-		});
-		if (options.hash ?? true) {
-			this.hash();
-		}
+	protected inner: WasmContract;
+	private _hash: string | undefined;
+
+	constructor(object: ContractObject) {
+		this.inner = new WasmContract(object);
 	}
-	/**
-	 * @summary Re-hash the contract
-	 * @function
-	 * @name module:contrato.Contract#hash
-	 * @protected
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 * contract.hash()
-	 */
-	hash() {
-		this.metadata.hash = hashObject(this.raw);
+
+	protected static fromWasm(inner: WasmContract): Contract {
+		const instance = Object.create(Contract.prototype) as Contract;
+		instance.inner = inner;
+		return instance;
 	}
-	/**
-	 * @summary Re-build the contract's internal data structures
-	 * @function
-	 * @name module:contrato.Contract#rebuild
-	 * @protected
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 * contract.rebuild()
-	 */
-	rebuild() {
-		const tree = buildChildrentree(this);
-		if (Object.keys(tree).length > 0) {
-			this.raw.children = tree;
-		}
-		this.metadata.requirements = {
-			matchers: {},
-			types: new Set(),
-			compiled: new ObjectSet(),
-		};
-		/**
-		 * @summary Create and register a requirements matcher
-		 * @function
-		 * @private
-		 *
-		 * @param {Object} data - matcher data
-		 * @returns {Object} matcher object
-		 *
-		 * @example
-		 * const matcher = registerMatcher({
-		 *   type: 'arch.sw',
-		 *   slug: 'armv7hf'
-		 * })
-		 */
-		const registerMatcher = (data: any): any => {
-			const matcher = Contract.createMatcher(data);
-			this.metadata.requirements.matchers[data.type] ??= new ObjectSet();
-			this.metadata.requirements.matchers[data.type].add(matcher, {
-				id: matcher.metadata.hash,
-			});
-			this.metadata.requirements.types.add(data.type);
-			return matcher;
-		};
-		// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-		for (const conjunct of this.raw.requires || []) {
-			if (conjunct.type) {
-				const matcher = registerMatcher(conjunct);
-				this.metadata.requirements.compiled.add(matcher, {
-					id: matcher.metadata.hash,
-				});
-				continue;
-			}
-			const operand = Object.keys(conjunct)[0];
-			if (operand) {
-				const matchers = new ObjectSet();
-				for (const disjunct of conjunct[operand]) {
-					const matcher = registerMatcher(disjunct);
-					matchers.add(matcher, {
-						id: matcher.metadata.hash,
-					});
-				}
-				const operationContract = Contract.createMatcher(matchers, {
-					operation: operand,
-				});
-				this.metadata.requirements.compiled.add(operationContract, {
-					id: operationContract.metadata.hash,
-				});
-			}
-		}
-	}
-	/**
-	 * @summary Interpolate the contract's template
-	 * @function
-	 * @name module:contrato.Contract#interpolate
-	 * @protected
-	 *
-	 * @param {Object} [options] - options
-	 * @param {Boolean} [options.rehash=true] - whether to re-hash the contract
-	 * @returns {Object} contract instance
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 * contract.interpolate()
-	 */
-	interpolate(options: { rehash?: boolean } = {}): this {
-		// TODO: Find a way to keep track of whether the contract
-		// has already been fully templated, and if so, avoid
-		// running this function.
-		this.raw = compileContract(this.raw, {
-			// Each contract is only templated using its own
-			// properties, so here we prevent interpolations
-			// on children using the master contract as a root.
-			blacklist: new Set(['children']),
-		});
-		this.rebuild();
-		if (options.rehash ?? true) {
-			this.hash();
-		}
-		return this;
-	}
-	/**
-	 * @summary Get the contract version
-	 * @function
-	 * @name module:contrato.Contract#getVersion
-	 * @public
-	 *
-	 * @returns {String} slug - contract version
-	 *
-	 * @example
-	 * const contract = new Contract({
-	 *   type: 'sw.os',
-	 *   name: 'Debian Wheezy',
-	 *   version: 'wheezy',
-	 *   slug: 'debian'
-	 * })
-	 *
-	 * console.log(contract.getVersion())
-	 */
-	getVersion(): string {
-		return this.raw.version;
-	}
-	/**
-	 * @summary Get the contract slug
-	 * @function
-	 * @name module:contrato.Contract#getSlug
-	 * @public
-	 *
-	 * @returns {String} slug - contract slug
-	 *
-	 * @example
-	 * const contract = new Contract({
-	 *   type: 'arch.sw',
-	 *   name: 'armv7hf',
-	 *   slug: 'armv7hf'
-	 * })
-	 *
-	 * console.log(contract.getSlug())
-	 */
-	getSlug(): string {
-		return this.raw.slug;
-	}
-	/**
-	 * @summary Get all the slugs this contract can be referenced with
-	 * @function
-	 * @name module:contrato.Contract#getAllSlugs
-	 * @public
-	 *
-	 * @returns {Set} slugs
-	 *
-	 * @example
-	 * const contract = new Contract({
-	 *   type: 'hw.device-type',
-	 *   name: 'Raspberry Pi',
-	 *   slug: 'raspberrypi',
-	 *   aliases: [ 'rpi', 'raspberry-pi' ]
-	 * })
-	 *
-	 * console.log(contract.getAllSlugs())
-	 * > Set { raspberrypi, rpi, raspberry-pi }
-	 */
-	getAllSlugs(): Set<string> {
-		const slugs = new Set<string>(this.raw.aliases);
-		slugs.add(this.getSlug());
-		return slugs;
-	}
-	/**
-	 * @summary Check if a contract has aliases
-	 * @function
-	 * @name module:contrato.Contract#hasAliases
-	 * @public
-	 *
-	 * @returns {Boolean} whether the contract has aliases
-	 *
-	 * @example
-	 * const contract = new Contract({
-	 *   type: 'hw.device-type',
-	 *   name: 'Raspberry Pi',
-	 *   slug: 'raspberrypi',
-	 *   aliases: [ 'rpi', 'raspberry-pi' ]
-	 * })
-	 *
-	 * if (contract.hasAliases()) {
-	 *   console.log('This contract has aliases')
-	 * }
-	 */
-	hasAliases(): boolean {
-		return Boolean(this.raw.aliases) && this.raw.aliases.length > 0;
-	}
-	/**
-	 * @summary Get the contract canonical slug
-	 * @function
-	 * @name module:contrato.Contract#getCanonicalSlug
-	 * @public
-	 *
-	 * @returns {String} slug - contract canonical slug or slug if canonical slug doesn't exist
-	 *
-	 * @example
-	 * const contract = new Contract({
-	 *   type: 'arch.sw',
-	 *   name: 'armv7hf',
-	 *   slug: 'armv7hf'
-	 *   canonicalSlug: 'raspberry-pi'
-	 * })
-	 *
-	 * console.log(contract.getCanonicalSlug())
-	 */
-	getCanonicalSlug(): string {
-		// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-		return this.raw.canonicalSlug || this.getSlug();
-	}
-	/**
-	 * @summary Get the contract type
-	 * @function
-	 * @name module:contrato.Contract#getType
-	 * @public
-	 *
-	 * @returns {String} type - contract type
-	 *
-	 * @example
-	 * const contract = new Contract({
-	 *   type: 'arch.sw',
-	 *   name: 'armv7hf',
-	 *   slug: 'armv7hf'
-	 * })
-	 *
-	 * console.log(contract.getType())
-	 */
+
 	getType(): string {
-		return this.raw.type;
+		return this.inner.getType();
 	}
-	/**
-	 * @summary Get a reference string for the contract
-	 * @function
-	 * @name module:contrato.Contract#getReferenceString
-	 * @public
-	 *
-	 * @returns {String} reference string
-	 *
-	 * @example
-	 * const contract = new Contract({
-	 *   type: 'arch.sw',
-	 *   name: 'armv7hf',
-	 *   slug: 'armv7hf'
-	 * })
-	 *
-	 * console.log(contract.getReferenceString())
-	 */
+
+	getSlug(): string | undefined {
+		return this.inner.getSlug();
+	}
+
+	getVersion(): string | undefined {
+		return this.inner.getVersion();
+	}
+
+	getCanonicalSlug(): string | undefined {
+		return this.inner.getCanonicalSlug() ?? this.getSlug();
+	}
+
 	getReferenceString(): string {
-		const slug = this.getSlug();
-		const version = this.getVersion();
-		return version ? `${slug}@${version}` : slug;
+		return this.inner.getReferenceString();
 	}
-	/**
-	 * @summary Return a JSON representation of a contract
-	 * @function
-	 * @name module:contrato.Contract#toJSON
-	 * @public
-	 *
-	 * @returns {Object} JSON object
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 * const object = contract.toJSON()
-	 * console.log(JSON.stringify(object))
-	 */
+
+	getAllSlugs(): Set<string> {
+		return new Set(this.inner.getAllSlugs() as string[]);
+	}
+
+	hasAliases(): boolean {
+		return this.inner.hasAliases();
+	}
+
+	hash(): string {
+		this._hash ??= this.inner.hash();
+		return this._hash;
+	}
+
+	get raw(): ContractObject {
+		return this.inner.toJSON();
+	}
+
 	toJSON(): ContractObject {
-		// Ensure changes to the returned reference don't
-		// accidentally mutate the contract's internal state
-		return Object.assign({}, this.raw);
+		return this.raw;
 	}
-	/**
-	 * @summary Add a child contract
-	 * @function
-	 * @name module:contrato.Contract#addChild
-	 * @public
-	 *
-	 * @param {Object} contract - contract
-	 * @param {Object} [options] - options
-	 * @param {Boolean} [options.rehash=true] - whether to re-hash the parent contract
-	 * @param {Boolean} [options.rebuild=true] - whether to re-build the parent contract
-	 * @returns {Object} contract
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 * contract.addChild(new Contract({ ... }))
-	 */
-	addChild(
-		contract: Contract,
-		options: { rehash?: boolean; rebuild?: boolean } = {},
-	): this {
-		const type = contract.getType();
-		const childHash = contract.metadata.hash!;
-		if (this.metadata.children.map[childHash]) {
-			return this;
-		}
-		if (!this.metadata.children.types.has(type)) {
-			this.metadata.children.types.add(type);
-			this.metadata.children.byType[type] = new Set();
-			this.metadata.children.byTypeSlug[type] = {};
-		}
-		for (const slug of contract.getAllSlugs()) {
-			this.metadata.children.byTypeSlug[type][slug] ??= new Set();
-			this.metadata.children.byTypeSlug[type][slug].add(childHash);
-		}
-		this.metadata.children.map[childHash] = contract;
-		this.metadata.children.byType[type].add(childHash);
-		this.metadata.children.searchCache.resetType(type);
-		if (options.rebuild ?? true) {
-			this.rebuild();
-		}
-		if (options.rehash ?? true) {
-			this.hash();
-		}
+
+	interpolate(): this {
+		this.inner.interpolate();
+		this._hash = undefined;
 		return this;
 	}
-	/**
-	 * @summary Remove a child contract
-	 * @function
-	 * @name module:contrato.Contract#removeChild
-	 * @public
-	 *
-	 * @param {Object} contract - contract
-	 * @param {Object} [options] - options
-	 * @param {Boolean} [options.rehash=true] - whether to rehash the contract
-	 * @returns {Object} parent contract
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 *
-	 * const child = new Contract({ ... })
-	 * contract.addChild(child)
-	 * contract.removeChild(child)
-	 */
-	removeChild(contract: Contract, options: { rehash?: boolean } = {}): this {
-		const type = contract.getType();
-		const childHash = contract.metadata.hash!;
-		if (!this.raw.children || !this.metadata.children.map[childHash]) {
-			return this;
-		}
-		Reflect.deleteProperty(this.metadata.children.map, childHash);
-		this.metadata.children.byType[type].delete(childHash);
-		if (this.metadata.children.byType[type].size === 0) {
-			Reflect.deleteProperty(this.metadata.children.byType, type);
-			this.metadata.children.types.delete(type);
-		}
-		for (const slug of contract.getAllSlugs()) {
-			this.metadata.children.byTypeSlug[type][slug].delete(childHash);
-			if (this.metadata.children.byTypeSlug[type][slug].size === 0) {
-				Reflect.deleteProperty(this.metadata.children.byTypeSlug[type], slug);
-			}
-		}
-		if (Object.keys(this.metadata.children.byTypeSlug[type]).length === 0) {
-			Reflect.deleteProperty(this.metadata.children.byTypeSlug, type);
-		}
-		this.metadata.children.searchCache.resetType(contract.getType());
-		this.rebuild();
-		if (options.rehash ?? true) {
-			this.hash();
-		}
+
+	addChild(contract: Contract): this {
+		this.inner.addChild(contract.inner);
+		this._hash = undefined;
 		return this;
 	}
-	/**
-	 * @summary Add a set of children contracts to the contract
-	 * @function
-	 * @name module:contrato.Contract#addChildren
-	 * @public
-	 *
-	 * @description
-	 * This is a utility method over `.addChild()`.
-	 *
-	 * @param {Object[]} contracts - contracts
-	 * @param {Object} [options] - options
-	 * @param {Boolean} [options.rehash=true] - whether to rehash the contract
-	 * @returns {Object} contract
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 * contract.addChildren([
-	 *   new Contract({ ... }),
-	 *   new Contract({ ... }),
-	 *   new Contract({ ... })
-	 * ])
-	 */
-	addChildren(
-		contracts: Contract[] = [],
-		options: { rehash?: boolean } = {},
-	): this {
-		if (!contracts) {
+
+	addChildren(contracts: Contract[] = []): this {
+		if (contracts.length === 0) {
 			return this;
 		}
 		for (const contract of contracts) {
-			this.addChild(contract, {
-				// For performance reasons. If this is set to true,
-				// then we would re-build the contract N times, where
-				// N is the number of contracts passed to this function.
-				// Intead, we can prevent re-building and only do it
-				// once when the function completes.
-				rehash: false,
-				rebuild: false,
-			});
+			this.inner.addChild(contract.inner);
 		}
-		this.rebuild();
-		if (options.rehash ?? true) {
-			this.hash();
-		}
+		this._hash = undefined;
 		return this;
 	}
-	/**
-	 * @summary Recursively get the list of types known children contract types
-	 * @function
-	 * @name module:contrato.Contract#getChildrenTypes
-	 * @public
-	 *
-	 * @returns {Set} types
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 * contract.addChildren([ { ... }, { ... } ])
-	 * console.log(contract.getChildrenTypes())
-	 */
-	getChildrenTypes(): Set<string> {
-		const types = new Set<string>(this.metadata.children.types);
-		for (const contract of this.getChildren()) {
-			for (const type of contract.getChildrenTypes()) {
-				types.add(type);
-			}
+
+	removeChild(contract: Contract): this {
+		this.inner.removeChild(contract.inner);
+		this._hash = undefined;
+		return this;
+	}
+
+	getChildByHash(hash: string): Contract | undefined {
+		const child = this.inner.getChildByHash(hash);
+		if (!child) {
+			return undefined;
 		}
-		return types;
+		return Contract.fromWasm(child);
 	}
-	/**
-	 * @summary Get a single child by its hash
-	 * @function
-	 * @name module:contrato.Contract#getChildByHash
-	 * @public
-	 *
-	 * @param {String} childHash - child contract hash
-	 * @returns {(Object|Undefined)} child
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 * contract.addChildren([ ... ])
-	 *
-	 * const child = contract.getChildByHash('xxxxxxx')
-	 *
-	 * if (child) {
-	 *   console.log(child)
-	 * }
-	 */
-	getChildByHash(childHash: string): Contract | undefined {
-		return this.metadata.children.map[childHash];
-	}
-	/**
-	 * @summary Recursively get a set of children contracts
-	 * @function
-	 * @name module:contrato.Contract#getChildren
-	 * @public
-	 *
-	 * @param {Object} [options] - options
-	 * @param {Set} [options.types] - children types (all by default)
-	 * @returns {Object[]} children
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 * const children = contract.getChildren({
-	 *   types: new Set([ 'arch.sw' ])
-	 * })
-	 *
-	 * for (const child of children) {
-	 *   console.log(child)
-	 * }
-	 */
+
 	getChildren(options: { types?: Set<string> } = {}): Contract[] {
-		const contracts: Contract[] = [];
-		for (const contract of Object.values(this.metadata.children.map)) {
-			if (!options.types || options.types.has(contract.raw.type)) {
-				contracts.push(contract);
+		if (options.types) {
+			if (options.types.size === 0) {
+				return [];
 			}
-			contracts.push(...contract.getChildren(options));
+			return (
+				this.inner.getChildrenByTypes([...options.types]) as WasmContract[]
+			).map((c) => Contract.fromWasm(c));
 		}
-		return contracts;
+		return (this.inner.getChildren() as WasmContract[]).map((c) =>
+			Contract.fromWasm(c),
+		);
 	}
-	/**
-	 * @summary Get all the children contracts of a specific type
-	 * @function
-	 * @name module:contrato.Contract#getChildrenByType
-	 * @public
-	 *
-	 * @param {String} type - contract type
-	 * @returns {Object[]} children
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 * contract.addChildren([ ... ])
-	 * const children = container.getChildrenByType('sw.os')
-	 *
-	 * children.forEach((child) => {
-	 *   console.log(child)
-	 * })
-	 */
+
 	getChildrenByType(type: string): Contract[] {
-		this.metadata.children.typeMatchers[type] ??= Contract.createMatcher({
-			type,
-		});
-		return this.findChildren(this.metadata.children.typeMatchers[type]);
+		return (this.inner.getChildrenByType(type) as WasmContract[]).map((c) =>
+			Contract.fromWasm(c),
+		);
 	}
-	/**
-	 * @summary Recursively find children using a matcher contract
-	 * @function
-	 * @name module:contrato.Contract#findChildren
-	 * @public
-	 *
-	 * @param {Object} matcher - matcher contract
-	 * @returns {Object[]} children
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 * contract.addChildren([ ... ])
-	 *
-	 * const children = contract.findChildren(Contract.createMatcher({
-	 *   type: 'sw.os',
-	 *   slug: 'debian'
-	 * }))
-	 *
-	 * children.forEach((child) => {
-	 *   console.log(child)
-	 * })
-	 */
-	findChildrenWithCapabilities(matcher: Contract): Contract[] {
-		if (!matcher.raw) {
+
+	getChildrenTypes(): Set<string> {
+		return new Set(this.inner.getChildrenTypes() as string[]);
+	}
+
+	findChildren(matcher: ContractMatcher): Contract[] {
+		if (!matcher || !('type' in matcher) || !matcher.type) {
 			return [];
 		}
-		const results: Contract[] = [];
-		for (const contract of this.getChildren().concat([this])) {
-			// We need to omit the slug from the matcher object, otherwise
-			// matchers that use an alias as a slug will never match the
-			// structure of the actual contract.
-			// Notice we do use the slug key separately, in order to obtain
-			// the list of hashes we should check against.
-			const match = matches(omit(matcher.raw.data, ['slug', 'version']));
-			const versionMatch = matcher.raw.data.version;
-			if (contract.raw.provides) {
-				for (const capability of contract.raw.provides) {
-					if (match(capability)) {
-						if (versionMatch) {
-							if (valid(capability.version) && validRange(versionMatch)) {
-								if (satisfies(capability.version, versionMatch)) {
-									results.push(contract);
-								}
-							} else if (isEqual(capability.version, versionMatch)) {
-								results.push(contract);
-							}
-							continue;
-						}
-						results.push(contract);
-					}
-				}
-			}
-		}
-		return uniqWith(results, isEqual);
+		return (this.inner.findChildren(matcher) as WasmContract[]).map((c) =>
+			Contract.fromWasm(c),
+		);
 	}
-	/**
-	 * @summary Recursively find children using a matcher contract
-	 * @function
-	 * @name module:contrato.Contract#findChildren
-	 * @public
-	 *
-	 * @param {Object} matcher - matcher contract
-	 * @returns {Object[]} children
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 * contract.addChildren([ ... ])
-	 *
-	 * const children = contract.findChildren(Contract.createMatcher({
-	 *   type: 'sw.os',
-	 *   slug: 'debian'
-	 * }))
-	 *
-	 * children.forEach((child) => {
-	 *   console.log(child)
-	 * })
-	 */
-	findChildren(matcher: Contract | object): Contract[] {
-		if (
-			!(matcher instanceof Contract) ||
-			!matcher.raw ||
-			!this.getChildrenTypes().has(matcher.raw.data.type)
-		) {
+
+	findChildrenWithCapabilities(matcher: ContractMatcher): Contract[] {
+		if (!matcher || !('type' in matcher) || !matcher.type) {
 			return [];
 		}
-		const cache = this.metadata.children.searchCache.get(matcher);
-		if (cache) {
-			return cache;
-		}
-		const results: Contract[] = [];
-		const type = matcher.raw.data.type;
-		const slug = matcher.raw.data.slug;
-		for (const contract of this.getChildren().concat([this])) {
-			if (!contract.metadata.children.types.has(type)) {
-				continue;
-			}
-			// We need to omit the slug from the matcher object, otherwise
-			// matchers that use an alias as a slug will never match the
-			// structure of the actual contract.
-			// Notice we do use the slug key separately, in order to obtain
-			// the list of hashes we should check against.
-			const match = matches(omit(matcher.raw.data, ['slug', 'version']));
-			const versionMatch = matcher.raw.data.version;
-			const hashes = slug
-				? (contract.metadata.children.byTypeSlug[type][slug] ?? new Set())
-				: contract.metadata.children.byType[type];
-			// Means that we are matching just the type
-			if (Object.keys(matcher.raw.data).length === 1) {
-				for (const childHash of hashes) {
-					const child = contract.getChildByHash(childHash);
-					if (!child) {
-						throw new Error('Error retrieving child');
-					}
-					results.push(child);
-				}
-			} else {
-				for (const childHash of hashes) {
-					const child = contract.getChildByHash(childHash);
-					if (child && match(child.raw)) {
-						if (versionMatch) {
-							if (valid(child.raw.version) && validRange(versionMatch)) {
-								if (satisfies(child.raw.version, versionMatch)) {
-									results.push(child);
-								}
-							} else if (isEqual(child.raw.version, versionMatch)) {
-								results.push(child);
-							}
-							continue;
-						}
-						results.push(child);
-					}
-				}
-			}
-		}
-		this.metadata.children.searchCache.add(matcher, results);
-		return results;
+		return (
+			this.inner.findChildrenWithCapabilities(matcher) as WasmContract[]
+		).map((c) => Contract.fromWasm(c));
 	}
-	/**
-	 * @summary Get all possible combinations from a type of children contracts
-	 * @function
-	 * @name module:contrato.Contract#getChildrenCombinations
-	 * @public
-	 *
-	 * @description
-	 * Note that the client is responsible for evaluating that the
-	 * combination of contracts is valid with regards to requirements,
-	 * conflicts, etc. This function simply returns all the possible
-	 * combinations without any further checks.
-	 *
-	 * The combinations output by this function is a plain list of
-	 * contracts from which you can create a contract, or any other
-	 * application specific data structure.
-	 *
-	 * @param {Object} options - options
-	 * @param {String} options.type - contract type
-	 * @param {Number} options.from - number of contracts per combination (from)
-	 * @param {Number} options.to - number of contracts per combination (to)
-	 * @returns {Array[]} combinations
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 * contract.addChildren([
-	 *   new Contract({
-	 *     name: 'Debian Wheezy',
-	 *     version: 'wheezy',
-	 *     slug: 'debian',
-	 *     type: 'sw.os'
-	 *   }),
-	 *   new Contract({
-	 *     name: 'Debian Jessie',
-	 *     version: 'jessie',
-	 *     slug: 'debian',
-	 *     type: 'sw.os'
-	 *   }),
-	 *   new Contract({
-	 *     name: 'Fedora 25',
-	 *     version: '25',
-	 *     slug: 'fedora',
-	 *     type: 'sw.os'
-	 *   })
-	 * ])
-	 *
-	 * const combinations = contract.getChildrenCombinations({
-	 *   type: 'sw.os',
-	 *   from: 2,
-	 *   to: 2
-	 * })
-	 *
-	 * console.log(combinations)
-	 * > [
-	 * >   [
-	 * >     new Contract({
-	 * >       name: 'Debian Wheezy',
-	 * >       version: 'wheezy',
-	 * >       slug: 'debian',
-	 * >       type: 'sw.os'
-	 * >     }),
-	 * >     new Contract({
-	 * >       name: 'Debian Jessie',
-	 * >       version: 'jessie',
-	 * >       slug: 'debian',
-	 * >       type: 'sw.os'
-	 * >     })
-	 * >   ],
-	 * >   [
-	 * >     new Contract({
-	 * >       name: 'Debian Wheezy',
-	 * >       version: 'wheezy',
-	 * >       slug: 'debian',
-	 * >       type: 'sw.os'
-	 * >     }),
-	 * >     new Contract({
-	 * >       name: 'Fedora 25',
-	 * >       version: '25',
-	 * >       slug: 'fedora',
-	 * >       type: 'sw.os'
-	 * >     })
-	 * >   ],
-	 * >   [
-	 * >     new Contract({
-	 * >       name: 'Debian Jessie',
-	 * >       version: 'jessie',
-	 * >       slug: 'debian',
-	 * >       type: 'sw.os'
-	 * >     }),
-	 * >     new Contract({
-	 * >       name: 'Fedora 25',
-	 * >       version: '25',
-	 * >       slug: 'fedora',
-	 * >       type: 'sw.os'
-	 * >     })
-	 * >   ]
-	 * > ]
-	 */
+
+	satisfiesChildContract(
+		contract: Contract,
+		options: { types?: Set<string> } = {},
+	): boolean {
+		return this.inner.satisfiesChildContract(
+			contract.inner,
+			typesArg(options.types),
+		);
+	}
+
+	getNotSatisfiedChildRequirements(
+		contract: Contract,
+		options: { types?: Set<string> } = {},
+	): any[] {
+		return this.inner.getNotSatisfiedChildRequirements(
+			contract.inner,
+			typesArg(options.types),
+		);
+	}
+
+	areChildrenSatisfied(options: { types?: Set<string> } = {}): boolean {
+		return this.inner.areChildrenSatisfied(typesArg(options.types));
+	}
+
+	getAllNotSatisfiedChildRequirements(
+		options: { types?: Set<string> } = {},
+	): any[] {
+		return this.inner.getAllNotSatisfiedChildRequirements(
+			typesArg(options.types),
+		);
+	}
+
 	getChildrenCombinations(options: {
 		type: string;
 		from: number;
@@ -857,8 +192,7 @@ export default class Contract {
 		[index: string]: any;
 	}): Contract[][] {
 		let contracts = this.getChildrenByType(options.type);
-		// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-		const cardinality = options['cardinality'] || options;
+		const cardinality = options['cardinality'] ?? options;
 		if (options['filter']) {
 			contracts = contracts.filter((con) => {
 				return isValid(options['filter'], con.raw);
@@ -866,9 +200,10 @@ export default class Contract {
 		}
 		if (contracts.length > 0) {
 			if (options['version']) {
-				if (isEqual(options['version'], 'latest')) {
+				if (options['version'] === 'latest') {
+					contracts = contracts.filter((c) => c.getVersion() != null);
 					contracts.sort((left, right) => {
-						return compare(right.raw.version, left.raw.version);
+						return compare(right.getVersion()!, left.getVersion()!);
 					});
 					contracts = contracts.slice(
 						0,
@@ -876,7 +211,8 @@ export default class Contract {
 					);
 				} else {
 					contracts = contracts.filter((con) => {
-						return satisfies(con.raw.version, options['version']);
+						const v = con.getVersion();
+						return v != null && satisfies(v, options['version']);
 					});
 				}
 			}
@@ -902,44 +238,32 @@ export default class Contract {
 			return new Combination(contracts, tcardinality).toArray();
 		});
 	}
-	/**
-	 * @summary Recursively get the list of referenced contracts
-	 * @function
-	 * @name module:contrato.Contract#getReferencedContracts
-	 * @public
-	 *
-	 * @param {Object} options - options
-	 * @param {Object} options.from - contract to resolve external contracts from
-	 * @param {Set} options.types - types to consider
-	 * @returns {Object[]} referenced contracts
-	 *
-	 * @example
-	 * const universe = new Contract({ ... })
-	 * universe.addChildren([ ... ])
-	 *
-	 * const contract = new Contract({ ... })
-	 * for (const reference of contract.getReferencedContracts({
-	 *   types: new Set([ 'arch.sw' ]),
-	 *   from: universe
-	 * })) {
-	 *   console.log(reference.toJSON())
-	 * }
-	 */
+
+	// FIXME: Crosses the WASM boundary O(N×M×K) times (N contracts × M
+	// requirement types × K matchers per type). Each iteration serializes
+	// matchers out, calls findChildren, then recurses. A Rust
+	// implementation would operate on &Contract references, use the cached
+	// search path, and return the final map in a single boundary crossing.
 	getReferencedContracts(options: { types: Set<string>; from: Contract }): {
 		[index: string]: Contract[];
 	} {
 		const references: { [index: string]: Contract[] } = {};
+		const reqTypes = this.inner.getRequirementTypes() as string[];
 		for (const type of options.types) {
-			if (!this.metadata.requirements.types.has(type)) {
+			if (!reqTypes.includes(type)) {
 				continue;
 			}
 			references[type] = [];
-			const matchers = this.metadata.requirements.matchers[type].getAll();
+			const matchers = this.inner.getRequirementMatchersForType(
+				type,
+			) as ContractMatcher[];
 			for (const matcher of matchers) {
 				for (const find of options.from.findChildren(matcher)) {
+					references[find.getType()] ??= [];
 					references[find.getType()].push(find);
 					const nested = find.getReferencedContracts(options);
 					for (const nestedType of Object.keys(nested)) {
+						references[nestedType] ??= [];
 						for (const contract of nested[nestedType]) {
 							references[nestedType].push(contract);
 						}
@@ -949,70 +273,11 @@ export default class Contract {
 		}
 		return references;
 	}
-	/**
-	 * @summary Get the children cross referenced contracts
-	 * @function
-	 * @name module:contrato.Contract#getChildrenCrossReferencedContracts
-	 * @public
-	 *
-	 * @param {Object} options - options
-	 * @param {Object} options.from - contract to resolve external contracts from
-	 * @param {Set} options.types - types to consider
-	 * @returns {Object[]} children cross referenced contracts
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 *
-	 * contract.addChildren([
-	 *   new Contract({
-	 *     type: 'arch.sw',
-	 *     slug: 'armv7hf',
-	 *     name: 'armv7hf'
-	 *   }),
-	 *   new Contract({
-	 *     type: 'sw.os',
-	 *     slug: 'raspbian',
-	 *     requires: [
-	 *       {
-	 *         or: [
-	 *           {
-	 *             type: 'arch.sw',
-	 *             slug: 'armv7hf'
-	 *           },
-	 *           {
-	 *             type: 'arch.sw',
-	 *             slug: 'rpi'
-	 *           }
-	 *         ]
-	 *       }
-	 *     ]
-	 *   }),
-	 *   new Contract({
-	 *     type: 'sw.stack',
-	 *     slug: 'nodejs',
-	 *     requires: [
-	 *       {
-	 *         type: 'arch.sw',
-	 *         slug: 'armv7hf'
-	 *       }
-	 *     ]
-	 *   })
-	 * ])
-	 *
-	 * const references = contract.getChildrenCrossReferencedContracts({
-	 *   from: contract,
-	 *   types: new Set([ 'arch.sw' ])
-	 * })
-	 *
-	 * console.log(references)
-	 * > [
-	 * >   Contract {
-	 * >     type: 'arch.sw',
-	 * >     slug: 'armv7hf',
-	 * >     name: 'armv7hf'
-	 * >   }
-	 * > ]
-	 */
+
+	// FIXME: Compounds the boundary-crossing cost of getReferencedContracts
+	// by calling it once per child, then intersects in JS with lodash.
+	// Moving to Rust would collapse the entire walk + intersection into a
+	// single WASM call using hash-based set intersection.
 	getChildrenCrossReferencedContracts(options: {
 		types: Set<string>;
 		from: Contract;
@@ -1027,454 +292,59 @@ export default class Contract {
 				result[type].push(references[type]);
 			}
 		}
-		return reduce(
+		return reduce<typeof result, Contract[]>(
 			result,
 			(accumulator, value) => {
-				return accumulator.concat(intersectionWith(...value, Contract.isEqual));
+				return accumulator.concat(
+					intersectionWith(
+						...(value as [Contract[], ...Contract[][]]),
+						Contract.isEqual,
+					),
+				);
 			},
-			[] as Contract[],
+			[],
 		);
 	}
 
-	private isRequirementSatisfied(
-		requirement: Contract,
-		options: { types?: Set<string> } = {},
-	): boolean {
-		// Utilities
-		const shouldEvaluateType = (type: string) =>
-			options.types ? options.types.has(type) : true;
-
-		/**
-		 * @summary Check if a matcher is satisfied
-		 * @function
-		 * @public
-		 *
-		 * @param {Object} matcher - matcher contract
-		 * @returns {Boolean} whether the matcher is satisfied
-		 *
-		 * @example
-		 * const matcher = Contract.createMatcher({
-		 *   type: 'sw.os',
-		 *   slug: 'debian'
-		 * })
-		 *
-		 * if (hasMatch(matcher)) {
-		 *   console.log('This matcher is satisfied!')
-		 * }
-		 */
-		const hasMatch = (matcher: Contract): boolean => {
-			// TODO: Write a function similar to findContracts
-			// that stops as soon as it finds one match
-			return (
-				this.findChildren(matcher).length > 0 ||
-				this.findChildrenWithCapabilities(matcher).length > 0
-			);
-		};
-
-		if (requirement.raw.operation === 'or') {
-			// (3.1) Note that we should only consider disjuncts
-			// of types we are allowed to check. We can make
-			// such transformation here, so we can then consider
-			// the disjunction as fulfilled if there are no
-			// remaining disjuncts.
-			const disjuncts = filter(requirement.raw.data.getAll(), (disjunct) => {
-				return shouldEvaluateType(disjunct.raw.data.type);
-			});
-			// (3.2) An empty disjuction means that this particular
-			// requirement is fulfilled, so we can carry on.
-			// A disjunction naturally contains a list of further
-			// requirements we need to check for. If at least one
-			// of the members is fulfilled, we can proceed with
-			// next requirement.
-			if (disjuncts.length === 0 || disjuncts.some(hasMatch)) {
-				return true;
-			}
-			// (3.3) If no members were fulfilled, then we know
-			// that this requirement was not fullfilled, so it will be returned
-			return false;
-		} else if (requirement.raw.operation === 'not') {
-			// (3.4) Note that we should only consider disjuncts
-			// of types we are allowed to check. We can make
-			// such transformation here, so we can then consider
-			// the disjunction as fulfilled if there are no
-			// remaining disjuncts.
-			// (3.5) We fail the requirement if the set of negated
-			// disjuncts is not empty, and we have at least one of
-			// them in the context.
-			if (
-				some(requirement.raw.data.getAll(), (disjunct) => {
-					return (
-						shouldEvaluateType(disjunct.raw.data.type) && hasMatch(disjunct)
-					);
-				})
-			) {
-				return false;
-			}
-			return true;
+	/// Creates a contract matcher from a dictionary
+	//
+	// A matcher allows to search for child contracts by type, slug, version range
+	// and data. All extra variables are assumed to be part of `data`.
+	//
+	// Example
+	// ```ts
+	// // find all child contracts with type `hw.device-type` and `data` containing
+	// // `{arch: 'armv7hf'}`
+	// mycontract.findChildren(Contract.createMatcher({
+	//   type: 'hw.device-type',
+	//   arch: 'armv7hf',
+	// }));
+	// ```
+	//
+	static createMatcher(obj: Record<string, any>): ContractMatcher {
+		const { type, slug, version, data, ...rest } = obj;
+		const matcher: ContractMatcher = { type };
+		if (slug != null) {
+			matcher.slug = slug;
 		}
-		// (4) If we should evaluate this requirement and it is not fullfilled
-		// it will be returned
-		if (
-			shouldEvaluateType(requirement.raw.data.type) &&
-			!hasMatch(requirement)
-		) {
-			return false;
+		if (version != null) {
+			matcher.version = version;
 		}
 
-		return true;
+		const matcherData = { ...rest, ...data };
+		if (Object.keys(matcherData).length > 0) {
+			matcher.data = matcherData;
+		}
+		return matcher;
 	}
 
-	/**
-	 * @summary Get a list of child requirements that are not satisfied by this contract
-	 * @function
-	 * @name module:contrato.Contract#satisfiesChildContract
-	 * @public
-	 *
-	 * @param {Object} contract - child contract
-	 * @param {Object} [options] - options
-	 * @param {Set} [options.types] - the types to consider (all by default)
-	 * @returns list of unsatisfied requirements
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 * contract.addChildren([
-	 *   new Contract({
-	 *     type: 'sw.os',
-	 *     name: 'Debian Wheezy',
-	 *     version: 'wheezy',
-	 *     slug: 'debian'
-	 *   }),
-	 *   new Contract({
-	 *     type: 'sw.os',
-	 *     name: 'Fedora 25',
-	 *     version: '25',
-	 *     slug: 'fedora'
-	 *   })
-	 * ])
-	 *
-	 * const child = new Contract({
-	 *   type: 'sw.stack',
-	 *   name: 'Node.js',
-	 *   version: '4.8.0',
-	 *   slug: 'nodejs',
-	 *   requires: [
-	 *     {
-	 *       or: [
-	 *         {
-	 *           type: 'sw.os',
-	 *           slug: 'debian'
-	 *         },
-	 *         {
-	 *           type: 'sw.os',
-	 *           slug: 'fedora'
-	 *         }
-	 *       ]
-	 *     }
-	 *   ]
-	 * })
-	 *
-	 * if (contract.satisfiesChildContract(child)) {
-	 *   console.log('The child contract is satisfied!')
-	 * }
-	 */
-	getNotSatisfiedChildRequirements(
-		contract: Contract,
-		options: { types?: Set<string> } = {},
-	) {
-		const conjuncts: Contract[] = contract.metadata.requirements.compiled
-			.getAll()
-			.concat(
-				contract
-					.getChildren()
-					.flatMap((child) => child.metadata.requirements.compiled.getAll()),
-			);
-		// (1) If the top level list of conjuncts is empty,
-		// then we can assume the requirements are fulfilled
-		// and stop without doing any further computations.
-		if (conjuncts.length === 0) {
-			return [];
-		}
-
-		// (2) The requirements are specified as a list of objects,
-		// so lets iterate through those.
-		// This function uses a for loop instead of a more functional
-		// construct for performance reasons, given that we can freely
-		// break out of the loop as soon as possible.
-		return conjuncts
-			.filter((conjunct) => !this.isRequirementSatisfied(conjunct, options))
-			.map((conjunct) => conjunct.raw.data);
-		// (5) If we reached this far, then it means that all the
-		// requirements were checked, and they were all satisfied,
-		// so this is good to go!
-	}
-	/**
-	 * @summary Check if a child contract is satisfied when applied to this contract
-	 * @function
-	 * @name module:contrato.Contract#satisfiesChildContract
-	 * @public
-	 *
-	 * @param {Object} contract - child contract
-	 * @param {Object} [options] - options
-	 * @param {Set} [options.types] - the types to consider (all by default)
-	 * @returns {Boolean} whether the contract is satisfied
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 * contract.addChildren([
-	 *   new Contract({
-	 *     type: 'sw.os',
-	 *     name: 'Debian Wheezy',
-	 *     version: 'wheezy',
-	 *     slug: 'debian'
-	 *   }),
-	 *   new Contract({
-	 *     type: 'sw.os',
-	 *     name: 'Fedora 25',
-	 *     version: '25',
-	 *     slug: 'fedora'
-	 *   })
-	 * ])
-	 *
-	 * const child = new Contract({
-	 *   type: 'sw.stack',
-	 *   name: 'Node.js',
-	 *   version: '4.8.0',
-	 *   slug: 'nodejs',
-	 *   requires: [
-	 *     {
-	 *       or: [
-	 *         {
-	 *           type: 'sw.os',
-	 *           slug: 'debian'
-	 *         },
-	 *         {
-	 *           type: 'sw.os',
-	 *           slug: 'fedora'
-	 *         }
-	 *       ]
-	 *     }
-	 *   ]
-	 * })
-	 *
-	 * if (contract.satisfiesChildContract(child)) {
-	 *   console.log('The child contract is satisfied!')
-	 * }
-	 */
-	satisfiesChildContract(
-		contract: Contract,
-		options: { types?: Set<string> } = {},
-	): boolean {
-		const conjuncts: Contract[] = contract.metadata.requirements.compiled
-			.getAll()
-			.concat(
-				contract
-					.getChildren()
-					.flatMap((child) => child.metadata.requirements.compiled.getAll()),
-			);
-
-		// (1) If the top level list of conjuncts is empty,
-		// then we can assume the requirements are fulfilled
-		// and stop without doing any further computations.
-		if (conjuncts.length === 0) {
-			return true;
-		}
-
-		// (2) The requirements are specified as a list of objects,
-		// so lets iterate through those.
-		// This function uses a for loop instead of a more functional
-		// construct for performance reasons, given that we can freely
-		// break out of the loop as soon as possible.
-		for (const conjunct of conjuncts) {
-			// (3-4) stop looking if an unsatisfied requirement is found
-			if (!this.isRequirementSatisfied(conjunct, options)) {
-				return false;
-			}
-		}
-		// (5) If we reached this far, then it means that all the
-		// requirements were checked, and they were all satisfied,
-		// so this is good to go!
-		return true;
-	}
-
-	/**
-	 * @summary Check if the contract children are satisfied
-	 * @function
-	 * @name module:contrato.Contract#areChildrenSatisfied
-	 * @public
-	 *
-	 * @param {Object} [options] - options
-	 * @param {Set} [options.types] - the types to consider (all by default)
-	 * @returns {Boolean} whether the children are satisfied
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 * contract.addChildren([ ... ])
-	 *
-	 * if (contract.areChildrenSatisfied({
-	 *   types: new Set([ 'sw.arch' ])
-	 * })) {
-	 *   console.log('This contract has all sw.arch requirements satisfied')
-	 * }
-	 */
-	areChildrenSatisfied(options: { types?: Set<string> } = {}): boolean {
-		for (const contract of this.getChildren()) {
-			// The contract object keeps track of which contract
-			// types the contract references in the requirements.
-			// If we specified a set of types and we know this
-			// contract is not interested in them, then we can
-			// continue and avoid traversing through all the
-			// requirements in vain.
-			if (
-				options.types &&
-				areSetsDisjoint(options.types, contract.metadata.requirements.types)
-			) {
-				continue;
-			}
-			if (
-				!this.satisfiesChildContract(contract, {
-					types: options.types,
-				})
-			) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	/**
-	 *
-	 * @param {@summary} options
-	 */
-	getAllNotSatisfiedChildRequirements(
-		options: { types?: Set<string> } = {},
-	): any[] {
-		let requirements: any[] = [];
-		for (const contract of this.getChildren()) {
-			// The contract object keeps track of which contract
-			// types the contract references in the requirements.
-			// If we specified a set of types and we know this
-			// contract is not interested in them, then we can
-			// continue and avoid traversing through all the
-			// requirements in vain.
-			if (
-				options.types &&
-				areSetsDisjoint(options.types, contract.metadata.requirements.types)
-			) {
-				requirements = requirements.concat(
-					contract.metadata.requirements.compiled
-						.getAll()
-						.map((c) => c.raw.data),
-				);
-				continue;
-			}
-			const contractRequirements = this.getNotSatisfiedChildRequirements(
-				contract,
-				{
-					types: options.types,
-				},
-			);
-			requirements = requirements.concat(contractRequirements);
-		}
-		return requirements;
-	}
-	/**
-	 * @summary Create a matcher contract object
-	 * @function
-	 * @static
-	 * @name module:contrato.Contract.createMatcher
-	 * @protected
-	 *
-	 * @param {(Object|Object[])} data - matcher data
-	 * @param {Object} [options] - options
-	 * @param {String} [options.operation] - the matcher's operation
-	 * @returns {Object} matcher contract
-	 *
-	 * @example
-	 * const matcher = Contract.createMatcher({
-	 *   type: 'arch.sw',
-	 *   slug: 'armv7hf'
-	 * })
-	 */
-	static createMatcher(
-		data: object | object[],
-		options: { operation?: string } = {},
-	): Contract {
-		return new Contract({
-			type: MATCHER,
-			operation: options.operation,
-			data,
-		});
-	}
-	/**
-	 * @summary Check if two contracts are equal
-	 * @function
-	 * @static
-	 * @name module:contrato.Contract.isEqual
-	 * @public
-	 *
-	 * @param {Object} contract1 - a contract
-	 * @param {Object} contract2 - a contract
-	 * @returns {Boolean} whether the contracts are equal
-	 *
-	 * @example
-	 * const contract1 = new Contract({ ... })
-	 * const contract2 = new Contract({ ... })
-	 *
-	 * if (Contract.isEqual(contract1, contract2)) {
-	 *   console.log('These contracts are equal')
-	 * }
-	 */
 	static isEqual(contract1: Contract, contract2: Contract): boolean {
-		if (contract1.metadata.hash && contract2.metadata.hash) {
-			return contract1.metadata.hash === contract2.metadata.hash;
-		}
-		return isEqual(contract1.raw, contract2.raw);
+		return WasmContract.isEqual(contract1.inner, contract2.inner);
 	}
-	/**
-	 * @summary Build a source contract
-	 * @function
-	 * @static
-	 * @name module:contrato.Contract.build
-	 * @public
-	 *
-	 * @param {Object} source - source contract
-	 * @returns {Object[]} built contracts
-	 *
-	 * @example
-	 * const contracts = Contract.build({
-	 *   name: 'debian {{version}}',
-	 *   slug: 'debian',
-	 *   type: 'sw.os',
-	 *   variants: [
-	 *     { version: 'wheezy' },
-	 *     { version: 'jessie' },
-	 *     { version: 'sid' }
-	 *   ]
-	 * })
-	 *
-	 * contracts.forEach((contract) => {
-	 *   if (contract instanceof Contract) {
-	 *     console.log('This is a built contract')
-	 *   }
-	 * })
-	 */
+
 	static build(source: ContractObject): Contract[] {
-		const rawContracts = buildVariants(source);
-		return rawContracts.reduce<Contract[]>((accumulator, variant) => {
-			const aliases = Array.isArray(variant['aliases'])
-				? variant['aliases']
-				: [];
-			const obj = omit(variant, ['aliases']) as ContractObject;
-			const contracts = aliases.map((alias) => {
-				return new Contract(
-					Object.assign({}, obj, {
-						canonicalSlug: obj['slug'],
-						slug: alias,
-					}),
-				);
-			});
-			contracts.push(new Contract(obj));
-			return accumulator.concat(contracts);
-		}, []);
+		return (WasmContract.build(source) as WasmContract[]).map((c) =>
+			Contract.fromWasm(c),
+		);
 	}
 }

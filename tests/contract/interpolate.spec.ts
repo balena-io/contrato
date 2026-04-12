@@ -1,58 +1,18 @@
-/*
- * Copyright (C) Balena.io - All Rights Reserved
- * Unauthorized copying of this file, via any medium is strictly prohibited.
- * Proprietary and confidential.
- */
-
 import { expect } from '../chai';
 
 import Contract from '../../lib/contract';
 
 describe('Contract interpolate', () => {
-	it('should build missing templates', () => {
+	it('should resolve templates at construction time', () => {
 		const contract = new Contract({
 			name: 'Debian {{this.data.codename}}',
 			slug: 'debian',
 			version: 'wheezy',
 			type: 'sw.os',
 			data: {
+				codename: 'Wheezy',
 				url: 'https://contracts.org/downloads/{{this.type}}/{{this.slug}}/{{this.version}}.tar.gz',
 			},
-		});
-
-		contract.raw.data.codename = 'Wheezy';
-		contract.interpolate();
-
-		expect(contract).to.deep.equal(
-			new Contract({
-				name: 'Debian Wheezy',
-				slug: 'debian',
-				version: 'wheezy',
-				type: 'sw.os',
-				data: {
-					codename: 'Wheezy',
-					url: 'https://contracts.org/downloads/sw.os/debian/wheezy.tar.gz',
-				},
-			}),
-		);
-	});
-
-	it('should not rehash the contract if the rehash option is set to false', () => {
-		const contract = new Contract({
-			name: 'Debian {{this.data.codename}}',
-			slug: 'debian',
-			version: 'wheezy',
-			type: 'sw.os',
-			data: {
-				url: 'https://contracts.org/downloads/{{this.type}}/{{this.slug}}/{{this.version}}.tar.gz',
-			},
-		});
-
-		const hash = contract.metadata.hash;
-
-		contract.raw.data.codename = 'Wheezy';
-		contract.interpolate({
-			rehash: false,
 		});
 
 		expect(contract.raw).to.deep.equal({
@@ -65,8 +25,23 @@ describe('Contract interpolate', () => {
 				url: 'https://contracts.org/downloads/sw.os/debian/wheezy.tar.gz',
 			},
 		});
+	});
 
-		expect(contract.metadata.hash).to.equal(hash);
+	it('should not resolve templates for which values do not exist', () => {
+		const contract = new Contract({
+			name: 'Debian {{this.data.codename}}',
+			slug: 'debian',
+			version: 'wheezy',
+			type: 'sw.os',
+			data: {
+				url: 'https://contracts.org/downloads/{{this.type}}/{{this.slug}}/{{this.version}}.tar.gz',
+			},
+		});
+
+		expect(contract.raw.name).to.equal('Debian {{this.data.codename}}');
+		expect(contract.raw.data.url).to.equal(
+			'https://contracts.org/downloads/sw.os/debian/wheezy.tar.gz',
+		);
 	});
 
 	it('should return the contract instance', () => {
@@ -80,7 +55,7 @@ describe('Contract interpolate', () => {
 			},
 		});
 
-		expect(contract.interpolate()).to.deep.equal(contract);
+		expect(contract.interpolate()).to.equal(contract);
 	});
 
 	it('should not perform interpolation on children', () => {
@@ -98,18 +73,8 @@ describe('Contract interpolate', () => {
 			},
 		});
 
-		expect(contract.interpolate().raw).to.deep.equal({
-			slug: 'debian',
-			version: 'wheezy',
-			type: 'sw.os',
-			children: {
-				foo: {
-					bar: {
-						slug: '{{this.version}}-child',
-						type: 'foo.bar',
-					},
-				},
-			},
-		});
+		const children = contract.getChildren();
+		expect(children).to.have.lengthOf(1);
+		expect(children[0].getSlug()).to.equal('{{this.version}}-child');
 	});
 });

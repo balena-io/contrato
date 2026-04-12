@@ -23,11 +23,14 @@ describe('Contract getChildrenByType', () => {
 
 		container.addChildren([contract1, contract2, contract3, contract4]);
 
-		expect(container.getChildrenByType('sw.os')).to.deep.equal([
-			contract1,
-			contract2,
-			contract3,
-		]);
+		expect(
+			container
+				.getChildrenByType('sw.os')
+				.map((c) => c.hash())
+				.sort(),
+		).to.deep.equal(
+			[contract1, contract2, contract3].map((c) => c.hash()).sort(),
+		);
 	});
 
 	it('should always return the same results', () => {
@@ -43,23 +46,30 @@ describe('Contract getChildrenByType', () => {
 
 		container.addChildren([contract1, contract2, contract3, contract4]);
 
-		expect(container.getChildrenByType('sw.os')).to.deep.equal([
-			contract1,
-			contract2,
-			contract3,
-		]);
+		const expectedHashes = [contract1, contract2, contract3]
+			.map((c) => c.hash())
+			.sort();
 
-		expect(container.getChildrenByType('sw.os')).to.deep.equal([
-			contract1,
-			contract2,
-			contract3,
-		]);
+		expect(
+			container
+				.getChildrenByType('sw.os')
+				.map((c) => c.hash())
+				.sort(),
+		).to.deep.equal(expectedHashes);
 
-		expect(container.getChildrenByType('sw.os')).to.deep.equal([
-			contract1,
-			contract2,
-			contract3,
-		]);
+		expect(
+			container
+				.getChildrenByType('sw.os')
+				.map((c) => c.hash())
+				.sort(),
+		).to.deep.equal(expectedHashes);
+
+		expect(
+			container
+				.getChildrenByType('sw.os')
+				.map((c) => c.hash())
+				.sort(),
+		).to.deep.equal(expectedHashes);
 	});
 
 	it('should return nothing if the type does not exist', () => {
@@ -94,8 +104,8 @@ describe('Contract getChildrenByType', () => {
 
 		container.addChildren([contract1, contract2]);
 
-		expect(container.getChildrenByType('hw.device-type')).to.deep.equal([
-			contract2,
-		]);
+		expect(
+			container.getChildrenByType('hw.device-type').map((c) => c.hash()),
+		).to.deep.equal([contract2.hash()]);
 	});
 });

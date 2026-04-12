@@ -9,6 +9,14 @@ import { expect } from '../chai';
 import Contract from '../../lib/contract';
 import CONTRACTS from '../contracts.json';
 
+const toHashes = (combos: Contract[][]) =>
+	combos.map((combo) => combo.map((c) => c.hash()).sort());
+
+const sortCombos = (combos: string[][]) =>
+	combos
+		.map((c) => [...c].sort())
+		.sort((a, b) => a.join(',').localeCompare(b.join(',')));
+
 describe('Contract getChilredCombinations', () => {
 	it('should throw if the type is not valid', () => {
 		const container = new Contract({
@@ -38,18 +46,22 @@ describe('Contract getChilredCombinations', () => {
 			slug: 'bar',
 		});
 
+		const wheezy = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
+
 		container.addChildren([
 			new Contract(CONTRACTS['sw.blob'].nodejs['4.8.0'].object),
-			new Contract(CONTRACTS['sw.os'].debian.wheezy.object),
+			wheezy,
 		]);
 
-		expect(
-			container.getChildrenCombinations({
-				type: 'sw.os',
-				from: 1,
-				to: 1,
-			}),
-		).to.deep.equal([[new Contract(CONTRACTS['sw.os'].debian.wheezy.object)]]);
+		const result = container.getChildrenCombinations({
+			type: 'sw.os',
+			from: 1,
+			to: 1,
+		});
+
+		expect(sortCombos(toHashes(result))).to.deep.equal(
+			sortCombos([[wheezy.hash()]]),
+		);
 	});
 
 	it('should return combinations of cardinality 1 for two contracts', () => {
@@ -58,22 +70,24 @@ describe('Contract getChilredCombinations', () => {
 			slug: 'bar',
 		});
 
+		const wheezy = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
+		const jessie = new Contract(CONTRACTS['sw.os'].debian.jessie.object);
+
 		container.addChildren([
 			new Contract(CONTRACTS['sw.blob'].nodejs['4.8.0'].object),
-			new Contract(CONTRACTS['sw.os'].debian.wheezy.object),
-			new Contract(CONTRACTS['sw.os'].debian.jessie.object),
+			wheezy,
+			jessie,
 		]);
 
-		expect(
-			container.getChildrenCombinations({
-				type: 'sw.os',
-				from: 1,
-				to: 1,
-			}),
-		).to.deep.equal([
-			[new Contract(CONTRACTS['sw.os'].debian.wheezy.object)],
-			[new Contract(CONTRACTS['sw.os'].debian.jessie.object)],
-		]);
+		const result = container.getChildrenCombinations({
+			type: 'sw.os',
+			from: 1,
+			to: 1,
+		});
+
+		expect(sortCombos(toHashes(result))).to.deep.equal(
+			sortCombos([[wheezy.hash()], [jessie.hash()]]),
+		);
 	});
 
 	it('should return combinations of cardinality 1 for three contracts', () => {
@@ -82,24 +96,26 @@ describe('Contract getChilredCombinations', () => {
 			slug: 'bar',
 		});
 
+		const wheezy = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
+		const jessie = new Contract(CONTRACTS['sw.os'].debian.jessie.object);
+		const fedora25 = new Contract(CONTRACTS['sw.os'].fedora['25'].object);
+
 		container.addChildren([
 			new Contract(CONTRACTS['sw.blob'].nodejs['4.8.0'].object),
-			new Contract(CONTRACTS['sw.os'].debian.wheezy.object),
-			new Contract(CONTRACTS['sw.os'].debian.jessie.object),
-			new Contract(CONTRACTS['sw.os'].fedora['25'].object),
+			wheezy,
+			jessie,
+			fedora25,
 		]);
 
-		expect(
-			container.getChildrenCombinations({
-				type: 'sw.os',
-				from: 1,
-				to: 1,
-			}),
-		).to.deep.equal([
-			[new Contract(CONTRACTS['sw.os'].debian.wheezy.object)],
-			[new Contract(CONTRACTS['sw.os'].debian.jessie.object)],
-			[new Contract(CONTRACTS['sw.os'].fedora['25'].object)],
-		]);
+		const result = container.getChildrenCombinations({
+			type: 'sw.os',
+			from: 1,
+			to: 1,
+		});
+
+		expect(sortCombos(toHashes(result))).to.deep.equal(
+			sortCombos([[wheezy.hash()], [jessie.hash()], [fedora25.hash()]]),
+		);
 	});
 
 	it('should return combinations of cardinality 2 for two contracts', () => {
@@ -108,24 +124,24 @@ describe('Contract getChilredCombinations', () => {
 			slug: 'bar',
 		});
 
+		const wheezy = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
+		const jessie = new Contract(CONTRACTS['sw.os'].debian.jessie.object);
+
 		container.addChildren([
 			new Contract(CONTRACTS['sw.blob'].nodejs['4.8.0'].object),
-			new Contract(CONTRACTS['sw.os'].debian.wheezy.object),
-			new Contract(CONTRACTS['sw.os'].debian.jessie.object),
+			wheezy,
+			jessie,
 		]);
 
-		expect(
-			container.getChildrenCombinations({
-				type: 'sw.os',
-				from: 2,
-				to: 2,
-			}),
-		).to.deep.equal([
-			[
-				new Contract(CONTRACTS['sw.os'].debian.wheezy.object),
-				new Contract(CONTRACTS['sw.os'].debian.jessie.object),
-			],
-		]);
+		const result = container.getChildrenCombinations({
+			type: 'sw.os',
+			from: 2,
+			to: 2,
+		});
+
+		expect(sortCombos(toHashes(result))).to.deep.equal(
+			sortCombos([[wheezy.hash(), jessie.hash()]]),
+		);
 	});
 
 	it('should return combinations of cardinality 2 for three contracts', () => {
@@ -134,33 +150,30 @@ describe('Contract getChilredCombinations', () => {
 			slug: 'bar',
 		});
 
+		const wheezy = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
+		const jessie = new Contract(CONTRACTS['sw.os'].debian.jessie.object);
+		const fedora25 = new Contract(CONTRACTS['sw.os'].fedora['25'].object);
+
 		container.addChildren([
 			new Contract(CONTRACTS['sw.blob'].nodejs['4.8.0'].object),
-			new Contract(CONTRACTS['sw.os'].debian.wheezy.object),
-			new Contract(CONTRACTS['sw.os'].debian.jessie.object),
-			new Contract(CONTRACTS['sw.os'].fedora['25'].object),
+			wheezy,
+			jessie,
+			fedora25,
 		]);
 
-		expect(
-			container.getChildrenCombinations({
-				type: 'sw.os',
-				from: 2,
-				to: 2,
-			}),
-		).to.deep.equal([
-			[
-				new Contract(CONTRACTS['sw.os'].debian.wheezy.object),
-				new Contract(CONTRACTS['sw.os'].debian.jessie.object),
-			],
-			[
-				new Contract(CONTRACTS['sw.os'].debian.wheezy.object),
-				new Contract(CONTRACTS['sw.os'].fedora['25'].object),
-			],
-			[
-				new Contract(CONTRACTS['sw.os'].debian.jessie.object),
-				new Contract(CONTRACTS['sw.os'].fedora['25'].object),
-			],
-		]);
+		const result = container.getChildrenCombinations({
+			type: 'sw.os',
+			from: 2,
+			to: 2,
+		});
+
+		expect(sortCombos(toHashes(result))).to.deep.equal(
+			sortCombos([
+				[wheezy.hash(), jessie.hash()],
+				[wheezy.hash(), fedora25.hash()],
+				[jessie.hash(), fedora25.hash()],
+			]),
+		);
 	});
 
 	it('should throw if "from" is greater than "to"', () => {
@@ -191,18 +204,22 @@ describe('Contract getChilredCombinations', () => {
 			slug: 'bar',
 		});
 
+		const wheezy = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
+
 		container.addChildren([
 			new Contract(CONTRACTS['sw.blob'].nodejs['4.8.0'].object),
-			new Contract(CONTRACTS['sw.os'].debian.wheezy.object),
+			wheezy,
 		]);
 
-		expect(
-			container.getChildrenCombinations({
-				type: 'sw.os',
-				from: 1,
-				to: 2,
-			}),
-		).to.deep.equal([[new Contract(CONTRACTS['sw.os'].debian.wheezy.object)]]);
+		const result = container.getChildrenCombinations({
+			type: 'sw.os',
+			from: 1,
+			to: 2,
+		});
+
+		expect(sortCombos(toHashes(result))).to.deep.equal(
+			sortCombos([[wheezy.hash()]]),
+		);
 	});
 
 	it('should return combinations from 1 to 2 for two contracts', () => {
@@ -211,26 +228,28 @@ describe('Contract getChilredCombinations', () => {
 			slug: 'bar',
 		});
 
+		const wheezy = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
+		const jessie = new Contract(CONTRACTS['sw.os'].debian.jessie.object);
+
 		container.addChildren([
 			new Contract(CONTRACTS['sw.blob'].nodejs['4.8.0'].object),
-			new Contract(CONTRACTS['sw.os'].debian.wheezy.object),
-			new Contract(CONTRACTS['sw.os'].debian.jessie.object),
+			wheezy,
+			jessie,
 		]);
 
-		expect(
-			container.getChildrenCombinations({
-				type: 'sw.os',
-				from: 1,
-				to: 2,
-			}),
-		).to.deep.equal([
-			[new Contract(CONTRACTS['sw.os'].debian.wheezy.object)],
-			[new Contract(CONTRACTS['sw.os'].debian.jessie.object)],
-			[
-				new Contract(CONTRACTS['sw.os'].debian.wheezy.object),
-				new Contract(CONTRACTS['sw.os'].debian.jessie.object),
-			],
-		]);
+		const result = container.getChildrenCombinations({
+			type: 'sw.os',
+			from: 1,
+			to: 2,
+		});
+
+		expect(sortCombos(toHashes(result))).to.deep.equal(
+			sortCombos([
+				[wheezy.hash()],
+				[jessie.hash()],
+				[wheezy.hash(), jessie.hash()],
+			]),
+		);
 	});
 
 	it('should return combinations from 1 to 3 for two contracts', () => {
@@ -239,26 +258,28 @@ describe('Contract getChilredCombinations', () => {
 			slug: 'bar',
 		});
 
+		const wheezy = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
+		const jessie = new Contract(CONTRACTS['sw.os'].debian.jessie.object);
+
 		container.addChildren([
 			new Contract(CONTRACTS['sw.blob'].nodejs['4.8.0'].object),
-			new Contract(CONTRACTS['sw.os'].debian.wheezy.object),
-			new Contract(CONTRACTS['sw.os'].debian.jessie.object),
+			wheezy,
+			jessie,
 		]);
 
-		expect(
-			container.getChildrenCombinations({
-				type: 'sw.os',
-				from: 1,
-				to: 3,
-			}),
-		).to.deep.equal([
-			[new Contract(CONTRACTS['sw.os'].debian.wheezy.object)],
-			[new Contract(CONTRACTS['sw.os'].debian.jessie.object)],
-			[
-				new Contract(CONTRACTS['sw.os'].debian.wheezy.object),
-				new Contract(CONTRACTS['sw.os'].debian.jessie.object),
-			],
-		]);
+		const result = container.getChildrenCombinations({
+			type: 'sw.os',
+			from: 1,
+			to: 3,
+		});
+
+		expect(sortCombos(toHashes(result))).to.deep.equal(
+			sortCombos([
+				[wheezy.hash()],
+				[jessie.hash()],
+				[wheezy.hash(), jessie.hash()],
+			]),
+		);
 	});
 
 	it('should return combinations from 1 to 3 for three contracts', () => {
@@ -267,40 +288,29 @@ describe('Contract getChilredCombinations', () => {
 			slug: 'bar',
 		});
 
-		container.addChildren([
-			new Contract(CONTRACTS['sw.os'].fedora['25'].object),
-			new Contract(CONTRACTS['sw.os'].debian.wheezy.object),
-			new Contract(CONTRACTS['sw.os'].debian.jessie.object),
-		]);
+		const fedora25 = new Contract(CONTRACTS['sw.os'].fedora['25'].object);
+		const wheezy = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
+		const jessie = new Contract(CONTRACTS['sw.os'].debian.jessie.object);
 
-		expect(
-			container.getChildrenCombinations({
-				type: 'sw.os',
-				from: 1,
-				to: 3,
-			}),
-		).to.deep.equal([
-			[new Contract(CONTRACTS['sw.os'].fedora['25'].object)],
-			[new Contract(CONTRACTS['sw.os'].debian.wheezy.object)],
-			[new Contract(CONTRACTS['sw.os'].debian.jessie.object)],
-			[
-				new Contract(CONTRACTS['sw.os'].fedora['25'].object),
-				new Contract(CONTRACTS['sw.os'].debian.wheezy.object),
-			],
-			[
-				new Contract(CONTRACTS['sw.os'].fedora['25'].object),
-				new Contract(CONTRACTS['sw.os'].debian.jessie.object),
-			],
-			[
-				new Contract(CONTRACTS['sw.os'].debian.wheezy.object),
-				new Contract(CONTRACTS['sw.os'].debian.jessie.object),
-			],
-			[
-				new Contract(CONTRACTS['sw.os'].fedora['25'].object),
-				new Contract(CONTRACTS['sw.os'].debian.wheezy.object),
-				new Contract(CONTRACTS['sw.os'].debian.jessie.object),
-			],
-		]);
+		container.addChildren([fedora25, wheezy, jessie]);
+
+		const result = container.getChildrenCombinations({
+			type: 'sw.os',
+			from: 1,
+			to: 3,
+		});
+
+		expect(sortCombos(toHashes(result))).to.deep.equal(
+			sortCombos([
+				[fedora25.hash()],
+				[wheezy.hash()],
+				[jessie.hash()],
+				[fedora25.hash(), wheezy.hash()],
+				[fedora25.hash(), jessie.hash()],
+				[wheezy.hash(), jessie.hash()],
+				[fedora25.hash(), wheezy.hash(), jessie.hash()],
+			]),
+		);
 	});
 
 	it('should not consider aliases as separate contracts', () => {
@@ -325,12 +335,14 @@ describe('Contract getChilredCombinations', () => {
 
 		container.addChildren([contract1, contract2]);
 
-		expect(
-			container.getChildrenCombinations({
-				type: 'hw.device-type',
-				from: 1,
-				to: 1,
-			}),
-		).to.deep.equal([[contract1], [contract2]]);
+		const result = container.getChildrenCombinations({
+			type: 'hw.device-type',
+			from: 1,
+			to: 1,
+		});
+
+		expect(sortCombos(toHashes(result))).to.deep.equal(
+			sortCombos([[contract1.hash()], [contract2.hash()]]),
+		);
 	});
 });

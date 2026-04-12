@@ -135,7 +135,7 @@ describe('Contract toJSON', () => {
 			},
 		});
 
-		expect(new Contract(container.toJSON())).to.deep.equal(container);
+		expect(new Contract(container.raw).toJSON()).to.deep.equal(container.raw);
 	});
 
 	it('should expand aliases in two children of the same type', () => {
@@ -176,7 +176,7 @@ describe('Contract toJSON', () => {
 			},
 		});
 
-		expect(new Contract(container.toJSON())).to.deep.equal(container);
+		expect(new Contract(container.raw).toJSON()).to.deep.equal(container.raw);
 	});
 
 	it('should correctly handle one aliased and one non aliased child of the same type', () => {
@@ -215,7 +215,7 @@ describe('Contract toJSON', () => {
 			},
 		});
 
-		expect(new Contract(container.toJSON())).to.deep.equal(container);
+		expect(new Contract(container.raw).toJSON()).to.deep.equal(container.raw);
 	});
 
 	it('should correctly handle one none aliased and one aliased child of the same type', () => {
@@ -254,6 +254,6 @@ describe('Contract toJSON', () => {
 			},
 		});
 
-		expect(new Contract(container.toJSON())).to.deep.equal(container);
+		expect(new Contract(container.raw).toJSON()).to.deep.equal(container.raw);
 	});
 });

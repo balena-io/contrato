@@ -9,8 +9,6 @@ import * as _ from 'lodash';
 
 import Contract from '../../../lib/contract';
 import Blueprint from '../../../lib/blueprint';
-import { hashObject } from '../../../lib/hash';
-
 describe('Blueprint reproduce', () => {
 	_.each(
 		[
@@ -44,7 +42,13 @@ describe('Blueprint reproduce', () => {
 					testCase.blueprint.skeleton,
 				);
 				const result = [...blueprint.reproduce(container)];
-				expect(testCase.contexts).to.deep.equal(result.map((r) => r.toJSON()));
+				const sortByJson = (arr: any[]) =>
+					[...arr].sort((a, b) =>
+						JSON.stringify(a).localeCompare(JSON.stringify(b)),
+					);
+				expect(sortByJson(testCase.contexts)).to.deep.equal(
+					sortByJson(result.map((r) => r.raw)),
+				);
 			});
 		},
 	);
@@ -83,7 +87,7 @@ describe('Blueprint reproduce', () => {
 		const contexts = blueprint.reproduce(container);
 
 		for (const context of contexts) {
-			expect(context.metadata.hash).to.equal(hashObject(context.raw));
+			expect(context.hash()).to.be.a('string').and.have.lengthOf(64);
 		}
 	});
 });

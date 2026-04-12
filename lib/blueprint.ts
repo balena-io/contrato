@@ -1,60 +1,41 @@
-/*
- * Copyright (C) Balena.io - All Rights Reserved
- * Unauthorized copying of this file, via any medium is strictly prohibited.
- * Proprietary and confidential.
- */
-
 import reduce from 'lodash/reduce';
 
 import Contract from './contract';
 import { parse } from './cardinality';
-import type { BlueprintLayout, BlueprintObject } from './types';
-import { BLUEPRINT } from './types';
+import type { BlueprintLayout } from './types';
 import {
 	cartesianProductWith,
 	flatten as flattenIterator,
 	filter as filterIterator,
 } from './utils';
 
-export default class Blueprint extends Contract {
-	/**
-	 * @summary A blueprint contract data structure
-	 * @name Blueprint
-	 * @memberof module:contrato
-	 * @class
-	 * @public
-	 *
-	 * @param {Object} layout - the blueprint layout
-	 * @param {Object} skeleton - the blueprint skeleton
-	 *
-	 * @example
-	 * const blueprint = new Blueprint({
-	 *   'arch.sw': 1,
-	 *   'hw.device-type': 1
-	 * }, {
-	 *   type: 'my-context',
-	 *   slug: '{{children.arch.sw.slug}}-{{children.hw.device-type.slug}}'
-	 * })
-	 */
-	constructor(layout: BlueprintLayout, skeleton?: any) {
-		super({
-			type: BLUEPRINT,
-			skeleton,
-			layout,
-		} as BlueprintObject);
+interface LayoutMetadata {
+	types: Set<string>;
+	finite: {
+		selectors: { [type: string]: any[] };
+		types: Set<string>;
+	};
+	infinite: {
+		selectors: { [type: string]: any[] };
+		types: Set<string>;
+	};
+}
 
-		this.metadata.layout = reduce(
-			this.raw.layout,
+export default class Blueprint {
+	readonly skeleton: any;
+	readonly layout: LayoutMetadata;
+
+	constructor(rawLayout: BlueprintLayout, skeleton?: any) {
+		this.skeleton = skeleton;
+		this.layout = reduce(
+			rawLayout,
 			(accumulator, value, type) => {
 				const selector = {
-					// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-					cardinality: parse(value.cardinality || value) as ReturnType<
+					cardinality: parse(value.cardinality ?? value) as ReturnType<
 						typeof parse
 					> & { type: string },
-					// Array has its own `filter` function, which we need to ignore
 					filter: Array.isArray(value) ? undefined : value.filter,
-					// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-					type: value.type || type,
+					type: value.type ?? type,
 					version: value.version,
 				};
 
@@ -80,43 +61,12 @@ export default class Blueprint extends Contract {
 					selectors: {} as { [type: string]: any[] },
 					types: new Set(),
 				},
-			},
+			} as LayoutMetadata,
 		);
 	}
 
-	/**
-	 * @summary Reproduce the blueprint in a universe and return as an iterable
-	 * @function
-	 * @name module:contrato.Blueprint#reproduce
-	 * @public
-	 *
-	 * @description
-	 * This method will generate a set of contexts that consist of
-	 * every possible valid combination that matches the blueprint
-	 * layout. It uses depth first search to calculate the product of
-	 * contract combinations and returns the results as an iterable.
-	 * This allows to reduce the memory usage when dealing with a large
-	 * universe of contracts.
-	 *
-	 * @param {Object} contract - contract
-	 * @returns {Iterable<Object>} - an iterable over the valid contexts
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 * contract.addChildren([ ... ])
-	 *
-	 * const blueprint = new Blueprint({
-	 *   'hw.device-type': 1,
-	 *   'arch.sw': 1
-	 * })
-	 *
-	 * const contexts = blueprint.reproduce(contract)
-	 * for (const context of contexts) {
-	 *   console.log(context.toJSON());
-	 * }
-	 */
 	reproduce(contract: Contract): IterableIterator<Contract> {
-		const layout = this.metadata.layout;
+		const layout = this.layout;
 		const combinations = reduce(
 			layout.finite.selectors,
 			(accumulator, value) => {
@@ -131,6 +81,8 @@ export default class Blueprint extends Contract {
 			[] as Contract[][][],
 		);
 
+		const skeleton = this.skeleton;
+
 		const productIterator = cartesianProductWith<
 			Contract[],
 			Contract | Contract[]
@@ -138,18 +90,13 @@ export default class Blueprint extends Contract {
 			combinations,
 			(accumulator, element) => {
 				if (accumulator instanceof Contract) {
-					const prodContext = new Contract(this.raw.skeleton, {
-						hash: false,
-					});
+					const prodContext = new Contract(skeleton);
 
-					prodContext.addChildren(element.concat(accumulator.getChildren()), {
-						rehash: false,
-					});
+					prodContext.addChildren(element.concat(accumulator.getChildren()));
 
-					// TODO: Make sure this is cached
 					if (
 						!prodContext.areChildrenSatisfied({
-							types: prodContext.getChildrenTypes(),
+							types: layout.finite.types,
 						})
 					) {
 						return undefined;
@@ -158,14 +105,9 @@ export default class Blueprint extends Contract {
 					return prodContext;
 				}
 
-				// If the accumulator is an array of contracts
-				const context = new Contract(this.raw.skeleton, {
-					hash: false,
-				});
+				const context = new Contract(skeleton);
 
-				return context.addChildren(accumulator.concat(element), {
-					rehash: false,
-				});
+				return context.addChildren(accumulator.concat(element));
 			},
 			[[]],
 		);
@@ -183,9 +125,7 @@ export default class Blueprint extends Contract {
 						})
 					: references;
 
-			context.addChildren(contracts, {
-				rehash: false,
-			});
+			context.addChildren(contracts);
 
 			for (const reference of contracts) {
 				if (
@@ -193,9 +133,7 @@ export default class Blueprint extends Contract {
 						types: layout.types,
 					})
 				) {
-					context.removeChild(reference, {
-						rehash: false,
-					});
+					context.removeChild(reference);
 				}
 			}
 

@@ -5,14 +5,6 @@ import type { Stats } from 'fs';
 import Contract from './contract';
 import { UNIVERSE } from './types';
 
-/**
- * @summary recursively find all files under the directory that match the given filter
- * @function
- * @memberof module:universe
- *
- * @param dir - base directory to start the search
- * @param filter - filtering function to indicate that a file should be selected
- */
 async function findFiles(
 	dir: string,
 	filter: (filePath: string, stat: Stats) => boolean = () => true,
@@ -31,15 +23,7 @@ async function findFiles(
 }
 
 interface FromFsOptions {
-	/**
-	 * Additional filters to apply to json files when loading a universe from FS
-	 */
 	filter: (filePath: string, stat: Stats) => boolean;
-
-	/**
-	 * Only load the canonical version of the contract and ignore
-	 * aliases
-	 */
 	canonicalOnly: boolean;
 }
 
@@ -48,18 +32,6 @@ export class Universe extends Contract {
 		super({ type: UNIVERSE });
 	}
 
-	/**
-	 * @summary recursively looks up all json files under a directory and adds them
-	 * to the universe
-	 * @function
-	 * @static
-	 * @name module:contrato.Universe.fromFs
-	 * @public
-	 *
-	 * @param dir full path of the directory to load
-	 * @param options additional configuration for the search and build process
-	 *
-	 */
 	static async fromFs(
 		dir: string,
 		{ filter = () => true, canonicalOnly = false }: Partial<FromFsOptions> = {},
@@ -80,7 +52,6 @@ export class Universe extends Contract {
 					const contents = await fs.readFile(file, { encoding: 'utf8' });
 					let source = JSON.parse(contents);
 					if (canonicalOnly) {
-						// Ignore aliases
 						const { aliases, ...obj } = source;
 						source = obj;
 					}

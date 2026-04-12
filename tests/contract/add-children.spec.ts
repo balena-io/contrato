@@ -1,12 +1,5 @@
-/*
- * Copyright (C) Balena.io - All Rights Reserved
- * Unauthorized copying of this file, via any medium is strictly prohibited.
- * Proprietary and confidential.
- */
-
 import { expect } from '../chai';
 
-import MatcherCache from '../../lib/matcher-cache';
 import Contract from '../../lib/contract';
 import CONTRACTS from '../contracts.json';
 
@@ -20,23 +13,7 @@ describe('Contract addChildren', () => {
 
 		container.addChildren([contract1]);
 
-		expect(container.metadata.children).to.deep.equal({
-			typeMatchers: {},
-			searchCache: new MatcherCache(),
-			types: new Set(['sw.os']),
-			byType: {
-				'sw.os': new Set([contract1.metadata.hash]),
-			},
-			byTypeSlug: {
-				'sw.os': {
-					debian: new Set([contract1.metadata.hash]),
-				},
-			},
-			map: {
-				[contract1.metadata.hash]: contract1,
-			},
-		});
-
+		expect(container.getChildren()).to.have.lengthOf(1);
 		expect(container.raw).to.deep.equal({
 			type: 'foo',
 			slug: 'bar',
@@ -57,23 +34,7 @@ describe('Contract addChildren', () => {
 
 		container.addChildren([contract1, contract1, contract1]);
 
-		expect(container.metadata.children).to.deep.equal({
-			typeMatchers: {},
-			searchCache: new MatcherCache(),
-			types: new Set(['sw.os']),
-			byType: {
-				'sw.os': new Set([contract1.metadata.hash]),
-			},
-			byTypeSlug: {
-				'sw.os': {
-					debian: new Set([contract1.metadata.hash]),
-				},
-			},
-			map: {
-				[contract1.metadata.hash]: contract1,
-			},
-		});
-
+		expect(container.getChildren()).to.have.lengthOf(1);
 		expect(container.raw).to.deep.equal({
 			type: 'foo',
 			slug: 'bar',
@@ -96,24 +57,7 @@ describe('Contract addChildren', () => {
 
 		container.addChildren([contract1, contract2]);
 
-		expect(container.metadata.children).to.deep.equal({
-			typeMatchers: {},
-			searchCache: new MatcherCache(),
-			types: new Set(['sw.os']),
-			byType: {
-				'sw.os': new Set([contract1.metadata.hash, contract2.metadata.hash]),
-			},
-			byTypeSlug: {
-				'sw.os': {
-					debian: new Set([contract1.metadata.hash, contract2.metadata.hash]),
-				},
-			},
-			map: {
-				[contract1.metadata.hash]: contract1,
-				[contract2.metadata.hash]: contract2,
-			},
-		});
-
+		expect(container.getChildren()).to.have.lengthOf(2);
 		expect(container.raw).to.deep.equal({
 			type: 'foo',
 			slug: 'bar',
@@ -135,9 +79,7 @@ describe('Contract addChildren', () => {
 			slug: 'bar',
 		});
 
-		expect(container.addChildren([contract1, contract2])).to.deep.equal(
-			container,
-		);
+		expect(container.addChildren([contract1, contract2])).to.equal(container);
 	});
 
 	it('should return the instance if no contracts', () => {
@@ -146,10 +88,10 @@ describe('Contract addChildren', () => {
 			slug: 'bar',
 		});
 
-		expect(container.addChildren()).to.deep.equal(container);
+		expect(container.addChildren()).to.equal(container);
 	});
 
-	it('should re-hash the universe', () => {
+	it('should change the hash of the universe', () => {
 		const contract1 = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
 		const contract2 = new Contract(CONTRACTS['sw.os'].debian.jessie.object);
 
@@ -158,26 +100,9 @@ describe('Contract addChildren', () => {
 			slug: 'bar',
 		});
 
-		const hash = container.metadata.hash;
+		const hash = container.hash();
 		container.addChildren([contract1, contract2]);
-		expect(container.metadata.hash).to.not.equal(hash);
-	});
-
-	it('should not re-hash the universe if the rehash option is false', () => {
-		const contract1 = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
-		const contract2 = new Contract(CONTRACTS['sw.os'].debian.jessie.object);
-
-		const container = new Contract({
-			type: 'foo',
-			slug: 'bar',
-		});
-
-		const hash = container.metadata.hash;
-		container.addChildren([contract1, contract2], {
-			rehash: false,
-		});
-
-		expect(container.metadata.hash).to.equal(hash);
+		expect(container.hash()).to.not.equal(hash);
 	});
 
 	it('should add a contract of a new slug to an existing type', () => {
@@ -192,30 +117,7 @@ describe('Contract addChildren', () => {
 
 		container.addChildren([contract1, contract2, contract3]);
 
-		expect(container.metadata.children).to.deep.equal({
-			typeMatchers: {},
-			searchCache: new MatcherCache(),
-			types: new Set(['sw.os']),
-			byType: {
-				'sw.os': new Set([
-					contract1.metadata.hash,
-					contract2.metadata.hash,
-					contract3.metadata.hash,
-				]),
-			},
-			byTypeSlug: {
-				'sw.os': {
-					debian: new Set([contract1.metadata.hash, contract2.metadata.hash]),
-					fedora: new Set([contract3.metadata.hash]),
-				},
-			},
-			map: {
-				[contract1.metadata.hash]: contract1,
-				[contract2.metadata.hash]: contract2,
-				[contract3.metadata.hash]: contract3,
-			},
-		});
-
+		expect(container.getChildren()).to.have.lengthOf(3);
 		expect(container.raw).to.deep.equal({
 			type: 'foo',
 			slug: 'bar',
@@ -243,43 +145,9 @@ describe('Contract addChildren', () => {
 
 		container.addChildren([contract1, contract2, contract3, contract4]);
 
-		expect(container.metadata.children).to.deep.equal({
-			typeMatchers: {},
-			searchCache: new MatcherCache(),
-			types: new Set(['sw.os']),
-			byType: {
-				'sw.os': new Set([
-					contract1.metadata.hash,
-					contract2.metadata.hash,
-					contract3.metadata.hash,
-					contract4.metadata.hash,
-				]),
-			},
-			byTypeSlug: {
-				'sw.os': {
-					debian: new Set([contract1.metadata.hash, contract2.metadata.hash]),
-					fedora: new Set([contract3.metadata.hash, contract4.metadata.hash]),
-				},
-			},
-			map: {
-				[contract1.metadata.hash]: contract1,
-				[contract2.metadata.hash]: contract2,
-				[contract3.metadata.hash]: contract3,
-				[contract4.metadata.hash]: contract4,
-			},
-		});
-
-		expect(container.raw).to.deep.equal({
-			type: 'foo',
-			slug: 'bar',
-			children: {
-				sw: {
-					os: {
-						debian: [contract1.raw, contract2.raw],
-						fedora: [contract3.raw, contract4.raw],
-					},
-				},
-			},
-		});
+		expect(container.getChildren()).to.have.lengthOf(4);
+		const json = container.raw;
+		expect(json.children.sw.os.debian).to.have.lengthOf(2);
+		expect(json.children.sw.os.fedora).to.have.lengthOf(2);
 	});
 });

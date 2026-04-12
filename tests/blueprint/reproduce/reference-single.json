@@ -6,7 +6,12 @@
       "type": "arch.sw",
       "name": "Intel 64-bit (x86-64)",
       "requires": [
-        { "type": "hw.device-type", "arch": "amd64" }
+        {
+          "type": "hw.device-type",
+          "data": {
+            "arch": "amd64"
+          }
+        }
       ]
     },
     {
@@ -17,8 +22,18 @@
       "requires": [
         {
           "or": [
-            { "type": "hw.device-type", "arch": "armv7hf" },
-            { "type": "hw.device-type", "arch": "aarch64" }
+            {
+              "type": "hw.device-type",
+              "data": {
+                "arch": "armv7hf"
+              }
+            },
+            {
+              "type": "hw.device-type",
+              "data": {
+                "arch": "aarch64"
+              }
+            }
           ]
         }
       ]
@@ -27,13 +42,17 @@
       "slug": "am571x-evm",
       "type": "hw.device-type",
       "name": "AM571X-EVM",
-      "arch": "armv7hf"
+      "data": {
+        "arch": "armv7hf"
+      }
     },
     {
       "slug": "intel-nuc",
       "type": "hw.device-type",
       "name": "Intel NUC",
-      "arch": "amd64"
+      "data": {
+        "arch": "amd64"
+      }
     },
     {
       "slug": "raspbian",
@@ -41,7 +60,10 @@
       "version": "wheezy",
       "type": "sw.os",
       "requires": [
-        { "type": "arch.sw", "slug": "armv7hf" }
+        {
+          "type": "arch.sw",
+          "slug": "armv7hf"
+        }
       ]
     },
     {
@@ -50,7 +72,10 @@
       "version": "25",
       "type": "sw.os",
       "requires": [
-        { "type": "arch.sw", "slug": "amd64" }
+        {
+          "type": "arch.sw",
+          "slug": "amd64"
+        }
       ]
     }
   ],
@@ -79,8 +104,18 @@
             "requires": [
               {
                 "or": [
-                  { "type": "hw.device-type", "arch": "armv7hf" },
-                  { "type": "hw.device-type", "arch": "aarch64" }
+                  {
+                    "type": "hw.device-type",
+                    "data": {
+                      "arch": "armv7hf"
+                    }
+                  },
+                  {
+                    "type": "hw.device-type",
+                    "data": {
+                      "arch": "aarch64"
+                    }
+                  }
                 ]
               }
             ]
@@ -91,7 +126,9 @@
             "slug": "am571x-evm",
             "type": "hw.device-type",
             "name": "AM571X-EVM",
-            "arch": "armv7hf"
+            "data": {
+              "arch": "armv7hf"
+            }
           }
         },
         "sw": {
@@ -101,7 +138,10 @@
             "version": "wheezy",
             "type": "sw.os",
             "requires": [
-              { "type": "arch.sw", "slug": "armv7hf" }
+              {
+                "type": "arch.sw",
+                "slug": "armv7hf"
+              }
             ]
           }
         }
@@ -118,7 +158,12 @@
             "type": "arch.sw",
             "name": "Intel 64-bit (x86-64)",
             "requires": [
-              { "type": "hw.device-type", "arch": "amd64" }
+              {
+                "type": "hw.device-type",
+                "data": {
+                  "arch": "amd64"
+                }
+              }
             ]
           }
         },
@@ -127,7 +172,9 @@
             "slug": "intel-nuc",
             "type": "hw.device-type",
             "name": "Intel NUC",
-            "arch": "amd64"
+            "data": {
+              "arch": "amd64"
+            }
           }
         },
         "sw": {
@@ -137,7 +184,10 @@
             "version": "25",
             "type": "sw.os",
             "requires": [
-              { "type": "arch.sw", "slug": "amd64" }
+              {
+                "type": "arch.sw",
+                "slug": "amd64"
+              }
             ]
           }
         }

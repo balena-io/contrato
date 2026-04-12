@@ -20,7 +20,7 @@
 //! `&mut self` on the JS side; wasm-bindgen enforces borrow discipline
 //! per call.
 
-use contrato::{Contract, ContractMatcher, RawContract, Universe};
+use contrato::{Contract, ContractMatcher, RawContract};
 use js_sys::Array;
 use serde::Serialize;
 use serde_wasm_bindgen::Serializer;
@@ -188,14 +188,10 @@ impl WasmContract {
         self.inner.add_child(child.inner.clone());
     }
 
-    /// Adds many child contracts in a single batch.
+    /// Adds many child contracts in a single batch (move semantics).
     ///
-    /// Accepts an array of `Contract` handles and moves each inner
-    /// `contrato::Contract` into this parent's children index — the JS
-    /// handles passed in become unusable after the call, per
-    /// wasm-bindgen's move semantics for `Vec<T>`-of-exported-types.
-    /// Callers that need to keep a handle should construct a fresh
-    /// `Contract` from `toJSON()` first.
+    /// The JS handles passed in become unusable after the call.
+    /// Efficient: no cloning, one rebuild.
     #[wasm_bindgen(js_name = addChildren)]
     pub fn add_children(&mut self, children: Vec<WasmContract>) {
         self.inner
@@ -227,6 +223,17 @@ impl WasmContract {
     #[wasm_bindgen(js_name = getChildrenByType)]
     pub fn get_children_by_type(&self, kind: &str) -> Array {
         contracts_to_array(self.inner.get_children_by_type(kind).into_iter().cloned())
+    }
+
+    /// Returns every reachable child whose type is in `kinds` (recursive).
+    ///
+    /// Filters on the Rust side using the type index, avoiding the
+    /// serialization of children that would be discarded by a JS-side
+    /// filter.
+    #[wasm_bindgen(js_name = getChildrenByTypes)]
+    pub fn get_children_by_types(&self, kinds: Vec<String>) -> Array {
+        let refs: Vec<&str> = kinds.iter().map(String::as_str).collect();
+        contracts_to_array(self.inner.get_children_filtered(&refs).into_iter().cloned())
     }
 
     /// Returns the deduplicated set of all child types reachable from
@@ -382,37 +389,5 @@ impl WasmContract {
     #[wasm_bindgen(js_name = isEqual)]
     pub fn is_equal(a: &WasmContract, b: &WasmContract) -> bool {
         a.inner == b.inner
-    }
-}
-
-// ── Universe ──────────────────────────────────────────────────────────────
-
-/// JavaScript wrapper around [`contrato::Universe`].
-///
-/// Exposes only the zero-arg constructor to establish the class
-/// identity on the JS side. Every other operation is expected to be
-/// reached by layering a JS-side subclass on top of `Contract`, so the
-/// bindings do not duplicate the full Contract surface here.
-#[wasm_bindgen(js_name = Universe)]
-pub struct WasmUniverse {
-    #[allow(dead_code)]
-    inner: Universe,
-}
-
-#[wasm_bindgen(js_class = Universe)]
-impl WasmUniverse {
-    /// Constructs an empty universe (a contract with type
-    /// `meta.universe`).
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> WasmUniverse {
-        WasmUniverse {
-            inner: Universe::new(),
-        }
-    }
-}
-
-impl Default for WasmUniverse {
-    fn default() -> Self {
-        Self::new()
     }
 }

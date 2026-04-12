@@ -165,11 +165,20 @@ impl Contract {
     /// Compiles `{{this.*}}` templates in `raw`, then rebuilds derived
     /// state.
     ///
+    /// Runs automatically during construction. Exposed publicly so that
+    /// callers which mutate the contract afterwards — typically by
+    /// replacing the children index with a new set and wanting the
+    /// parent's `{{this.*}}` placeholders re-evaluated against any
+    /// field that changed — can force a fresh pass. Repeated calls are
+    /// safe: unresolved placeholders stay unresolved and
+    /// already-resolved values stay stable as long as `raw` is
+    /// unchanged.
+    ///
     /// The `children` subtree is excluded from interpolation: each
     /// child is its own contract and is interpolated against its own
     /// fields during its own construction. [`Self::rebuild`] is called
     /// at the end, which invalidates the hash cell.
-    fn interpolate(&mut self) {
+    pub fn interpolate(&mut self) {
         let mut blacklist = HashSet::new();
         blacklist.insert("children".to_string());
 
@@ -344,6 +353,39 @@ impl Contract {
                 serde_json::to_value(&self.raw).expect("RawContract must serialize to JSON");
             hash_object(&value)
         })
+    }
+
+    /// Returns an iterator over the distinct contract types referenced
+    /// by this contract's own `requires` entries.
+    ///
+    /// Only this contract's direct requirements are reported; the walk
+    /// does **not** descend into children. Intended for callers that
+    /// need to decide whether a given contract has any opinion about a
+    /// set of types — typically to short-circuit a cross-reference
+    /// resolution or a filter pass before iterating the matcher
+    /// buckets returned by [`Self::requirement_matchers_for_type`].
+    pub fn requirement_types(&self) -> impl Iterator<Item = &str> {
+        self.requirements.types.iter().map(String::as_str)
+    }
+
+    /// Returns an iterator over the simple matchers registered under
+    /// the given requirement type.
+    ///
+    /// Returns an empty iterator when the type is not present in this
+    /// contract's own requirements index. The matchers yielded are the
+    /// compiled form of this contract's `requires` entries, bucketed
+    /// by target type; feeding each one back into
+    /// [`Self::find_children`] on a parent contract walks the
+    /// cross-references a requirement entry induces.
+    pub fn requirement_matchers_for_type(
+        &self,
+        kind: &str,
+    ) -> impl Iterator<Item = &ContractMatcher> {
+        self.requirements
+            .matchers
+            .get(kind)
+            .into_iter()
+            .flat_map(|set| set.values())
     }
 
     /// Returns a reference to the underlying [`RawContract`].
@@ -2185,6 +2227,59 @@ mod tests {
             }
             other => panic!("expected Not requirement, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn requirement_types_reflects_own_requires_entries() {
+        let c = contract(json!({
+            "type": "sw.stack",
+            "slug": "nodejs",
+            "requires": [
+                {"type": "hw.device-type", "slug": "raspberry-pi"},
+                {"type": "arch.sw", "slug": "armv7hf"},
+                {"or": [
+                    {"type": "sw.os", "slug": "debian"},
+                    {"type": "sw.os", "slug": "fedora"}
+                ]}
+            ]
+        }));
+
+        let types: HashSet<&str> = c.requirement_types().collect();
+        assert_eq!(types, HashSet::from(["hw.device-type", "arch.sw", "sw.os"]));
+    }
+
+    #[test]
+    fn requirement_matchers_for_type_returns_registered_matchers() {
+        let c = contract(json!({
+            "type": "sw.stack",
+            "slug": "nodejs",
+            "requires": [
+                {"type": "hw.device-type", "slug": "raspberry-pi"},
+                {"type": "hw.device-type", "slug": "raspberry-pi2"},
+                {"type": "arch.sw", "slug": "armv7hf"}
+            ]
+        }));
+
+        let device_slugs: HashSet<&str> = c
+            .requirement_matchers_for_type("hw.device-type")
+            .map(|m| m.slug.as_ref().unwrap().as_str())
+            .collect();
+        assert_eq!(
+            device_slugs,
+            HashSet::from(["raspberry-pi", "raspberry-pi2"])
+        );
+
+        let arch: Vec<&ContractMatcher> = c.requirement_matchers_for_type("arch.sw").collect();
+        assert_eq!(arch.len(), 1);
+        assert_eq!(arch[0].kind.as_str(), "arch.sw");
+        assert_eq!(arch[0].slug.as_ref().unwrap().as_str(), "armv7hf");
+
+        // Unknown requirement type yields an empty iterator.
+        assert_eq!(
+            c.requirement_matchers_for_type("sw.os").count(),
+            0,
+            "unknown requirement type returns empty iterator"
+        );
     }
 
     // ── build ────────────────────────────────────────────────────────────

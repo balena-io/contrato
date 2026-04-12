@@ -107,10 +107,7 @@ mod tests {
     #[test]
     fn find_children_through_deref_mut() {
         let mut u = Universe::new();
-        u.add_children(vec![
-            child("sw.os", "debian"),
-            child("sw.os", "fedora"),
-        ]);
+        u.add_children(vec![child("sw.os", "debian"), child("sw.os", "fedora")]);
 
         let matcher = ContractMatcher::new(
             ContractType::new("sw.os"),

@@ -454,38 +454,6 @@ export default class Contract {
 	}
 
 	/**
-	 * @summary Recursively find children using a matcher contract, also
-	 * considering the capabilities the children provide
-	 * @function
-	 * @name module:contrato.Contract#findChildrenWithCapabilities
-	 * @public
-	 *
-	 * @param {Object} matcher - matcher contract
-	 * @returns {Object[]} children
-	 *
-	 * @example
-	 * const contract = new Contract({ ... })
-	 * contract.addChildren([ ... ])
-	 *
-	 * const children = contract.findChildrenWithCapabilities(Contract.createMatcher({
-	 *   type: 'sw.os',
-	 *   slug: 'debian'
-	 * }))
-	 *
-	 * children.forEach((child) => {
-	 *   console.log(child)
-	 * })
-	 */
-	findChildrenWithCapabilities(matcher: MatcherObject): Contract[] {
-		if (!matcher || !('type' in matcher) || !matcher.type) {
-			return [];
-		}
-		return (
-			this.#inner.findChildrenWithCapabilities(matcher) as WasmContract[]
-		).map((c) => Contract.fromWasm(c));
-	}
-
-	/**
 	 * @summary Recursively find children using a matcher contract
 	 * @function
 	 * @name module:contrato.Contract#findChildren

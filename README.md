@@ -378,24 +378,61 @@ Again, you can see some examples of partials at use on the [balena-io/contracts 
 
 Contrato is quite efficient at most tasks it performs, however most of the operations require that the validating context is stored in memory, which puts a limit to the size of the universe. Speed considerations become particularly evident when reproducing a blueprint over a large universe, where the more selectors, the larger the number of combinations and the processing time.
 
+## Architecture
+
+The core contract engine (construction, hashing, children management, matcher search, requirement validation) is implemented in Rust and compiled to WebAssembly via `wasm-bindgen`. The TypeScript layer is a thin wrapper that delegates to the WASM module and adds blueprint-specific logic (combinatorics, JSON Schema validation, Handlebars templating) that depends on JS-only libraries.
+
+```
+contrato-rs/          Pure Rust library crate (contrato)
+contrato-wasm/        WASM bindings crate (wasm-bindgen cdylib)
+lib/                  TypeScript wrapper + blueprint/template logic
+```
+
+See [`contrato-rs/README.md`](contrato-rs/README.md) for documentation on the Rust crate API.
+
+## Prerequisites
+
+- Node.js >= 20
+- Rust toolchain (1.89+) with the `wasm32-unknown-unknown` target
+- [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/)
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack
+```
+
+## Building
+
+```sh
+npm run build          # builds WASM then TypeScript
+npm run build:wasm     # builds only the WASM module
+```
+
 ## Testing
 
-Run the `test` npm script:
+Run the full test suite (build + lint + tests):
 
 ```sh
 npm test
 ```
 
+Run only the Rust tests:
+
+```sh
+cargo test --workspace
+```
+
 ## Contribute
 
-- Issue Tracker: [github.com/product-os/contrato/issues](https://github.com/balena-io/contrato/issues)
-- Source Code: [github.com/product-os/contrato](https://github.com/balena-io/contrato)
+- Issue Tracker: [github.com/balena-io/contrato/issues](https://github.com/balena-io/contrato/issues)
+- Source Code: [github.com/balena-io/contrato](https://github.com/balena-io/contrato)
 
 Before submitting a PR, please make sure that you include tests, and that the
 linter runs without any warning:
 
 ```sh
 npm run lint
+cargo clippy --workspace -- -D warnings
 ```
 
 ## Support

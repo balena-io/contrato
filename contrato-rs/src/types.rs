@@ -75,30 +75,68 @@ impl fmt::Display for Slug {
 /// identifier (e.g., `wheezy`, `jessie`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum VersionInner {
+    /// Full three-component semver parsed directly (e.g. `"1.2.3"`).
     Semver(semver::Version),
+    /// Partial semver padded with `.0` components (e.g. `"2.31"` ->
+    /// `"2.31.0"`). The original string is kept for serialization.
+    PartialSemver {
+        parsed: semver::Version,
+        original: String,
+    },
     Identifier(String),
 }
 
-/// A contract version (e.g., `1.0.0`, `wheezy`).
+/// A contract version (e.g., `1.0.0`, `2.31`, `wheezy`).
 ///
-/// Deserialization tries semver first; if that fails, stores as an identifier.
+/// Construction tries strict semver first (`MAJOR.MINOR.PATCH`). If that
+/// fails, it pads the string with `.0` components (so `"2.31"` becomes
+/// `"2.31.0"` and `"1"` becomes `"1.0.0"`). This allows partial versions
+/// to participate in semver range comparisons while preserving the
+/// original string for serialization. Falls back to a plain identifier
+/// if padding doesn't produce valid semver either.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Version(VersionInner);
 
 impl Version {
-    /// Creates a new version by parsing the string. If it is valid semver, it
-    /// is stored as such; otherwise it is stored as a plain identifier.
+    /// Creates a new version by parsing the string. Tries strict semver
+    /// first, then pads with `.0` components, and falls back to a plain
+    /// identifier.
     pub fn new(s: impl Into<String>) -> Self {
         let s = s.into();
-        match semver::Version::parse(&s) {
-            Ok(v) => Self(VersionInner::Semver(v)),
+        if let Ok(v) = semver::Version::parse(&s) {
+            return Self(VersionInner::Semver(v));
+        }
+        // Pad partial versions: "2.31" -> "2.31.0", "1" -> "1.0.0"
+        let dot_count = s.chars().filter(|&c| c == '.').count();
+        let padded = match dot_count {
+            0 => format!("{s}.0.0"),
+            1 => format!("{s}.0"),
+            _ => return Self(VersionInner::Identifier(s)),
+        };
+        match semver::Version::parse(&padded) {
+            Ok(parsed) => Self(VersionInner::PartialSemver {
+                parsed,
+                original: s,
+            }),
             Err(_) => Self(VersionInner::Identifier(s)),
         }
     }
 
-    /// Returns `true` if this version was parsed as valid semver.
+    /// Returns `true` if this version was parsed as semver (including
+    /// partial versions that were padded).
     pub fn is_semver(&self) -> bool {
-        matches!(self.0, VersionInner::Semver(_))
+        matches!(
+            self.0,
+            VersionInner::Semver(_) | VersionInner::PartialSemver { .. }
+        )
+    }
+
+    /// Returns the parsed semver value, if any.
+    fn as_semver(&self) -> Option<&semver::Version> {
+        match &self.0 {
+            VersionInner::Semver(v) | VersionInner::PartialSemver { parsed: v, .. } => Some(v),
+            VersionInner::Identifier(_) => None,
+        }
     }
 }
 
@@ -106,6 +144,7 @@ impl fmt::Display for Version {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.0 {
             VersionInner::Semver(v) => write!(f, "{v}"),
+            VersionInner::PartialSemver { original, .. } => f.write_str(original),
             VersionInner::Identifier(s) => f.write_str(s),
         }
     }
@@ -171,11 +210,18 @@ impl VersionReq {
     /// the contract corpus either uses semver throughout or
     /// identifier strings throughout.
     pub fn matches(&self, target: &Version) -> bool {
-        match (&target.0, &self.0) {
-            (VersionInner::Semver(v), VersionReqInner::SemverRange(r)) => r.matches(v),
-            (VersionInner::Identifier(tv), VersionReqInner::Identifier(rv)) => tv == rv,
-            _ => target.to_string() == self.to_string(),
+        // Fast path: both sides are semver (including padded partial versions).
+        if let (Some(v), VersionReqInner::SemverRange(r)) = (target.as_semver(), &self.0) {
+            return r.matches(v);
         }
+        // Fast path: both sides are plain identifiers.
+        if let (VersionInner::Identifier(tv), VersionReqInner::Identifier(rv)) =
+            (&target.0, &self.0)
+        {
+            return tv == rv;
+        }
+        // Mismatched cases: fall back to string comparison.
+        target.to_string() == self.to_string()
     }
 }
 
@@ -611,6 +657,31 @@ mod tests {
         let v = Version::new("wheezy");
         assert!(!v.is_semver());
         assert_eq!(v.to_string(), "wheezy");
+    }
+
+    #[test]
+    fn version_partial_semver_two_components() {
+        let v = Version::new("2.31");
+        assert!(v.is_semver());
+        assert_eq!(v.to_string(), "2.31");
+        assert!(VersionReq::new(">=2.17").matches(&v));
+        assert!(!VersionReq::new(">=3.0").matches(&v));
+    }
+
+    #[test]
+    fn version_partial_semver_one_component() {
+        let v = Version::new("5");
+        assert!(v.is_semver());
+        assert_eq!(v.to_string(), "5");
+        assert!(VersionReq::new(">=4").matches(&v));
+        assert!(!VersionReq::new(">=6").matches(&v));
+    }
+
+    #[test]
+    fn version_partial_semver_not_a_number() {
+        let v = Version::new("abc.def");
+        assert!(!v.is_semver());
+        assert_eq!(v.to_string(), "abc.def");
     }
 
     #[test]

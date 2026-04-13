@@ -5,6 +5,8 @@
 //! contract system. Contracts represent versioned "things" (devices, OSes,
 //! stacks, etc.) with typed relationships, requirements, and capabilities.
 
+mod children_tree;
+mod contract;
 mod hash;
 mod index;
 mod matcher;
@@ -12,13 +14,11 @@ mod matcher_cache;
 mod object_set;
 mod path;
 mod template;
+mod types;
+mod universe;
 mod variants;
 
-pub mod children_tree;
-pub mod contract;
-pub mod types;
-pub mod universe;
-
+pub use children_tree::ChildrenTree;
 pub use contract::Contract;
 pub use types::{
     Asset, ContractCapability, ContractMatcher, ContractRequirement, ContractType, PartialContract,

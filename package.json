@@ -9,7 +9,7 @@
     "balena",
     "typescript"
   ],
-  "author": "",
+  "author": "Balena Inc. <hello@balena.io>",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -19,11 +19,14 @@
     "url": "https://github.com/balena-io/contrato/issues"
   },
   "files": [
-    "build/"
+    "build/",
+    "contrato-wasm/pkg/"
   ],
   "scripts": {
-    "clean": "rimraf build",
-    "build": "npm run clean && tsc",
+    "clean": "rimraf build contrato-wasm/pkg",
+    "flowzone-preinstall": "rustup target add wasm32-unknown-unknown && cargo install wasm-pack",
+    "build:wasm": "wasm-pack build contrato-wasm --target nodejs --out-dir pkg && touch contrato-wasm/pkg/.npmignore",
+    "build": "npm run clean && npm run build:wasm && tsc",
     "doc": "typedoc --options ./typedoc.json",
     "lint": "balena-lint -t tsconfig.dev.json --typescript lib tests",
     "lint-fix": "balena-lint -t tsconfig.dev.json --typescript --fix lib tests",
@@ -40,7 +43,6 @@
     "js-combinatorics": "^2.1.2",
     "json-schema": "^0.4.0",
     "lodash": "^4.17.23",
-    "object-hash": "^3.0.0",
     "p-map": "^7.0.4",
     "promised-handlebars": "^2.0.1",
     "semver": "^7.7.4"
@@ -54,7 +56,6 @@
     "@types/lodash": "^4.17.24",
     "@types/mocha": "^10.0.10",
     "@types/node": "^20.19.37",
-    "@types/object-hash": "^2.2.1",
     "@types/semver": "^7.7.1",
     "chai": "^4.5.0",
     "chai-as-promised": "^7.1.2",

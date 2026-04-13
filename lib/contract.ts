@@ -144,15 +144,6 @@ export default class Contract {
 		);
 	}
 
-	findChildrenWithCapabilities(matcher: ContractMatcher): Contract[] {
-		if (!matcher || !('type' in matcher) || !matcher.type) {
-			return [];
-		}
-		return (
-			this.inner.findChildrenWithCapabilities(matcher) as WasmContract[]
-		).map((c) => Contract.fromWasm(c));
-	}
-
 	satisfiesChildContract(
 		contract: Contract,
 		options: { types?: Set<string> } = {},
@@ -220,14 +211,14 @@ export default class Contract {
 		if (contracts.length < cardinality.from) {
 			throw new Error(
 				`Invalid cardinality: ${cardinality.from} to ${cardinality.to}. ` +
-					`The number of ${options.type} contracts in ` +
-					`the universe is ${contracts.length}`,
+				`The number of ${options.type} contracts in ` +
+				`the universe is ${contracts.length}`,
 			);
 		}
 		if (cardinality.from > cardinality.to) {
 			throw new Error(
 				`Invalid cardinality: ${cardinality.from} to ${cardinality.to}. ` +
-					'The starting point is greater than the ending point',
+				'The starting point is greater than the ending point',
 			);
 		}
 		const rang = range(

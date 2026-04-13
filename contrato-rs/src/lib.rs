@@ -21,7 +21,7 @@ pub mod universe;
 
 pub use contract::Contract;
 pub use types::{
-    Asset, ContractCapability, ContractMatcher, ContractRequirement, ContractType, PartialContract,
-    RawContract, Slug, UNIVERSE, Version, VersionReq,
+    Asset, ContractMatcher, ContractRequirement, ContractType, PartialContract, RawContract, Slug,
+    UNIVERSE, Version, VersionReq,
 };
 pub use universe::Universe;

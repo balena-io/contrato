@@ -263,22 +263,6 @@ impl WasmContract {
         ))
     }
 
-    /// Searches for children whose `provides` capabilities match the
-    /// given matcher. Unlike [`Self::find_children`], this path is not
-    /// cached.
-    ///
-    /// `matcher` has the same shape as in [`Self::find_children`].
-    #[wasm_bindgen(js_name = findChildrenWithCapabilities)]
-    pub fn find_children_with_capabilities(&self, matcher: JsValue) -> Result<Array, JsValue> {
-        let matcher = matcher_from_js(matcher)?;
-        Ok(contracts_to_array(
-            self.inner
-                .find_children_with_capabilities(&matcher)
-                .into_iter()
-                .cloned(),
-        ))
-    }
-
     // ── validation ──────────────────────────────────────────────────────
 
     /// Returns `true` if every compiled requirement of `contract` and

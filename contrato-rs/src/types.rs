@@ -467,8 +467,10 @@ pub struct PartialContract {
     pub requires: Vec<ContractRequirement>,
 
     /// Capabilities this contract provides to other contracts.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub provides: Vec<ContractCapability>,
+    /// At construction time these are converted into child contracts,
+    /// so this field is only used during deserialization.
+    #[serde(default, skip_serializing)]
+    pub(crate) provides: Vec<ContractCapability>,
 
     /// Nested variants (recursive expansion).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -486,9 +488,11 @@ pub struct PartialContract {
 /// A capability declaration specifying what a contract provides.
 ///
 /// Combines a required contract type with a [`PartialContract`] for the
-/// remaining fields (slug, version, data, etc.).
+/// remaining fields (slug, version, data, etc.). Only used during
+/// deserialization — at construction time these are converted into
+/// child contracts.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ContractCapability {
+pub(crate) struct ContractCapability {
     /// The contract type of the provided capability.
     #[serde(rename = "type")]
     pub kind: ContractType,
@@ -1014,7 +1018,7 @@ mod tests {
     }
 
     #[test]
-    fn round_trip_contract_with_provides() {
+    fn provides_deserialized_but_not_serialized() {
         let input = json!({
             "type": "meta.context",
             "slug": "test",
@@ -1027,9 +1031,11 @@ mod tests {
             ]
         });
 
-        let contract: RawContract = serde_json::from_value(input.clone()).unwrap();
+        let contract: RawContract = serde_json::from_value(input).unwrap();
+        assert_eq!(contract.body.provides.len(), 1);
+
         let output = serde_json::to_value(&contract).unwrap();
-        assert_eq!(input, output);
+        assert!(output.get("provides").is_none());
     }
 
     #[test]
@@ -1501,7 +1507,13 @@ mod tests {
         });
 
         let contract: RawContract = serde_json::from_value(input.clone()).unwrap();
+        // Verify provides was deserialized
+        assert_eq!(contract.body.provides.len(), 1);
+
         let output = serde_json::to_value(&contract).unwrap();
-        assert_eq!(input, output);
+        // provides is not serialized — it becomes children at construction time
+        let mut expected = input;
+        expected.as_object_mut().unwrap().remove("provides");
+        assert_eq!(expected, output);
     }
 }

@@ -84,12 +84,11 @@ impl Matcher for ContractMatcher {
 ///   strict equality. Arrays are compared element-by-element including
 ///   length — partial array matching is deliberately not supported.
 ///
-/// This predicate is the deep-match primitive used by both
-/// [`Contract::find_children`](crate::Contract::find_children) and
-/// [`Contract::find_children_with_capabilities`](crate::Contract::find_children_with_capabilities):
+/// This predicate is the deep-match primitive used by
+/// [`Contract::find_children`](crate::Contract::find_children):
 /// the pattern is the matcher's `data` with `slug` and `version`
-/// omitted, and the target is either the child contract's serialized
-/// JSON form or one of its `provides` capability objects.
+/// omitted, and the target is the child contract's serialized
+/// JSON form.
 pub(crate) fn partial_match(pattern: &Value, target: &Value) -> bool {
     match pattern {
         Value::Object(pattern_obj) => {

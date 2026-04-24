@@ -6,7 +6,6 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::OnceLock;
 
 use serde::de;
 use serde::ser::SerializeMap;
@@ -311,53 +310,24 @@ pub struct Asset {
 /// Used both as requirement targets (what a contract needs) and as capability
 /// declarations (what a contract provides). Any additional matching outside kind/slug/version
 /// criteria should be placed in `data`, not as top-level fields.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContractMatcher {
     /// The contract type to match against.
     #[serde(rename = "type")]
-    pub(crate) kind: ContractType,
+    pub kind: ContractType,
 
     /// Optional slug to match.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) slug: Option<Slug>,
+    pub slug: Option<Slug>,
 
     /// Optional version or semver range to match.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) version: Option<VersionReq>,
+    pub version: Option<VersionReq>,
 
     /// Optional structured data for deep matching.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) data: Option<Value>,
-
-    /// Lazily computed deterministic hash of this matcher.
-    ///
-    /// Populated on first call to [`Self::hash`] and shared by the
-    /// [`Identifiable`] impl (used by [`ObjectSet`](crate::object_set::ObjectSet)
-    /// deduplication in the requirements index) and by the
-    /// [`Matcher`](crate::matcher::Matcher) impl (used by the
-    /// [`MatcherCache`](crate::matcher_cache::MatcherCache) key on the
-    /// search hot path). Both paths share one serialization + SHA-256
-    /// per unique matcher — without this cache, `find_children` pays the
-    /// full hashing cost twice per cache operation (once on `get`, once
-    /// on `insert`).
-    ///
-    /// Excluded from serde so round-tripping a matcher through JSON
-    /// yields an identical canonical form. Cloning a matcher copies
-    /// whatever cached value the source had (via `OnceLock::clone`);
-    /// two clones of the same matcher may independently populate their
-    /// own cells without affecting one another.
-    #[serde(skip)]
-    hash: OnceLock<String>,
-}
-
-impl PartialEq for ContractMatcher {
-    fn eq(&self, other: &Self) -> bool {
-        self.kind == other.kind
-            && self.slug == other.slug
-            && self.version == other.version
-            && self.data == other.data
-    }
+    pub data: Option<Value>,
 }
 
 impl ContractMatcher {
@@ -371,14 +341,12 @@ impl ContractMatcher {
             slug: None,
             version: None,
             data: None,
-            hash: OnceLock::new(),
         }
     }
 
     /// Restricts this matcher to contracts with the given slug.
     pub fn with_slug(mut self, slug: impl Into<Slug>) -> Self {
         self.slug = Some(slug.into());
-        self.hash = OnceLock::new();
         self
     }
 
@@ -401,7 +369,6 @@ impl ContractMatcher {
     /// ```
     pub fn with_version(mut self, version: impl Into<VersionReq>) -> Self {
         self.version = Some(version.into());
-        self.hash = OnceLock::new();
         self
     }
 
@@ -409,51 +376,7 @@ impl ContractMatcher {
     /// the given payload.
     pub fn with_data(mut self, data: Value) -> Self {
         self.data = Some(data);
-        self.hash = OnceLock::new();
         self
-    }
-
-    /// Returns the contract type this matcher targets.
-    pub fn kind(&self) -> &ContractType {
-        &self.kind
-    }
-
-    /// Returns the slug this matcher is restricted to, if any.
-    pub fn slug(&self) -> Option<&Slug> {
-        self.slug.as_ref()
-    }
-
-    /// Returns the version requirement this matcher is restricted to,
-    /// if any.
-    pub fn version(&self) -> Option<&VersionReq> {
-        self.version.as_ref()
-    }
-
-    /// Returns the data payload this matcher deep-matches against, if
-    /// any.
-    pub fn data(&self) -> Option<&Value> {
-        self.data.as_ref()
-    }
-
-    /// Returns the cached deterministic hash of this matcher,
-    /// computing it on first call.
-    ///
-    /// The hash is a SHA-256 digest of the matcher's canonical JSON
-    /// form — the same digest the requirements index uses to
-    /// deduplicate matchers inside an
-    /// [`ObjectSet`](crate::object_set::ObjectSet) and the same
-    /// digest `find_children` uses to key the
-    /// [`MatcherCache`](crate::matcher_cache::MatcherCache). Both
-    /// code paths route through this method, so a matcher that is
-    /// both registered as a requirement and used as a search key
-    /// pays exactly one serialization + hashing cost across its
-    /// lifetime.
-    pub(crate) fn hash(&self) -> &str {
-        self.hash.get_or_init(|| {
-            hash_object(
-                &serde_json::to_value(self).expect("ContractMatcher must serialize to JSON"),
-            )
-        })
     }
 }
 
@@ -536,13 +459,12 @@ fn deserialize_requirement_from_value(value: Value) -> Result<ContractRequiremen
 
 /// Identity for [`ContractMatcher`] used by [`ObjectSet`](crate::object_set::ObjectSet).
 ///
-/// Delegates to the cached [`ContractMatcher::hash`] accessor so that
-/// `ObjectSet` deduplication (on `register_matcher`) and the search
-/// cache key (on `find_children`) share a single memoized SHA-256 per
-/// matcher instance.
+/// The ID is a deterministic SHA-256 of the matcher's canonical JSON form, so
+/// two structurally-identical matchers deduplicate inside the per-type buckets
+/// of the requirements index.
 impl Identifiable for ContractMatcher {
     fn id(&self) -> String {
-        self.hash().to_string()
+        hash_object(&serde_json::to_value(self).expect("ContractMatcher must serialize to JSON"))
     }
 }
 
@@ -1048,47 +970,23 @@ mod tests {
     }
 
     #[test]
-    fn contract_matcher_hash_is_stable_and_structural() {
+    fn contract_matcher_id_is_stable_and_structural() {
         // Two structurally-identical matchers built independently
-        // must produce the same hash — that is the deduplication
+        // must produce the same ID — that is the deduplication
         // invariant the requirements index relies on. Two matchers
-        // that differ in any field must produce different hashes.
+        // that differ in any field must produce different IDs.
         let a = ContractMatcher::new("hw.device-type").with_slug("raspberry-pi");
         let b = ContractMatcher::new("hw.device-type").with_slug("raspberry-pi");
         let c = ContractMatcher::new("hw.device-type").with_slug("raspberry-pi2");
-        assert_eq!(a.hash(), b.hash());
-        assert_ne!(a.hash(), c.hash());
+        assert_eq!(a.id(), b.id());
+        assert_ne!(a.id(), c.id());
     }
 
     #[test]
-    fn contract_matcher_hash_is_cached_across_calls() {
-        // The second call to `hash()` must return the same slice
-        // as the first — populating the OnceLock once, not twice.
-        // Observing identical pointer addresses is the tightest
-        // available proxy for "the inner String was reused".
+    fn contract_matcher_serializes_to_canonical_form() {
+        // Only the matching criteria appear in serialized output so
+        // matchers remain round-trip clean through JSON.
         let m = ContractMatcher::new("hw.device-type").with_slug("raspberry-pi");
-        let first = m.hash() as *const str;
-        let second = m.hash() as *const str;
-        assert_eq!(first, second, "hash cell must serve the same slice");
-    }
-
-    #[test]
-    fn contract_matcher_partial_eq_ignores_cached_hash() {
-        // Populating the cache on one matcher but not the other
-        // must not affect structural equality.
-        let a = ContractMatcher::new("hw.device-type").with_slug("raspberry-pi");
-        let b = ContractMatcher::new("hw.device-type").with_slug("raspberry-pi");
-        let _ = a.hash(); // populate a's cell, leave b's empty
-        assert_eq!(a, b);
-    }
-
-    #[test]
-    fn contract_matcher_roundtrip_hash_field_is_skipped() {
-        // The `hash` field must not appear in serialized output so
-        // matchers remain round-trip clean through JSON. Verifying
-        // via serializing a minimal matcher directly.
-        let m = ContractMatcher::new("hw.device-type").with_slug("raspberry-pi");
-        let _ = m.hash(); // populate the cache before serializing
         let output = serde_json::to_value(&m).unwrap();
         assert_eq!(
             output,

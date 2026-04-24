@@ -19,7 +19,7 @@ fn readme_creating_contracts() {
 
 #[test]
 fn readme_searching() {
-    let mut os: contrato::Contract = serde_json::from_value(serde_json::json!({
+    let os: contrato::Contract = serde_json::from_value(serde_json::json!({
         "type": "sw.os",
         "slug": "balenaos",
         "version": "6.1.2",
@@ -37,7 +37,7 @@ fn readme_searching() {
 
 #[test]
 fn readme_satisfaction() {
-    let mut parent: contrato::Contract = serde_json::from_value(serde_json::json!({
+    let parent: contrato::Contract = serde_json::from_value(serde_json::json!({
         "type": "sw.os",
         "slug": "balenaos",
         "children": [
@@ -58,7 +58,7 @@ fn readme_satisfaction() {
 
 #[test]
 fn readme_or_combinator() {
-    let mut parent: contrato::Contract = serde_json::from_value(serde_json::json!({
+    let parent: contrato::Contract = serde_json::from_value(serde_json::json!({
         "type": "hw.board",
         "slug": "rpi4",
         "children": [

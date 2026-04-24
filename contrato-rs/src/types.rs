@@ -292,15 +292,11 @@ pub struct ContractMatcher {
 
     /// Lazily computed deterministic hash of this matcher.
     ///
-    /// Populated on first call to [`Self::hash`] and shared by the
-    /// [`Identifiable`] impl (used by [`ObjectSet`](crate::object_set::ObjectSet)
-    /// deduplication in the requirements index) and by the
-    /// [`Matcher`](crate::matcher::Matcher) impl (used by the
-    /// [`MatcherCache`](crate::matcher_cache::MatcherCache) key on the
-    /// search hot path). Both paths share one serialization + SHA-256
-    /// per unique matcher — without this cache, `find_children` pays the
-    /// full hashing cost twice per cache operation (once on `get`, once
-    /// on `insert`).
+    /// Populated on first call to [`Self::hash`] and consumed by
+    /// the [`Identifiable`] impl (used by
+    /// [`ObjectSet`](crate::object_set::ObjectSet) deduplication in
+    /// the requirements index) so each unique matcher pays at most
+    /// one serialization + SHA-256 across its lifetime.
     ///
     /// Excluded from serde so round-tripping a matcher through JSON
     /// yields an identical canonical form. Cloning a matcher copies
@@ -355,13 +351,7 @@ impl ContractMatcher {
     /// The hash is a SHA-256 digest of the matcher's canonical JSON
     /// form — the same digest the requirements index uses to
     /// deduplicate matchers inside an
-    /// [`ObjectSet`](crate::object_set::ObjectSet) and the same
-    /// digest `find_children` uses to key the
-    /// [`MatcherCache`](crate::matcher_cache::MatcherCache). Both
-    /// code paths route through this method, so a matcher that is
-    /// both registered as a requirement and used as a search key
-    /// pays exactly one serialization + hashing cost across its
-    /// lifetime.
+    /// [`ObjectSet`](crate::object_set::ObjectSet).
     pub(crate) fn hash(&self) -> &str {
         self.hash.get_or_init(|| {
             hash_object(
@@ -450,10 +440,9 @@ fn deserialize_requirement_from_value(value: Value) -> Result<ContractRequiremen
 
 /// Identity for [`ContractMatcher`] used by [`ObjectSet`](crate::object_set::ObjectSet).
 ///
-/// Delegates to the cached [`ContractMatcher::hash`] accessor so that
-/// `ObjectSet` deduplication (on `register_matcher`) and the search
-/// cache key (on `find_children`) share a single memoized SHA-256 per
-/// matcher instance.
+/// Delegates to the cached [`ContractMatcher::hash`] accessor so
+/// `ObjectSet` deduplication (on `register_matcher`) pays at most
+/// one serialization + SHA-256 per matcher instance.
 impl Identifiable for ContractMatcher {
     fn id(&self) -> String {
         self.hash().to_string()

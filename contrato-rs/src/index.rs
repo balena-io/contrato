@@ -9,17 +9,11 @@
 //! The index assumes its children are fully hashed before insertion
 //! (construction via [`Contract::new`](crate::Contract) always hashes).
 //! Each secondary index — `by_type`, `by_type_slug`, and `types` — is
-//! kept in sync by [`insert`](ChildrenIndex::insert) and
-//! [`remove`](ChildrenIndex::remove); the contract layer is responsible
+//! kept in sync by [`insert`](ContractIndex::insert) and
+//! [`remove`](ContractIndex::remove); the contract layer is responsible
 //! for calling [`rebuild`](crate::Contract) after any mutation so that
 //! the serialized tree in `raw.body.children` and the requirements index
 //! stay consistent with the in-memory state.
-//!
-//! Mutations return a [`Mutation`] value that reports the set of
-//! search-result cache types the caller must invalidate. This keeps
-//! the index free of any references to [`Contract`]'s own cache
-//! state, so the caller can split-borrow the index and the cache as
-//! disjoint fields of [`Contract`].
 
 use std::collections::{HashMap, HashSet};
 
@@ -31,8 +25,8 @@ use crate::types::RawContract;
 ///
 /// Secondary indexes (`by_type`, `by_type_slug`, `types`) are
 /// maintained in step with `map` by [`insert`](Self::insert) and
-/// [`remove`](Self::remove), both of which return a [`Mutation`]
-/// describing which cache types the caller should invalidate.
+/// [`remove`](Self::remove), both of which return `true` when the
+/// caller should rebuild derived state.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ContractIndex {
     /// Maps contract hashes to owned child contracts.
@@ -48,83 +42,27 @@ pub(crate) struct ContractIndex {
     types: HashSet<String>,
 }
 
-/// Outcome of a mutation on [`ChildrenIndex`] — tells the caller
-/// whether derived state needs rebuilding and, when it does, which
-/// cache types must be invalidated.
-///
-/// Returned by [`ChildrenIndex::insert`] and [`ChildrenIndex::remove`]
-/// so the caller (typically [`Contract`]) can invalidate
-/// [`Contract::search_cache`](crate::Contract) via split-borrow
-/// without the index itself holding a reference to the cache.
-///
-/// Marked `#[must_use]` because discarding a `Mutation` silently
-/// skips both the rebuild of derived state and the search-cache
-/// invalidation — a latent bug that leaves stale cache entries
-/// pointing at removed children. Every caller must explicitly
-/// inspect `changed` and handle `invalidated_types`.
-#[must_use]
-pub(crate) struct Mutation {
-    /// Whether the index was actually changed.
-    ///
-    /// `false` when the mutation was a no-op — a duplicate insert
-    /// or a remove of a non-existent hash. Callers skip the
-    /// `rebuild` + hash-invalidation work in that case.
-    pub changed: bool,
-
-    /// Types whose search-cache entries went stale.
-    ///
-    /// Empty when `changed` is `false`. Otherwise contains the
-    /// mutated contract's own type plus every type reachable
-    /// inside its subtree — every cached search result keyed on
-    /// any of these types must be dropped because the walk that
-    /// built it may now be inaccurate. Clearing only the own type
-    /// would leave stale results when a child carrying nested
-    /// contracts of a previously-cached type is inserted or
-    /// removed.
-    pub invalidated_types: Vec<String>,
-}
-
-impl Mutation {
-    /// Builds a `Mutation` that signals no change — used for the
-    /// duplicate-insert and missing-remove cases. Avoids allocating
-    /// the invalidation vector on the no-op path.
-    fn unchanged() -> Self {
-        Self {
-            changed: false,
-            invalidated_types: Vec::new(),
-        }
-    }
-}
-
 impl ContractIndex {
     /// Inserts a child contract into the index.
     ///
-    /// Returns a [`Mutation`] describing what the caller needs to do
-    /// next: `changed` is `false` for a duplicate hash (full no-op,
-    /// caller skips rebuild), otherwise `true` and `invalidated_types`
-    /// lists every type whose cached search results may now be stale.
+    /// Returns `true` when the index changed, `false` for a
+    /// duplicate hash (full no-op, caller skips rebuild). Ignoring
+    /// the return on a non-construction path leaves derived state
+    /// stale, hence `#[must_use]`.
     ///
     /// The child's hash is requested via [`Contract::hash`], which is
     /// computed lazily on first access — so insertion is the point at
     /// which a previously-unhashed contract becomes hashed.
-    pub(crate) fn insert(&mut self, contract: Contract) -> Mutation {
+    #[must_use]
+    pub(crate) fn insert(&mut self, contract: Contract) -> bool {
         let child_hash = contract.hash().to_string();
         if self.map.contains_key(&child_hash) {
-            return Mutation::unchanged();
+            return false;
         }
         let ty = contract.get_type().to_string();
-        // Collected before `self.map.insert` moves `contract`, so
-        // the search for invalidated types runs against the fully
-        // populated inbound subtree.
-        let mut invalidated_types = contract.get_children_types();
-        invalidated_types.push(ty.clone());
 
         // Keep `types` in sync with `by_type` without a redundant
-        // membership probe on every index. One `contains_key` check
-        // decides whether `types` needs an update, then the `entry`
-        // API handles the inner container creation for `by_type` and
-        // `by_type_slug` without any `.expect(...)` on a just-inserted
-        // key.
+        // membership probe on every index.
         if !self.by_type.contains_key(&ty) {
             self.types.insert(ty.clone());
         }
@@ -142,19 +80,13 @@ impl ContractIndex {
         }
 
         self.map.insert(child_hash, contract);
-        Mutation {
-            changed: true,
-            invalidated_types,
-        }
+        true
     }
 
     /// Removes a child contract from the index.
     ///
-    /// Returns a [`Mutation`] with the same semantics as
-    /// [`Self::insert`]'s return: `changed` is `false` when the hash
-    /// is not present (full no-op), otherwise `true` and
-    /// `invalidated_types` lists the types whose cached searches
-    /// need to be dropped.
+    /// Returns `true` when the index changed, `false` when the hash
+    /// is not present (full no-op).
     ///
     /// When the last child of a given type is removed, the
     /// corresponding entries in `by_type`, `by_type_slug`, and
@@ -166,18 +98,13 @@ impl ContractIndex {
     /// hashes have identical raw data — in particular, identical
     /// slug and alias sets — so the slug-cleanup loop below removes
     /// the same keys that the stored child registered on insertion.
-    pub(crate) fn remove(&mut self, contract: &Contract) -> Mutation {
+    #[must_use]
+    pub(crate) fn remove(&mut self, contract: &Contract) -> bool {
         let child_hash = contract.hash();
         if !self.map.contains_key(child_hash) {
-            return Mutation::unchanged();
+            return false;
         }
         let ty = contract.get_type().to_string();
-        // Same equality-of-hash argument as the slug cleanup below:
-        // the stored child and the caller-supplied `contract` carry
-        // identical raw data, so `get_children_types` is stable
-        // across the two references.
-        let mut invalidated_types = contract.get_children_types();
-        invalidated_types.push(ty.clone());
         // Rebind to owned so that later `&mut self` operations don't
         // collide with the borrow from `contract.hash()`.
         let child_hash = child_hash.to_string();
@@ -205,10 +132,7 @@ impl ContractIndex {
             }
         }
 
-        Mutation {
-            changed: true,
-            invalidated_types,
-        }
+        true
     }
 
     /// Returns `true` if the index contains no children.

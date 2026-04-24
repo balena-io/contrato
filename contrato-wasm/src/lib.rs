@@ -16,9 +16,6 @@
 //! that return child contracts clone the matched values into fresh
 //! `WasmContract` handles — cheap because `contrato::Contract` only
 //! clones owned index state (the lazy hash cell is preserved by clone).
-//! Methods that mutate the internal search cache are exposed as
-//! `&mut self` on the JS side; wasm-bindgen enforces borrow discipline
-//! per call.
 
 use contrato::{Contract, ContractMatcher, RawContract};
 use js_sys::Array;
@@ -249,14 +246,13 @@ impl WasmContract {
 
     // ── search ──────────────────────────────────────────────────────────
 
-    /// Searches for children matching the given matcher, populating the
-    /// internal search cache on first lookup.
+    /// Searches for children matching the given matcher.
     ///
     /// `matcher` is a plain JS object shaped like `{ type, slug?,
     /// version?, data? }`, deserialized into [`ContractMatcher`] at the
     /// boundary.
     #[wasm_bindgen(js_name = findChildren)]
-    pub fn find_children(&mut self, matcher: JsValue) -> Result<Array, JsValue> {
+    pub fn find_children(&self, matcher: JsValue) -> Result<Array, JsValue> {
         let matcher = matcher_from_js(matcher)?;
         Ok(contracts_to_array(
             self.inner.find_children(&matcher).into_iter().cloned(),
@@ -269,7 +265,7 @@ impl WasmContract {
     /// its descendants is satisfied by children reachable from `self`.
     #[wasm_bindgen(js_name = satisfiesChildContract)]
     pub fn satisfies_child_contract(
-        &mut self,
+        &self,
         contract: &WasmContract,
         types: Option<Vec<String>>,
     ) -> bool {
@@ -284,7 +280,7 @@ impl WasmContract {
     /// `requires` entry on the source contract.
     #[wasm_bindgen(js_name = getNotSatisfiedChildRequirements)]
     pub fn get_not_satisfied_child_requirements(
-        &mut self,
+        &self,
         contract: &WasmContract,
         types: Option<Vec<String>>,
     ) -> Result<JsValue, JsValue> {
@@ -298,7 +294,7 @@ impl WasmContract {
     /// Returns `true` if every direct and descendant child of `self`
     /// has its compiled requirements satisfied against `self` itself.
     #[wasm_bindgen(js_name = areChildrenSatisfied)]
-    pub fn are_children_satisfied(&mut self, types: Option<Vec<String>>) -> bool {
+    pub fn are_children_satisfied(&self, types: Option<Vec<String>>) -> bool {
         let owned = borrow_type_filter(&types);
         self.inner.are_children_satisfied(owned.as_deref())
     }
@@ -307,7 +303,7 @@ impl WasmContract {
     /// descendants of `self`, as an array of plain JS objects.
     #[wasm_bindgen(js_name = getAllNotSatisfiedChildRequirements)]
     pub fn get_all_not_satisfied_child_requirements(
-        &mut self,
+        &self,
         types: Option<Vec<String>>,
     ) -> Result<JsValue, JsValue> {
         let owned = borrow_type_filter(&types);

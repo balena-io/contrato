@@ -26,7 +26,6 @@ use crate::children_tree;
 use crate::hash::hash_object;
 use crate::index::ContractIndex;
 use crate::matcher::{partial_match, version_match};
-use crate::matcher_cache::MatcherCache;
 use crate::object_set::{Identifiable, ObjectSet};
 use crate::template;
 use crate::types::{ContractMatcher, ContractRequirement, RawContract, Slug, VersionReq};
@@ -78,7 +77,7 @@ pub struct Contract {
     ///
     /// Populated on first call to [`Self::hash`] (or any path that
     /// reaches it — `PartialEq`, `std::hash::Hash`, `Identifiable::id`,
-    /// [`ChildrenIndex::insert`](crate::children::ChildrenIndex)). Any
+    /// [`ContractIndex::insert`](crate::index::ContractIndex)). Any
     /// mutation that changes `raw` must invalidate this cell; in
     /// practice [`Self::rebuild`] does so for every mutator, so callers
     /// only need to call `rebuild` after touching `raw`.
@@ -87,28 +86,6 @@ pub struct Contract {
     /// Indexed children contracts, populated from `raw.children` at
     /// construction time and kept in sync via [`Self::rebuild`].
     children: ContractIndex,
-
-    /// Matcher-based search result cache keyed by `(target type,
-    /// matcher hash)`.
-    ///
-    /// A sibling field of [`Self::children`] so the search path can
-    /// split-borrow `&self.children` (read-only index walk) and
-    /// `&mut self.search_cache` (mutable cache write) in the same
-    /// expression without the borrow checker forcing an
-    /// intermediate clone. [`Self::find_children`] exploits the
-    /// split to resolve cached hashes into `&Contract` references
-    /// and then move the hash set into the cache in one pass; the
-    /// requirement-satisfaction loops exploit it to iterate every
-    /// descendant's compiled requirements in place without an
-    /// owned per-descendant snapshot.
-    ///
-    /// Invalidation is driven by [`Self::add_child`] /
-    /// [`Self::remove_child`] / [`Self::add_children`]: those
-    /// mutators read the affected types out of the
-    /// [`crate::children::Mutation`] result returned by
-    /// [`ChildrenIndex`] and drop the matching cache entries via
-    /// [`Self::invalidate_search_cache_for`].
-    search_cache: MatcherCache<HashSet<String>>,
 
     /// Compiled requirements derived from `raw.requires`.
     requirements: RequirementsIndex,
@@ -130,16 +107,9 @@ impl Contract {
             raw,
             hash: OnceLock::new(),
             children: ContractIndex::default(),
-            search_cache: MatcherCache::new(),
             requirements: RequirementsIndex::default(),
         };
 
-        // Load children from the nested tree and insert each one into
-        // the index. Children are hashed on insertion because the index
-        // keys by hash; that cost is unavoidable for any indexed child.
-        // The cache starts empty, so the `Mutation::invalidated_types`
-        // list returned by `insert` is discarded here — there's
-        // nothing to invalidate at construction.
         let child_sources: Vec<RawContract> = this
             .raw
             .body
@@ -149,10 +119,6 @@ impl Contract {
             .unwrap_or_default();
 
         for source in child_sources {
-            // `Mutation::invalidated_types` is deliberately discarded:
-            // the search cache starts empty at construction, so there
-            // is nothing to invalidate. `let _ =` silences the
-            // `#[must_use]` warning while making the intent explicit.
             let _ = this.children.insert(Contract::new(source));
         }
 
@@ -332,7 +298,7 @@ impl Contract {
     /// by: its own slug (if any) together with every alias.
     ///
     /// Prefers borrowed `&str` over allocated `String` so callers that
-    /// build indexes (e.g. [`crate::children::ChildrenIndex::insert`])
+    /// build indexes (e.g. [`crate::index::ContractIndex::insert`])
     /// can avoid one allocation per insertion.
     pub fn get_all_slugs(&self) -> impl Iterator<Item = &str> {
         self.raw
@@ -400,8 +366,8 @@ impl Contract {
     /// Returns a reference to the underlying [`RawContract`].
     ///
     /// Crate-internal accessor used by [`children_tree::build`] via the
-    /// [`crate::children_tree::WithChildrenIndex`] trait implementation
-    /// on [`crate::children::ChildrenIndex`].
+    /// [`crate::children_tree::ChildrenIndex`] trait implementation
+    /// on [`crate::index::ContractIndex`].
     pub(crate) fn raw(&self) -> &RawContract {
         &self.raw
     }
@@ -443,18 +409,12 @@ impl Contract {
     /// Adds a child contract to this contract.
     ///
     /// When the child is new, the derived state (`raw.children`
-    /// serialized tree and the requirements index) is rebuilt, every
-    /// search-cache entry for the affected types is dropped, and the
-    /// parent's hash cache is invalidated so the next [`Self::hash`]
-    /// call recomputes. Adding a child whose hash is already present in
-    /// the index is a full no-op — the indexes, serialized tree,
-    /// search cache, and cached hash are all unchanged — which keeps
-    /// duplicate-insert traffic cheap in blueprint's combinatorial
-    /// hot loop.
+    /// serialized tree and the requirements index) is rebuilt and
+    /// the parent's hash cache is invalidated so the next
+    /// [`Self::hash`] call recomputes. Adding a child whose hash is
+    /// already present in the index is a full no-op.
     pub fn add_child(&mut self, contract: Contract) -> &mut Self {
-        let mutation = self.children.insert(contract);
-        if mutation.changed {
-            self.invalidate_search_cache_for(&mutation.invalidated_types);
+        if self.children.insert(contract) {
             self.rebuild();
         }
         self
@@ -467,12 +427,9 @@ impl Contract {
     /// child is not present the call is a no-op and the derived state is
     /// left untouched. Otherwise the children tree and requirements
     /// index are rebuilt (which also invalidates the parent's hash
-    /// cache) and every search-cache entry for the affected types is
-    /// dropped.
+    /// cache).
     pub fn remove_child(&mut self, contract: &Contract) -> &mut Self {
-        let mutation = self.children.remove(contract);
-        if mutation.changed {
-            self.invalidate_search_cache_for(&mutation.invalidated_types);
+        if self.children.remove(contract) {
             self.rebuild();
         }
         self
@@ -480,51 +437,23 @@ impl Contract {
 
     /// Adds multiple child contracts to this contract.
     ///
-    /// All insertions happen first (accumulating the union of
-    /// invalidated types across the batch), then a single
-    /// [`Self::rebuild`] is performed — avoiding the O(n²) cost of
-    /// rebuilding after each individual insertion. Duplicate children
-    /// (by hash) within the batch are deduplicated through the same
-    /// no-op path used by single insertion. If every contract in the
-    /// batch turns out to be a duplicate (or the batch is empty), no
-    /// `rebuild` is performed, no search-cache entries are dropped,
-    /// and the parent's hash cache is left intact.
+    /// All insertions happen first, then a single [`Self::rebuild`]
+    /// is performed — avoiding the O(n²) cost of rebuilding after
+    /// each individual insertion. Duplicate children (by hash)
+    /// within the batch are deduplicated through the same no-op
+    /// path used by single insertion. If every contract in the
+    /// batch turns out to be a duplicate (or the batch is empty),
+    /// no `rebuild` is performed and the parent's hash cache is
+    /// left intact.
     pub fn add_children(&mut self, contracts: impl IntoIterator<Item = Contract>) -> &mut Self {
-        let mut invalidated: Vec<String> = Vec::new();
+        let mut changed = false;
         for contract in contracts {
-            let mutation = self.children.insert(contract);
-            if mutation.changed {
-                invalidated.extend(mutation.invalidated_types);
-            }
+            changed |= self.children.insert(contract);
         }
-        if !invalidated.is_empty() {
-            self.invalidate_search_cache_for(&invalidated);
+        if changed {
             self.rebuild();
         }
         self
-    }
-
-    /// Drops every search-cache entry keyed on any type in `types`.
-    ///
-    /// Called by the three mutators ([`Self::add_child`],
-    /// [`Self::remove_child`], [`Self::add_children`]) whenever the
-    /// children index actually changed. The input may contain
-    /// duplicates — `add_children` in particular concatenates
-    /// per-insertion invalidation lists without upfront
-    /// deduplication. A small `HashSet<&str>` probe filters
-    /// duplicates before touching [`MatcherCache::remove`] so a
-    /// batch of N children of the same type performs exactly one
-    /// cache removal per distinct type instead of N. The probe
-    /// itself costs one [`HashSet`] insertion per entry, which is
-    /// cheaper than a redundant [`HashMap::remove`] on the cache's
-    /// own internal map.
-    fn invalidate_search_cache_for(&mut self, types: &[String]) {
-        let mut seen: HashSet<&str> = HashSet::new();
-        for ty in types {
-            if seen.insert(ty.as_str()) {
-                self.search_cache.remove(ty);
-            }
-        }
     }
 
     /// Looks up a direct child contract by its hash.
@@ -584,7 +513,7 @@ impl Contract {
     /// Recursively collects children whose type matches `type_`.
     ///
     /// Convenience shorthand for [`Self::get_children_filtered`] with a
-    /// single-element slice. Callers who need cached, matcher-keyed
+    /// single-element slice. Callers who matcher-keyed
     /// lookup should use [`Self::find_children`] instead.
     pub fn get_children_by_type(&self, type_: &str) -> Vec<&Contract> {
         self.get_children_filtered(&[type_])
@@ -632,79 +561,30 @@ impl Contract {
     /// over the matcher's `data` (against the child's own `data`) and
     /// by [`version_match`] over the matcher's version requirement.
     ///
-    /// Results are cached on `self` keyed by `(target_type,
-    /// matcher_hash)`, where `matcher_hash` is the
-    /// [`Identifiable`] digest of the typed matcher — the same digest
-    /// the requirements index uses for deduplication. Subsequent
-    /// calls with the same matcher return the same contracts (modulo
-    /// mutation). The cache is invalidated per-type whenever a child
-    /// of that type is added or removed from any node whose index
-    /// participates in the walk.
-    ///
     /// Returns an empty vector when the target type is not present
     /// in any descendant of `self`.
-    ///
-    /// This method takes `&mut self` because populating the search
-    /// cache is a mutation. Callers that want to hold the result
-    /// list past further operations should convert the borrowed
-    /// slice to owned hashes or clone the contracts.
-    pub fn find_children(&mut self, matcher: &ContractMatcher) -> Vec<&Contract> {
+    pub fn find_children(&self, matcher: &ContractMatcher) -> Vec<&Contract> {
         let target_type = matcher.kind.as_str();
-
-        // Short-circuit before touching the cache: if no contract
-        // in the walk can possibly contribute a match, the answer
-        // is empty regardless of cache state.
         if !Self::has_descendant_type_in(&self.children, target_type) {
             return Vec::new();
         }
 
-        // Cache hit: the cached `HashSet<String>` is borrowed from
-        // `self.search_cache`, and `resolve_hashes_in` walks
-        // `self.children` — two sibling fields on `self`, so the
-        // borrow checker allows them to coexist via field-level
-        // split. The cached set is resolved into `&Contract`
-        // references directly, no intermediate clone.
-        if let Some(cached) = self.search_cache.get(matcher) {
-            return Self::resolve_hashes_in(&self.children, cached);
-        }
-
         let target_slug = matcher.slug.as_ref().map(Slug::as_str);
-
-        let mut result_hashes = HashSet::new();
-        Self::collect_find_children_hashes_walk(
+        let mut out = Vec::new();
+        Self::collect_find_children_walk(
             &self.children,
             target_type,
             target_slug,
             matcher.version.as_ref(),
-            matcher,
-            &mut result_hashes,
+            matcher.data.as_ref(),
+            &mut out,
         );
-
-        // Resolve against the read borrow of `self.children` first,
-        // then move `result_hashes` into the cache. The mutable
-        // borrow of `self.search_cache` is disjoint from the
-        // immutable borrow of `self.children`, so the owned result
-        // and the cache insert coexist with no clone.
-        let resolved = Self::resolve_hashes_in(&self.children, &result_hashes);
-        self.search_cache.insert(matcher, result_hashes);
-        resolved
+        out
     }
 
     /// Returns `true` when `ty` appears anywhere in the closure of
-    /// child types reachable from `children`.
-    ///
-    /// Used as the first short-circuit inside [`Self::find_children`]
-    /// and [`Self::any_child_matches_in`]. The recursive probe stops
-    /// on the first positive match, so the check costs only the
-    /// prefix of the walk needed to discover one child of the
-    /// requested type.
-    ///
-    /// Takes `&ChildrenIndex` directly rather than `&self` so the
-    /// caller can pass `&self.children` while simultaneously holding
-    /// `&mut self.search_cache` — field-level split borrow is the
-    /// pivot that lets the validation descendants walk iterate
-    /// compiled requirements in place, without an owned
-    /// per-descendant snapshot.
+    /// child types reachable from `children`. Short-circuits on the
+    /// first positive match.
     fn has_descendant_type_in(children: &ContractIndex, ty: &str) -> bool {
         if children.has_type(ty) {
             return true;
@@ -717,233 +597,155 @@ impl Contract {
         false
     }
 
-    /// Collects child hashes matched by [`Self::find_children`]
-    /// across the given index and every descendant.
-    ///
-    /// Visits the passed-in [`ChildrenIndex`] as a candidate parent
+    /// Visits the passed-in [`ContractIndex`] as a candidate parent
     /// (inspecting its direct children via the type / type+slug
     /// indexes), then recurses into each direct child's own
     /// children index so descendants also contribute candidates.
-    /// Recursion is effectively unrolled into "visit every node as
-    /// its own candidate", matching the semantics of the original
-    /// `get_children()`-based sweep while avoiding the intermediate
-    /// `Vec<&Contract>` allocation.
-    fn collect_find_children_hashes_walk(
-        children: &ContractIndex,
+    fn collect_find_children_walk<'a>(
+        children: &'a ContractIndex,
         target_type: &str,
         target_slug: Option<&str>,
         required_version: Option<&VersionReq>,
-        matcher: &ContractMatcher,
-        out: &mut HashSet<String>,
+        pattern: Option<&Value>,
+        out: &mut Vec<&'a Contract>,
     ) {
         if children.has_type(target_type) {
-            // The two candidate iterators have distinct concrete
-            // types (one comes from `by_type_slug`, the other from
-            // `by_type`), so the branch duplicates the surrounding
-            // loop rather than unifying them behind a `dyn` box.
-            // The inner per-candidate work lives in
-            // [`Self::try_collect_candidate`] so neither branch
-            // carries the full filter body.
             match target_slug {
                 Some(slug) => {
                     for child_hash in children.hashes_by_type_slug(target_type, slug) {
-                        Self::try_collect_candidate(
+                        if let Some(c) = Self::candidate_if_match(
                             children,
                             child_hash,
                             required_version,
-                            matcher.data.as_ref(),
-                            out,
-                        );
+                            pattern,
+                        ) {
+                            out.push(c);
+                        }
                     }
                 }
                 None => {
                     for child_hash in children.hashes_by_type(target_type) {
-                        Self::try_collect_candidate(
+                        if let Some(c) = Self::candidate_if_match(
                             children,
                             child_hash,
                             required_version,
-                            matcher.data.as_ref(),
-                            out,
-                        );
+                            pattern,
+                        ) {
+                            out.push(c);
+                        }
                     }
                 }
             }
         }
         for child in children.values() {
-            Self::collect_find_children_hashes_walk(
+            Self::collect_find_children_walk(
                 &child.children,
                 target_type,
                 target_slug,
                 required_version,
-                matcher,
+                pattern,
                 out,
             );
         }
     }
 
-    /// Inserts `child_hash` into `out` when the child at that hash
-    /// passes the `data` partial-match and version filters.
-    ///
-    /// Shared between the `(type, slug)` and `type`-only arms of
-    /// [`Self::collect_find_children_hashes_walk`]. When the matcher
-    /// carries no `data` payload, the partial-match check is
-    /// skipped — type and slug have already been handled by the
-    /// index lookup, so a data-less matcher accepts every candidate
-    /// that reached this point.
+    /// Returns the child at `child_hash` when it passes the `data`
+    /// partial-match and version filters, or `None` otherwise.
     ///
     /// **Partial-match scope**: the matcher's `data` payload is
-    /// matched against the child's own `data` field only. No other
-    /// fields on the child contract are consulted during partial
-    /// matching — custom criteria on either side belong inside
-    /// `data`. A child with no `data` field cannot satisfy a
-    /// non-trivial pattern and is rejected.
-    fn try_collect_candidate(
-        children: &ContractIndex,
+    /// matched against the child's own `data` field only. A child
+    /// with no `data` field cannot satisfy a non-trivial pattern
+    /// and is rejected.
+    fn candidate_if_match<'a>(
+        children: &'a ContractIndex,
         child_hash: &str,
         required_version: Option<&VersionReq>,
         pattern: Option<&Value>,
-        out: &mut HashSet<String>,
-    ) {
-        let Some(child) = children.get(child_hash) else {
-            return;
-        };
+    ) -> Option<&'a Contract> {
+        let child = children.get(child_hash)?;
 
         if let Some(pat) = pattern {
-            // A child with no `data` of its own cannot satisfy a
-            // non-trivial pattern — reject without running
-            // `partial_match`.
-            let Some(child_data) = child.raw.body.data.as_ref() else {
-                return;
-            };
+            let child_data = child.raw.body.data.as_ref()?;
             if !partial_match(pat, child_data) {
-                return;
+                return None;
             }
         }
 
         if !version_match(child.raw.body.version.as_ref(), required_version) {
-            return;
+            return None;
         }
 
-        out.insert(child.hash().to_string());
-    }
-
-    /// Resolves a set of child hashes into `&Contract` references by
-    /// walking a [`ChildrenIndex`] directly.
-    ///
-    /// Taking `&ChildrenIndex` (rather than `&self`) is the
-    /// split-borrow pivot: the returned references are tied to the
-    /// children index only, leaving `self.search_cache` free to be
-    /// borrowed mutably in the same expression. That's what lets
-    /// [`Self::find_children`] hand the owned `result_hashes` to
-    /// `search_cache.insert` immediately after resolving, with no
-    /// intermediate clone.
-    ///
-    /// The walk recurses into every descendant. `self` itself is
-    /// **not** reachable from this function, so unlike the old
-    /// `&self`-taking variant the root contract's own hash is never
-    /// matched — that's fine because no current caller places the
-    /// root's hash in the result set.
-    fn resolve_hashes_in<'a>(
-        children: &'a ContractIndex,
-        hashes: &HashSet<String>,
-    ) -> Vec<&'a Contract> {
-        if hashes.is_empty() {
-            return Vec::new();
-        }
-        let mut out: Vec<&Contract> = Vec::with_capacity(hashes.len());
-        Self::resolve_hashes_walk(children, hashes, &mut out);
-        out
-    }
-
-    /// Recursive helper for [`Self::resolve_hashes_in`]: visits every
-    /// contract in the index and its descendants, pushing any whose
-    /// hash appears in `hashes`.
-    fn resolve_hashes_walk<'a>(
-        children: &'a ContractIndex,
-        hashes: &HashSet<String>,
-        out: &mut Vec<&'a Contract>,
-    ) {
-        for child in children.values() {
-            if hashes.contains(child.hash()) {
-                out.push(child);
-            }
-            Self::resolve_hashes_walk(&child.children, hashes, out);
-        }
+        Some(child)
     }
 
     /// Boolean short-circuit variant of [`Self::find_children`].
     ///
     /// Returns `true` as soon as any child across the full descendant
-    /// walk satisfies the matcher. Cache interaction is identical to
-    /// [`Self::find_children`]: a cache hit returns the cached set's
-    /// emptiness directly, and a cache miss computes and stores the
-    /// full hash set (so subsequent
-    /// [`find_children`](Self::find_children) /
-    /// [`any_child_matches_in`](Self::any_child_matches_in) calls
-    /// with the same matcher are served from the cache). The only
-    /// saving versus `find_children` is the final `resolve_hashes_in`
-    /// step — no `Vec<&Contract>` is ever materialized on the hot
-    /// validation path.
-    ///
-    /// Takes `&ChildrenIndex` + `&mut MatcherCache` rather than
-    /// `&mut self` so the caller can split-borrow sibling fields on
-    /// [`Contract`] and keep other immutable borrows of `self` live
-    /// across the call.
-    fn any_child_matches_in(
-        children: &ContractIndex,
-        cache: &mut MatcherCache<HashSet<String>>,
-        matcher: &ContractMatcher,
-    ) -> bool {
+    /// walk satisfies the matcher — no `Vec<&Contract>` is ever
+    /// materialized on the hot validation path.
+    fn any_child_matches_in(children: &ContractIndex, matcher: &ContractMatcher) -> bool {
         let target_type = matcher.kind.as_str();
-
         if !Self::has_descendant_type_in(children, target_type) {
             return false;
         }
 
-        if let Some(hashes) = cache.get(matcher) {
-            return !hashes.is_empty();
-        }
-
         let target_slug = matcher.slug.as_ref().map(Slug::as_str);
-
-        let mut result_hashes = HashSet::new();
-        Self::collect_find_children_hashes_walk(
+        Self::any_child_matches_walk(
             children,
             target_type,
             target_slug,
             matcher.version.as_ref(),
-            matcher,
-            &mut result_hashes,
-        );
+            matcher.data.as_ref(),
+        )
+    }
 
-        let non_empty = !result_hashes.is_empty();
-        cache.insert(matcher, result_hashes);
-        non_empty
+    /// Recursive short-circuit counterpart to
+    /// [`Self::collect_find_children_walk`].
+    fn any_child_matches_walk(
+        children: &ContractIndex,
+        target_type: &str,
+        target_slug: Option<&str>,
+        required_version: Option<&VersionReq>,
+        pattern: Option<&Value>,
+    ) -> bool {
+        if children.has_type(target_type) {
+            match target_slug {
+                Some(slug) => {
+                    for child_hash in children.hashes_by_type_slug(target_type, slug) {
+                        if Self::candidate_if_match(children, child_hash, required_version, pattern)
+                            .is_some()
+                        {
+                            return true;
+                        }
+                    }
+                }
+                None => {
+                    for child_hash in children.hashes_by_type(target_type) {
+                        if Self::candidate_if_match(children, child_hash, required_version, pattern)
+                            .is_some()
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        for child in children.values() {
+            if Self::any_child_matches_walk(
+                &child.children,
+                target_type,
+                target_slug,
+                required_version,
+                pattern,
+            ) {
+                return true;
+            }
+        }
+        false
     }
 }
 
 /// Requirement satisfaction.
-///
-/// The four public entry points (`satisfies_child_contract`,
-/// `get_not_satisfied_child_requirements`, `are_children_satisfied`,
-/// `get_all_not_satisfied_child_requirements`) all take `&mut self`
-/// so they can drive the search-cache mutation inside
-/// [`Self::any_child_matches_in`]. Internally each entry point
-/// opens a **field-level split borrow** of two sibling
-/// [`Contract`] fields — `&self.children` (read-only index walk)
-/// and `&mut self.search_cache` (mutable cache write) — and threads
-/// those references through a set of associated helpers
-/// ([`Self::is_requirement_satisfied_in`],
-/// [`Self::any_child_matches_in`]).
-///
-/// That split is what lets the descendant walks iterate
-/// `descendant.requirements.compiled.values()` **directly**, with
-/// no owned per-descendant snapshot in front of the satisfaction
-/// loop. A snapshot-based design would clone every descendant's
-/// compiled requirement list up front
-/// (O(descendants × compiled_per_child) `ContractRequirement`
-/// clones per call); the split-borrow version clones nothing on
-/// the happy path.
 impl Contract {
     /// Checks whether `contract`'s compiled requirements are all
     /// satisfied by the children (and capabilities) reachable from
@@ -962,15 +764,8 @@ impl Contract {
     /// `None` to evaluate every requirement. The slice is consumed
     /// by linear `contains` on every requirement-type check —
     /// duplicates are harmless, so callers need not dedupe.
-    pub fn satisfies_child_contract(
-        &mut self,
-        contract: &Contract,
-        types: Option<&[&str]>,
-    ) -> bool {
-        let children = &self.children;
-        let cache = &mut self.search_cache;
-
-        Self::check_contract_satisfied_recursive(children, cache, contract, types)
+    pub fn satisfies_child_contract(&self, contract: &Contract, types: Option<&[&str]>) -> bool {
+        Self::check_contract_satisfied_recursive(&self.children, contract, types)
     }
 
     /// Recursive worker for [`Self::satisfies_child_contract`].
@@ -981,17 +776,16 @@ impl Contract {
     /// Short-circuits on the first unsatisfied conjunct.
     fn check_contract_satisfied_recursive(
         children: &ContractIndex,
-        cache: &mut MatcherCache<HashSet<String>>,
         contract: &Contract,
         types: Option<&[&str]>,
     ) -> bool {
         for req in contract.requirements.compiled.values() {
-            if !Self::is_requirement_satisfied_in(children, cache, req, types) {
+            if !Self::is_requirement_satisfied_in(children, req, types) {
                 return false;
             }
         }
         for child in contract.children.values() {
-            if !Self::check_contract_satisfied_recursive(children, cache, child, types) {
+            if !Self::check_contract_satisfied_recursive(children, child, types) {
                 return false;
             }
         }
@@ -1016,15 +810,12 @@ impl Contract {
     /// filter has the same semantics as on
     /// [`Self::satisfies_child_contract`].
     pub fn get_not_satisfied_child_requirements(
-        &mut self,
+        &self,
         contract: &Contract,
         types: Option<&[&str]>,
     ) -> Vec<ContractRequirement> {
-        let children = &self.children;
-        let cache = &mut self.search_cache;
-
         let mut out = Vec::new();
-        Self::collect_not_satisfied_recursive(children, cache, contract, types, &mut out);
+        Self::collect_not_satisfied_recursive(&self.children, contract, types, &mut out);
         out
     }
 
@@ -1037,18 +828,17 @@ impl Contract {
     /// the full unsatisfied list can be reported.
     fn collect_not_satisfied_recursive(
         children: &ContractIndex,
-        cache: &mut MatcherCache<HashSet<String>>,
         contract: &Contract,
         types: Option<&[&str]>,
         out: &mut Vec<ContractRequirement>,
     ) {
         for req in contract.requirements.compiled.values() {
-            if !Self::is_requirement_satisfied_in(children, cache, req, types) {
+            if !Self::is_requirement_satisfied_in(children, req, types) {
                 out.push(req.clone());
             }
         }
         for child in contract.children.values() {
-            Self::collect_not_satisfied_recursive(children, cache, child, types, out);
+            Self::collect_not_satisfied_recursive(children, child, types, out);
         }
     }
 
@@ -1069,38 +859,34 @@ impl Contract {
     /// descendant being skipped by the `types` filter. Short-circuits
     /// on the first unsatisfied descendant.
     ///
-    /// Iterates descendants' `requirements.compiled` **directly**
-    /// via the split-borrow pattern — no owned snapshot, no
-    /// per-descendant `ContractRequirement` clones on the happy
-    /// path, and no hash lookup overhead.
-    pub fn are_children_satisfied(&mut self, types: Option<&[&str]>) -> bool {
+    /// Iterates descendants' `requirements.compiled` directly — no
+    /// owned snapshot, no per-descendant `ContractRequirement`
+    /// clones on the happy path.
+    pub fn are_children_satisfied(&self, types: Option<&[&str]>) -> bool {
         let root_children = &self.children;
-        let cache = &mut self.search_cache;
-
-        Self::check_descendants_satisfied_recursive(root_children, cache, root_children, types)
+        Self::check_descendants_satisfied_recursive(root_children, root_children, types)
     }
 
     /// Recursive worker for [`Self::are_children_satisfied`].
     ///
-    /// The `root_*` arguments stay fixed across the whole recursion
-    /// — they identify the contract whose children and capabilities
-    /// are the full satisfaction scope for every descendant's
-    /// requirements. Critically, `root_children` is **not** only
+    /// The `root_children` argument stays fixed across the whole
+    /// recursion — it identifies the contract whose children and
+    /// capabilities are the full satisfaction scope for every
+    /// descendant's requirements. Critically, this is **not** only
     /// the top-level direct children: the search helpers
-    /// ([`Self::any_child_matches_in`] → [`Self::collect_find_children_hashes_walk`])
-    /// recurse through `root_children.values()`'s own sub-indexes,
-    /// so a requirement in one subtree can be satisfied by a
-    /// contract in any other subtree. Keeping `root_*` fixed while
-    /// advancing `walk` preserves that cross-subtree visibility.
+    /// ([`Self::any_child_matches_in`]) recurse through
+    /// `root_children.values()`'s own sub-indexes, so a requirement
+    /// in one subtree can be satisfied by a contract in any other
+    /// subtree. Keeping `root_children` fixed while advancing
+    /// `walk` preserves that cross-subtree visibility.
     ///
-    /// The `walk` argument advances to each nested [`ChildrenIndex`]
+    /// The `walk` argument advances to each nested [`ContractIndex`]
     /// as we descend, so every descendant is visited exactly once.
     /// A disjoint descendant's own requirements are skipped but
     /// recursion still enters its subtree so its own descendants
     /// still contribute their requirements to the overall check.
     fn check_descendants_satisfied_recursive(
         root_children: &ContractIndex,
-        cache: &mut MatcherCache<HashSet<String>>,
         walk: &ContractIndex,
         types: Option<&[&str]>,
     ) -> bool {
@@ -1111,14 +897,13 @@ impl Contract {
             );
             if evaluate_own {
                 for req in descendant.requirements.compiled.values() {
-                    if !Self::is_requirement_satisfied_in(root_children, cache, req, types) {
+                    if !Self::is_requirement_satisfied_in(root_children, req, types) {
                         return false;
                     }
                 }
             }
             if !Self::check_descendants_satisfied_recursive(
                 root_children,
-                cache,
                 &descendant.children,
                 types,
             ) {
@@ -1153,20 +938,12 @@ impl Contract {
     /// In either branch the walk continues into the descendant's
     /// own children, so nested descendants are still processed.
     pub fn get_all_not_satisfied_child_requirements(
-        &mut self,
+        &self,
         types: Option<&[&str]>,
     ) -> Vec<ContractRequirement> {
         let root_children = &self.children;
-        let cache = &mut self.search_cache;
-
         let mut out = Vec::new();
-        Self::collect_all_not_satisfied_recursive(
-            root_children,
-            cache,
-            root_children,
-            types,
-            &mut out,
-        );
+        Self::collect_all_not_satisfied_recursive(root_children, root_children, types, &mut out);
         out
     }
 
@@ -1181,7 +958,6 @@ impl Contract {
     /// descendant's children.
     fn collect_all_not_satisfied_recursive(
         root_children: &ContractIndex,
-        cache: &mut MatcherCache<HashSet<String>>,
         walk: &ContractIndex,
         types: Option<&[&str]>,
         out: &mut Vec<ContractRequirement>,
@@ -1195,14 +971,13 @@ impl Contract {
                 out.extend(descendant.requirements.compiled.values().cloned());
             } else {
                 for req in descendant.requirements.compiled.values() {
-                    if !Self::is_requirement_satisfied_in(root_children, cache, req, types) {
+                    if !Self::is_requirement_satisfied_in(root_children, req, types) {
                         out.push(req.clone());
                     }
                 }
             }
             Self::collect_all_not_satisfied_recursive(
                 root_children,
-                cache,
                 &descendant.children,
                 types,
                 out,
@@ -1223,7 +998,7 @@ impl Contract {
     }
 
     /// Evaluates a single compiled requirement against the root
-    /// described by `children`, caching search results in `cache`.
+    /// described by `children`.
     ///
     /// Dispatches on the [`ContractRequirement`] variant:
     ///
@@ -1245,7 +1020,6 @@ impl Contract {
     /// `HashSet` allocation altogether.
     fn is_requirement_satisfied_in(
         children: &ContractIndex,
-        cache: &mut MatcherCache<HashSet<String>>,
         req: &ContractRequirement,
         types: Option<&[&str]>,
     ) -> bool {
@@ -1261,7 +1035,7 @@ impl Contract {
                 if !should_evaluate(m.kind.as_str()) {
                     return true;
                 }
-                Self::any_child_matches_in(children, cache, m)
+                Self::any_child_matches_in(children, m)
             }
             ContractRequirement::Or(items) => {
                 let mut any_applicable = false;
@@ -1270,7 +1044,7 @@ impl Contract {
                         continue;
                     }
                     any_applicable = true;
-                    if Self::any_child_matches_in(children, cache, m) {
+                    if Self::any_child_matches_in(children, m) {
                         return true;
                     }
                 }
@@ -1281,7 +1055,7 @@ impl Contract {
                     if !should_evaluate(m.kind.as_str()) {
                         continue;
                     }
-                    if Self::any_child_matches_in(children, cache, m) {
+                    if Self::any_child_matches_in(children, m) {
                         return false;
                     }
                 }
@@ -2507,7 +2281,7 @@ mod tests {
 
     #[test]
     fn add_child_duplicate_leaves_hash_cell_empty() {
-        // `ChildrenIndex::insert` returns false on duplicates, and
+        // `ContractIndex::insert` returns false on duplicates, and
         // `add_child` uses the return value to skip `rebuild` — so a
         // duplicate insertion must not invalidate the already-computed
         // hash. We prove it by observing the cached hash stays stable
@@ -3124,7 +2898,7 @@ mod tests {
     #[test]
     fn find_children_by_alias() {
         // The matcher's slug is an alias of the target contract.
-        // Because `ChildrenIndex` registers every alias under the
+        // Because `ContractIndex` registers every alias under the
         // same `(type, slug)` entry at insertion time, the index
         // lookup still resolves to the canonical contract.
         let mut parent = container();
@@ -3295,14 +3069,12 @@ mod tests {
         assert_eq!(result[0].hash(), with_data.hash());
     }
 
-    // find_children caching
+    // find_children stability across mutations
 
     #[test]
     fn find_children_is_stable_across_calls() {
         // Running the same matcher twice on the same parent must
-        // return the same result. The second call goes through the
-        // cache path, so this pins the cache-hit resolution against
-        // the cache-miss path.
+        // return the same result.
         let mut parent = container();
         let a = sw_os("debian", "wheezy");
         let b = sw_os("fedora", "25");
@@ -3339,10 +3111,9 @@ mod tests {
     }
 
     #[test]
-    fn find_children_cache_is_invalidated_after_add() {
-        // Populate the cache, then add another matching child, then
-        // search again. The new child must appear in the second
-        // result — if it didn't, the stale cache entry would mask it.
+    fn find_children_reflects_additions() {
+        // After add_child introduces a new matching contract, the
+        // next search must include it.
         let mut parent = container();
         let a = sw_os("debian", "wheezy");
         parent.add_child(a.clone());
@@ -3369,9 +3140,9 @@ mod tests {
     }
 
     #[test]
-    fn find_children_cache_is_invalidated_after_remove() {
-        // Same as above but for removal. Removing a hit must cause
-        // it to disappear from the next search result.
+    fn find_children_reflects_removals() {
+        // Removing a previously matching contract must cause it to
+        // disappear from the next search result.
         let mut parent = container();
         let a = sw_os("debian", "wheezy");
         let b = sw_os("debian", "jessie");
@@ -3398,11 +3169,9 @@ mod tests {
     }
 
     #[test]
-    fn find_children_cache_survives_failed_remove() {
-        // Removing a contract that isn't present must leave the
-        // cache intact. `ChildrenIndex::remove` returns early on
-        // missing hashes without touching the search cache, so the
-        // prior entry is still valid on the next search.
+    fn find_children_unaffected_by_failed_remove() {
+        // `remove_child` of a contract that isn't present is a full
+        // no-op; subsequent searches return the same result.
         let mut parent = container();
         let a = sw_os("debian", "wheezy");
         parent.add_child(a.clone());
@@ -3410,8 +3179,6 @@ mod tests {
         let m = matcher("sw.os", None, None);
         let _ = parent.find_children(&m);
 
-        // `other` was never added to parent, so `remove_child` is
-        // a full no-op.
         let other = sw_os("debian", "sid");
         parent.remove_child(&other);
 
@@ -3425,10 +3192,9 @@ mod tests {
     }
 
     #[test]
-    fn find_children_cache_scoped_by_type() {
-        // Two matchers targeting different types must each yield
-        // their own independent cache entry. Add a child of one
-        // type; the other type's cache entry must remain valid.
+    fn find_children_results_are_scoped_by_type() {
+        // Adding a contract of one type must not affect searches for
+        // a different type.
         let mut parent = container();
         let os = sw_os("debian", "wheezy");
         let blob = sw_blob("nodejs", "4.8.0");
@@ -3440,8 +3206,6 @@ mod tests {
         let _ = parent.find_children(&m_os);
         let _ = parent.find_children(&m_blob);
 
-        // Add another sw.os — the sw.blob cache entry must still be
-        // usable and return the single existing blob.
         parent.add_child(sw_os("debian", "jessie"));
         let blob_result = parent.find_children(&m_blob);
         assert_eq!(blob_result.len(), 1);
@@ -3449,13 +3213,11 @@ mod tests {
     }
 
     #[test]
-    fn find_children_cache_invalidated_on_subtree_insert_of_cached_type() {
-        // Regression guard: adding a new child whose own type is
-        // unrelated to a previously cached target type but whose
-        // subtree carries grandchildren of that cached type must
-        // invalidate the cache. Without invalidation keyed on the
-        // inbound subtree's type closure, the second search would
-        // silently return the stale single-blob result.
+    fn find_children_reflects_subtree_insertions_of_other_types() {
+        // Adding a new child whose own type is unrelated to a
+        // previously searched target type but whose subtree carries
+        // grandchildren of that target type must surface those
+        // grandchildren in the next search.
         let mut root = container();
         let blob1 = sw_blob("nodejs", "4.8.0");
         root.add_children(vec![sw_os("debian", "wheezy"), blob1.clone()]);
@@ -3489,8 +3251,7 @@ mod tests {
     fn find_children_known_type_unknown_slug_returns_empty() {
         // Type exists in the index but the slug does not. The
         // `(type, slug)` lookup yields an empty iterator and the
-        // search walks no candidates. The result must be empty
-        // on both the cold cache miss and any subsequent call.
+        // search walks no candidates.
         let mut parent = container();
         parent.add_children(vec![sw_os("debian", "wheezy"), sw_os("debian", "jessie")]);
 
@@ -3635,7 +3396,7 @@ mod tests {
 
     #[test]
     fn provides_on_root_become_children() {
-        let mut root = contract(json!({
+        let root = contract(json!({
             "type": "meta.context",
             "slug": "root",
             "provides": [
@@ -3683,7 +3444,7 @@ mod tests {
 
     #[test]
     fn satisfies_child_contract_empty_self_and_no_requirements_returns_true() {
-        let mut container = container();
+        let container = container();
         let child = contract(json!({
             "type": "test",
             "slug": "foo",
@@ -3695,7 +3456,7 @@ mod tests {
 
     #[test]
     fn satisfies_child_contract_empty_self_with_requirements_returns_false() {
-        let mut container = container();
+        let container = container();
         let child = stack_with_requires(json!([
             {"type": "sw.arch", "slug": "amd64"}
         ]));
@@ -4570,13 +4331,13 @@ mod tests {
                 }
             }
         }));
-        let mut container = container;
+        let container = container;
         assert!(container.are_children_satisfied(None));
     }
 
     #[test]
     fn are_children_satisfied_nested_contexts_unsatisfied() {
-        let mut container = contract(json!({
+        let container = contract(json!({
             "type": "foo",
             "slug": "bar",
             "children": {
@@ -4630,7 +4391,7 @@ mod tests {
 
     #[test]
     fn get_not_satisfied_empty_when_no_requirements() {
-        let mut container = container();
+        let container = container();
         let child = contract(json!({
             "type": "test",
             "slug": "foo",
@@ -4832,7 +4593,7 @@ mod tests {
         // If `root_children` were ever scoped to the current walk
         // level, the cross-subtree lookup would fail. This test
         // locks in the cross-subtree visibility.
-        let mut container = contract(json!({
+        let container = contract(json!({
             "type": "foo",
             "slug": "bar",
             "children": {

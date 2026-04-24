@@ -1,12 +1,7 @@
 //! Matcher primitives used by the child-search path.
 //!
-//! This module is the crate-private home for three things:
+//! This module is the crate-private home for two predicates:
 //!
-//! - The [`Matcher`] trait, the minimal interface a type must
-//!   implement to serve as a key in
-//!   [`MatcherCache`](crate::matcher_cache::MatcherCache): a target
-//!   contract type (`kind`) and a deterministic hash of the match
-//!   criteria (`hash`).
 //! - [`partial_match`], a deep partial-match predicate over
 //!   [`serde_json::Value`]: an object pattern matches a target when
 //!   every key in the pattern is present in the target and the values
@@ -17,61 +12,10 @@
 //!   satisfy the requirement range; otherwise matching falls back to
 //!   string equality so that identifier-shaped versions such as
 //!   `"wheezy"` still work.
-//!
-//! [`ContractMatcher`](crate::types::ContractMatcher) is the live
-//! [`Matcher`] impl used by the child-search path: `kind` comes from
-//! the typed `kind` field and `hash` delegates to the lazily-populated
-//! [`ContractMatcher::hash`](crate::types::ContractMatcher::hash)
-//! cache, so a matcher pays at most one serialization + SHA-256
-//! across all cache probes.
 
 use serde_json::Value;
 
-use crate::types::{ContractMatcher, Version, VersionReq};
-
-/// Contract matcher usable as a cache key.
-///
-/// [`MatcherCache`](crate::matcher_cache::MatcherCache) derives its
-/// two-level key from [`Self::kind`] (the target contract type) and
-/// [`Self::hash`] (a deterministic digest of the match criteria).
-/// Any type that can answer those two questions with borrowed
-/// strings can be used as a cache key — in practice the only live
-/// impl is [`ContractMatcher`], whose `hash` is lazily populated in
-/// a `OnceLock` so repeated cache probes amortize to zero.
-pub(crate) trait Matcher {
-    /// The contract type this matcher targets (e.g. `"sw.os"`).
-    fn kind(&self) -> &str;
-
-    /// A deterministic hash of the match criteria as a borrowed
-    /// string.
-    ///
-    /// Returning `&str` (rather than `String`) lets implementors
-    /// serve a cached digest without copying — essential for the
-    /// search hot path, where the cache is probed twice per call
-    /// (once via `get`, once via `insert`).
-    fn hash(&self) -> &str;
-}
-
-/// Live [`Matcher`] impl for [`ContractMatcher`].
-///
-/// Delegates to the inherent accessors on [`ContractMatcher`]: `kind`
-/// exposes the typed `kind` field directly, `hash` reuses the cached
-/// digest that the [`Identifiable`](crate::object_set::Identifiable)
-/// impl also funnels through — one memoized SHA-256 per matcher
-/// serves both deduplication and cache keying.
-impl Matcher for ContractMatcher {
-    fn kind(&self) -> &str {
-        self.kind.as_str()
-    }
-
-    fn hash(&self) -> &str {
-        // Inherent-method call — resolves to `ContractMatcher::hash`,
-        // not this trait method. Inherent methods take priority over
-        // trait methods in Rust's method-resolution order, so this
-        // does not recurse.
-        ContractMatcher::hash(self)
-    }
-}
+use crate::types::{Version, VersionReq};
 
 /// Deep partial match over [`serde_json::Value`].
 ///
@@ -86,9 +30,8 @@ impl Matcher for ContractMatcher {
 ///
 /// This predicate is the deep-match primitive used by
 /// [`Contract::find_children`](crate::Contract::find_children):
-/// the pattern is the matcher's `data` with `slug` and `version`
-/// omitted, and the target is the child contract's serialized
-/// JSON form.
+/// the pattern is the matcher's `data` field and the target is
+/// the child contract's own `data` field.
 pub(crate) fn partial_match(pattern: &Value, target: &Value) -> bool {
     match pattern {
         Value::Object(pattern_obj) => {

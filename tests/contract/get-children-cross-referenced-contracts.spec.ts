@@ -1,12 +1,9 @@
-/*
- * Copyright (C) Balena.io - All Rights Reserved
- * Unauthorized copying of this file, via any medium is strictly prohibited.
- * Proprietary and confidential.
- */
-
 import { expect } from '../chai';
 
 import Contract from '../../lib/contract';
+
+const toHashes = (contracts: Contract[]): string[] =>
+	contracts.map((c) => c.hash()).sort();
 
 describe('Contract getChildrenCrossReferencedContracts', () => {
 	it('should compute the intersection of one type and two contracts with or operators', () => {
@@ -15,17 +12,19 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 			slug: 'bar',
 		});
 
+		const armv7hf = new Contract({
+			type: 'arch.sw',
+			slug: 'armv7hf',
+			name: 'armv7hf',
+		});
+
 		contract.addChildren([
 			new Contract({
 				type: 'arch.sw',
 				slug: 'armel',
 				name: 'armel',
 			}),
-			new Contract({
-				type: 'arch.sw',
-				slug: 'armv7hf',
-				name: 'armv7hf',
-			}),
+			armv7hf,
 			new Contract({
 				type: 'arch.sw',
 				slug: 'i386',
@@ -39,14 +38,8 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 				requires: [
 					{
 						or: [
-							{
-								type: 'arch.sw',
-								slug: 'armel',
-							},
-							{
-								type: 'arch.sw',
-								slug: 'armv7hf',
-							},
+							{ type: 'arch.sw', slug: 'armel' },
+							{ type: 'arch.sw', slug: 'armv7hf' },
 						],
 					},
 				],
@@ -59,14 +52,8 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 				requires: [
 					{
 						or: [
-							{
-								type: 'arch.sw',
-								slug: 'armv7hf',
-							},
-							{
-								type: 'arch.sw',
-								slug: 'i386',
-							},
+							{ type: 'arch.sw', slug: 'armv7hf' },
+							{ type: 'arch.sw', slug: 'i386' },
 						],
 					},
 				],
@@ -78,13 +65,7 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 			from: contract,
 		});
 
-		expect(contracts).to.deep.equal([
-			new Contract({
-				type: 'arch.sw',
-				slug: 'armv7hf',
-				name: 'armv7hf',
-			}),
-		]);
+		expect(toHashes(contracts)).to.deep.equal(toHashes([armv7hf]));
 	});
 
 	it('should return nothing if the from contract does not contain the referenced contracts', () => {
@@ -102,14 +83,8 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 				requires: [
 					{
 						or: [
-							{
-								type: 'arch.sw',
-								slug: 'armel',
-							},
-							{
-								type: 'arch.sw',
-								slug: 'armv7hf',
-							},
+							{ type: 'arch.sw', slug: 'armel' },
+							{ type: 'arch.sw', slug: 'armv7hf' },
 						],
 					},
 				],
@@ -122,14 +97,8 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 				requires: [
 					{
 						or: [
-							{
-								type: 'arch.sw',
-								slug: 'armv7hf',
-							},
-							{
-								type: 'arch.sw',
-								slug: 'i386',
-							},
+							{ type: 'arch.sw', slug: 'armv7hf' },
+							{ type: 'arch.sw', slug: 'i386' },
 						],
 					},
 				],
@@ -150,32 +119,28 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 			slug: 'bar',
 		});
 
+		const armv7hf = new Contract({
+			type: 'arch.sw',
+			slug: 'armv7hf',
+			name: 'armv7hf',
+		});
+
+		const rpi = new Contract({
+			slug: 'raspberry-pi',
+			type: 'hw.device-type',
+			name: 'Raspberry Pi (1, Zero, Zero W)',
+		});
+
 		contract.addChildren([
-			new Contract({
-				type: 'arch.sw',
-				slug: 'armel',
-				name: 'armel',
-			}),
-			new Contract({
-				type: 'arch.sw',
-				slug: 'armv7hf',
-				name: 'armv7hf',
-			}),
-			new Contract({
-				type: 'arch.sw',
-				slug: 'i386',
-				name: 'i386',
-			}),
+			new Contract({ type: 'arch.sw', slug: 'armel', name: 'armel' }),
+			armv7hf,
+			new Contract({ type: 'arch.sw', slug: 'i386', name: 'i386' }),
 			new Contract({
 				slug: 'artik10',
 				type: 'hw.device-type',
 				name: 'Samsung Artik 10',
 			}),
-			new Contract({
-				slug: 'raspberry-pi',
-				type: 'hw.device-type',
-				name: 'Raspberry Pi (1, Zero, Zero W)',
-			}),
+			rpi,
 			new Contract({
 				slug: 'raspberrypi3',
 				type: 'hw.device-type',
@@ -189,20 +154,11 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 				requires: [
 					{
 						or: [
-							{
-								type: 'arch.sw',
-								slug: 'armel',
-							},
-							{
-								type: 'arch.sw',
-								slug: 'armv7hf',
-							},
+							{ type: 'arch.sw', slug: 'armel' },
+							{ type: 'arch.sw', slug: 'armv7hf' },
 						],
 					},
-					{
-						type: 'hw.device-type',
-						slug: 'raspberry-pi',
-					},
+					{ type: 'hw.device-type', slug: 'raspberry-pi' },
 				],
 			}),
 			new Contract({
@@ -213,30 +169,15 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 				requires: [
 					{
 						or: [
-							{
-								type: 'arch.sw',
-								slug: 'armv7hf',
-							},
-							{
-								type: 'arch.sw',
-								slug: 'i386',
-							},
+							{ type: 'arch.sw', slug: 'armv7hf' },
+							{ type: 'arch.sw', slug: 'i386' },
 						],
 					},
 					{
 						or: [
-							{
-								type: 'hw.device-type',
-								slug: 'raspberry-pi',
-							},
-							{
-								type: 'hw.device-type',
-								slug: 'artik10',
-							},
-							{
-								type: 'hw.device-type',
-								slug: 'raspberrypi3',
-							},
+							{ type: 'hw.device-type', slug: 'raspberry-pi' },
+							{ type: 'hw.device-type', slug: 'artik10' },
+							{ type: 'hw.device-type', slug: 'raspberrypi3' },
 						],
 					},
 				],
@@ -246,20 +187,11 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 				name: 'Slim',
 				slug: 'slim',
 				requires: [
-					{
-						type: 'arch.sw',
-						slug: 'armv7hf',
-					},
+					{ type: 'arch.sw', slug: 'armv7hf' },
 					{
 						or: [
-							{
-								type: 'hw.device-type',
-								slug: 'raspberry-pi',
-							},
-							{
-								type: 'hw.device-type',
-								slug: 'artik10',
-							},
+							{ type: 'hw.device-type', slug: 'raspberry-pi' },
+							{ type: 'hw.device-type', slug: 'artik10' },
 						],
 					},
 				],
@@ -271,18 +203,7 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 			from: contract,
 		});
 
-		expect(references).to.deep.equal([
-			new Contract({
-				type: 'arch.sw',
-				slug: 'armv7hf',
-				name: 'armv7hf',
-			}),
-			new Contract({
-				slug: 'raspberry-pi',
-				type: 'hw.device-type',
-				name: 'Raspberry Pi (1, Zero, Zero W)',
-			}),
-		]);
+		expect(toHashes(references)).to.deep.equal(toHashes([armv7hf, rpi]));
 	});
 
 	it('should return nothing if there is no intersection', () => {
@@ -292,21 +213,9 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 		});
 
 		contract.addChildren([
-			new Contract({
-				type: 'arch.sw',
-				slug: 'armel',
-				name: 'armel',
-			}),
-			new Contract({
-				type: 'arch.sw',
-				slug: 'armv7hf',
-				name: 'armv7hf',
-			}),
-			new Contract({
-				type: 'arch.sw',
-				slug: 'i386',
-				name: 'i386',
-			}),
+			new Contract({ type: 'arch.sw', slug: 'armel', name: 'armel' }),
+			new Contract({ type: 'arch.sw', slug: 'armv7hf', name: 'armv7hf' }),
+			new Contract({ type: 'arch.sw', slug: 'i386', name: 'i386' }),
 			new Contract({
 				type: 'sw.os',
 				name: 'Debian Wheezy',
@@ -315,14 +224,8 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 				requires: [
 					{
 						or: [
-							{
-								type: 'arch.sw',
-								slug: 'armel',
-							},
-							{
-								type: 'arch.sw',
-								slug: 'armv7hf',
-							},
+							{ type: 'arch.sw', slug: 'armel' },
+							{ type: 'arch.sw', slug: 'armv7hf' },
 						],
 					},
 				],
@@ -332,12 +235,7 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 				name: 'Node.js {{version}}',
 				slug: 'nodejs',
 				version: '4.8.0',
-				requires: [
-					{
-						type: 'arch.sw',
-						slug: 'i386',
-					},
-				],
+				requires: [{ type: 'arch.sw', slug: 'i386' }],
 			}),
 		]);
 
@@ -355,32 +253,30 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 			slug: 'bar',
 		});
 
+		const armv7hf = new Contract({
+			type: 'arch.sw',
+			slug: 'armv7hf',
+			name: 'armv7hf',
+		});
+
+		const tini = new Contract({
+			slug: 'tini',
+			type: 'sw.blob',
+			name: 'TINI',
+			version: '0.14.0',
+		});
+
 		contract.addChildren([
-			new Contract({
-				type: 'arch.sw',
-				slug: 'armv7hf',
-				name: 'armv7hf',
-			}),
-			new Contract({
-				slug: 'tini',
-				type: 'sw.blob',
-				name: 'TINI',
-				version: '0.14.0',
-			}),
+			armv7hf,
+			tini,
 			new Contract({
 				type: 'sw.os',
 				name: 'Debian Wheezy',
 				slug: 'debian',
 				version: 'wheezy',
 				requires: [
-					{
-						type: 'sw.blob',
-						slug: 'tini',
-					},
-					{
-						type: 'arch.sw',
-						slug: 'armv7hf',
-					},
+					{ type: 'sw.blob', slug: 'tini' },
+					{ type: 'arch.sw', slug: 'armv7hf' },
 				],
 			}),
 			new Contract({
@@ -388,12 +284,7 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 				name: 'Node.js {{version}}',
 				slug: 'nodejs',
 				version: '4.8.0',
-				requires: [
-					{
-						type: 'arch.sw',
-						slug: 'armv7hf',
-					},
-				],
+				requires: [{ type: 'arch.sw', slug: 'armv7hf' }],
 			}),
 		]);
 
@@ -402,18 +293,6 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 			from: contract,
 		});
 
-		expect(references).to.deep.equal([
-			new Contract({
-				type: 'arch.sw',
-				slug: 'armv7hf',
-				name: 'armv7hf',
-			}),
-			new Contract({
-				slug: 'tini',
-				type: 'sw.blob',
-				name: 'TINI',
-				version: '0.14.0',
-			}),
-		]);
+		expect(toHashes(references)).to.deep.equal(toHashes([armv7hf, tini]));
 	});
 });

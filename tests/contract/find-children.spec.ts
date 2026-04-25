@@ -22,7 +22,34 @@ describe('Contract findChildren', () => {
 		expect(container.findChildren({})).to.deep.equal([]);
 	});
 
-	it('should find a specific unique contract based on its type and name', () => {
+	it('should find a specific unique contract based on its type and a data field', () => {
+		const contract1 = new Contract({
+			type: 'hw.device-type',
+			slug: 'artik10',
+			data: { arch: 'armv7hf' },
+		});
+		const contract2 = new Contract({
+			type: 'hw.device-type',
+			slug: 'intel-nuc',
+			data: { arch: 'amd64' },
+		});
+		const container = new Contract({
+			type: 'foo',
+			slug: 'bar',
+		});
+
+		container.addChildren([contract1, contract2]);
+
+		const results = container.findChildren(
+			Contract.createMatcher({
+				type: 'hw.device-type',
+				arch: 'armv7hf',
+			}),
+		);
+		expect(results.map((c) => c.hash())).to.deep.equal([contract1.hash()]);
+	});
+
+	it('should find a specific unique contract based on its type and slug+version', () => {
 		const contract1 = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
 		const contract2 = new Contract(CONTRACTS['sw.os'].fedora['25'].object);
 		const container = new Contract({
@@ -32,14 +59,14 @@ describe('Contract findChildren', () => {
 
 		container.addChildren([contract1, contract2]);
 
-		expect(
-			container.findChildren(
-				Contract.createMatcher({
-					name: 'Debian Wheezy',
-					type: 'sw.os',
-				}),
-			),
-		).to.deep.equal([contract1]);
+		const results = container.findChildren(
+			Contract.createMatcher({
+				type: 'sw.os',
+				slug: 'debian',
+				version: 'wheezy',
+			}),
+		);
+		expect(results.map((c) => c.hash())).to.deep.equal([contract1.hash()]);
 	});
 
 	it('should find a specific unique contract based on its type and slug', () => {
@@ -54,21 +81,27 @@ describe('Contract findChildren', () => {
 
 		container.addChildren([contract1, contract2, contract3, contract4]);
 
-		expect(
-			container.findChildren(
-				Contract.createMatcher({
-					type: 'sw.os',
-					slug: 'fedora',
-				}),
-			),
-		).to.deep.equal([contract3]);
+		const results = container.findChildren(
+			Contract.createMatcher({
+				type: 'sw.os',
+				slug: 'fedora',
+			}),
+		);
+		expect(results.map((c) => c.hash())).to.deep.equal([contract3.hash()]);
 	});
 
-	it('should find a specific unique contract based on another property', () => {
+	it('should find a specific unique contract based on a data property', () => {
 		const contract1 = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
 		const contract2 = new Contract(CONTRACTS['sw.os'].debian.jessie.object);
 		const contract3 = new Contract(CONTRACTS['sw.os'].fedora['25'].object);
-		const contract4 = new Contract(CONTRACTS['hw.device-type'].artik10.object);
+		const contract4 = new Contract({
+			type: 'hw.device-type',
+			slug: 'artik10',
+			name: 'Samsung Artik 10',
+			data: {
+				arch: 'armv7hf',
+			},
+		});
 		const container = new Contract({
 			type: 'foo',
 			slug: 'bar',
@@ -76,14 +109,13 @@ describe('Contract findChildren', () => {
 
 		container.addChildren([contract1, contract2, contract3, contract4]);
 
-		expect(
-			container.findChildren(
-				Contract.createMatcher({
-					type: 'hw.device-type',
-					arch: 'armv7hf',
-				}),
-			),
-		).to.deep.equal([contract4]);
+		const results = container.findChildren(
+			Contract.createMatcher({
+				type: 'hw.device-type',
+				arch: 'armv7hf',
+			}),
+		);
+		expect(results.map((c) => c.hash())).to.deep.equal([contract4.hash()]);
 	});
 
 	it('should find multiple contracts based on a type', () => {
@@ -98,13 +130,15 @@ describe('Contract findChildren', () => {
 
 		container.addChildren([contract1, contract2, contract3, contract4]);
 
-		expect(
-			container.findChildren(
-				Contract.createMatcher({
-					type: 'sw.os',
-				}),
-			),
-		).to.deep.equal([contract1, contract2, contract3]);
+		const results = container.findChildren(
+			Contract.createMatcher({
+				type: 'sw.os',
+			}),
+		);
+		const expected = [contract1, contract2, contract3]
+			.map((c) => c.hash())
+			.sort();
+		expect(results.map((c) => c.hash()).sort()).to.deep.equal(expected);
 	});
 
 	it('should find nothing based on a non-existent type', () => {
@@ -172,14 +206,13 @@ describe('Contract findChildren', () => {
 
 		container.addChildren([contract1, contract2]);
 
-		expect(
-			container.findChildren(
-				Contract.createMatcher({
-					type: 'hw.device-type',
-					slug: 'rpi',
-				}),
-			),
-		).to.deep.equal([contract2]);
+		const results = container.findChildren(
+			Contract.createMatcher({
+				type: 'hw.device-type',
+				slug: 'rpi',
+			}),
+		);
+		expect(results.map((c) => c.hash())).to.deep.equal([contract2.hash()]);
 	});
 
 	it('should find a nested contract by its type and slug', () => {
@@ -196,14 +229,13 @@ describe('Contract findChildren', () => {
 
 		container.addChildren([contract1, contract2]);
 
-		expect(
-			container.findChildren(
-				Contract.createMatcher({
-					type: 'sw.blob',
-					slug: 'nodejs',
-				}),
-			),
-		).to.deep.equal([contract3]);
+		const results = container.findChildren(
+			Contract.createMatcher({
+				type: 'sw.blob',
+				slug: 'nodejs',
+			}),
+		);
+		expect(results.map((c) => c.hash())).to.deep.equal([contract3.hash()]);
 	});
 
 	it('should find a nested contract by its type and another property', () => {
@@ -220,14 +252,13 @@ describe('Contract findChildren', () => {
 
 		container.addChildren([contract1, contract2]);
 
-		expect(
-			container.findChildren(
-				Contract.createMatcher({
-					type: 'sw.blob',
-					version: '4.8.0',
-				}),
-			),
-		).to.deep.equal([contract3]);
+		const results = container.findChildren(
+			Contract.createMatcher({
+				type: 'sw.blob',
+				version: '4.8.0',
+			}),
+		);
+		expect(results.map((c) => c.hash())).to.deep.equal([contract3.hash()]);
 	});
 
 	it('should fail to find a nested contract with an incorrect slug', () => {
@@ -292,12 +323,11 @@ describe('Contract findChildren', () => {
 
 		container.addChildren([contract1]);
 
-		expect(
-			container.findChildren(
-				Contract.createMatcher({
-					type: 'sw.blob',
-				}),
-			),
-		).to.deep.equal([contract3]);
+		const results = container.findChildren(
+			Contract.createMatcher({
+				type: 'sw.blob',
+			}),
+		);
+		expect(results.map((c) => c.hash())).to.deep.equal([contract3.hash()]);
 	});
 });

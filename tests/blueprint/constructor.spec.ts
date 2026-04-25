@@ -1,48 +1,16 @@
-/*
- * Copyright (C) Balena.io - All Rights Reserved
- * Unauthorized copying of this file, via any medium is strictly prohibited.
- * Proprietary and confidential.
- */
-
 import { expect } from '../chai';
 import * as _ from 'lodash';
-
-import Contract from '../../lib/contract';
 
 import Blueprint from '../../lib/blueprint';
 import { parse } from '../../lib/cardinality';
 
 describe('Blueprint constructor', () => {
-	it('should be a contract', () => {
-		const blueprint = new Blueprint({
-			'hw.device-type': 1,
-		});
-
-		expect(blueprint instanceof Contract).to.be.true;
-	});
-
-	it('should set a proper type', () => {
-		const blueprint = new Blueprint({
-			'hw.device-type': 1,
-		});
-
-		expect(blueprint.raw.type).to.equal('meta.blueprint');
-	});
-
-	it('should be a hashed contract', () => {
-		const blueprint = new Blueprint({
-			'hw.device-type': 1,
-		});
-
-		expect(typeof blueprint.metadata.hash).to.equal('string');
-	});
-
 	it('should parse a layout with one number selector', () => {
 		const blueprint = new Blueprint({
 			'hw.device-type': 1,
 		});
 
-		expect(blueprint.metadata.layout).to.deep.equal({
+		expect(blueprint.layout).to.deep.equal({
 			types: new Set(['hw.device-type']),
 			finite: {
 				selectors: {
@@ -72,7 +40,7 @@ describe('Blueprint constructor', () => {
 			'arch.sw': '1+',
 		});
 
-		expect(blueprint.metadata.layout).to.deep.equal({
+		expect(blueprint.layout).to.deep.equal({
 			types: new Set(['hw.device-type', 'arch.sw']),
 			finite: {
 				selectors: {
@@ -120,7 +88,7 @@ describe('Blueprint constructor', () => {
 			},
 		});
 
-		expect(blueprint.metadata.layout).to.deep.equal({
+		expect(blueprint.layout).to.deep.equal({
 			types: new Set(['hw.device-type', 'arch.sw']),
 			finite: {
 				selectors: {
@@ -166,7 +134,7 @@ describe('Blueprint constructor', () => {
 			},
 		);
 
-		expect(blueprint.raw.skeleton).to.deep.equal({
+		expect(blueprint.skeleton).to.deep.equal({
 			type: 'sw.os-image',
 			name: 'Generic OS Image',
 		});

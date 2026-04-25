@@ -1109,4 +1109,80 @@ describe('Contract satisfiesChildContract', () => {
 
 		expect(container.satisfiesChildContract(contract2)).to.be.false;
 	});
+
+	it('should validate a more complex contract', () => {
+		const universe = new Contract({
+			type: 'meta.universe',
+			children: {
+				arch: {
+					sw: {
+						type: 'arch.sw',
+						slug: 'amd64',
+					},
+				},
+				hw: {
+					'device-type': {
+						type: 'hw.device-type',
+						slug: 'intel-nuc',
+					},
+				},
+				sw: {
+					application: {
+						type: 'sw.application',
+						slug: 'balena-supervisor',
+						version: '17.7.3',
+					},
+					kernel: {
+						type: 'sw.kernel',
+						slug: 'linux',
+						version: '5.15.150',
+					},
+					l4t: {
+						type: 'sw.l4t',
+						version: '32.2',
+					},
+					os: {
+						type: 'sw.os',
+						slug: 'balena-os',
+						version: '5.5.5+rev3',
+					},
+					supervisor: {
+						type: 'sw.supervisor',
+						version: '17.7.3',
+					},
+				},
+			},
+		});
+
+		expect(
+			universe.satisfiesChildContract(
+				new Contract({
+					type: 'sw.container',
+					name: 'user-container',
+					slug: 'user-container',
+					requires: [
+						{
+							type: 'hw.device-type',
+							slug: 'raspberrypi3',
+						},
+					],
+				}),
+			),
+		).to.be.false;
+
+		expect(
+			universe.satisfiesChildContract(
+				new Contract({
+					type: 'sw.container',
+					slug: 'user-container',
+					requires: [
+						{
+							type: 'sw.supervisor',
+							version: '>=18.0.0',
+						},
+					],
+				}),
+			),
+		).to.be.false;
+	});
 });

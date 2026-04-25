@@ -28,7 +28,9 @@ describe('Contract getChildren', () => {
 
 		container.addChild(contract1);
 
-		expect(container.getChildren()).to.deep.equal([contract1]);
+		expect(container.getChildren().map((c) => c.hash())).to.deep.equal([
+			contract1.hash(),
+		]);
 	});
 
 	it('should get the paths of two contracts with different slugs', () => {
@@ -41,7 +43,12 @@ describe('Contract getChildren', () => {
 
 		container.addChildren([contract1, contract2]);
 
-		expect(container.getChildren()).to.deep.equal([contract1, contract2]);
+		expect(
+			container
+				.getChildren()
+				.map((c) => c.hash())
+				.sort(),
+		).to.deep.equal([contract1.hash(), contract2.hash()].sort());
 	});
 
 	it('should get the paths of two contracts with same slugs', () => {
@@ -54,7 +61,12 @@ describe('Contract getChildren', () => {
 
 		container.addChildren([contract1, contract2]);
 
-		expect(container.getChildren()).to.deep.equal([contract1, contract2]);
+		expect(
+			container
+				.getChildren()
+				.map((c) => c.hash())
+				.sort(),
+		).to.deep.equal([contract1.hash(), contract2.hash()].sort());
 	});
 
 	it('should be able to filter by one type', () => {
@@ -68,10 +80,12 @@ describe('Contract getChildren', () => {
 		container.addChildren([contract1, contract2]);
 
 		expect(
-			container.getChildren({
-				types: new Set(['sw.os']),
-			}),
-		).to.deep.equal([contract1]);
+			container
+				.getChildren({
+					types: new Set(['sw.os']),
+				})
+				.map((c) => c.hash()),
+		).to.deep.equal([contract1.hash()]);
 	});
 
 	it('should be able to filter by two types', () => {
@@ -86,10 +100,13 @@ describe('Contract getChildren', () => {
 		container.addChildren([contract1, contract2, contract3]);
 
 		expect(
-			container.getChildren({
-				types: new Set(['sw.os', 'sw.blob']),
-			}),
-		).to.deep.equal([contract1, contract2]);
+			container
+				.getChildren({
+					types: new Set(['sw.os', 'sw.blob']),
+				})
+				.map((c) => c.hash())
+				.sort(),
+		).to.deep.equal([contract1.hash(), contract2.hash()].sort());
 	});
 
 	it('should ignore unknown types', () => {
@@ -103,10 +120,12 @@ describe('Contract getChildren', () => {
 		container.addChildren([contract1, contract2]);
 
 		expect(
-			container.getChildren({
-				types: new Set(['sw.os', 'hello']),
-			}),
-		).to.deep.equal([contract1]);
+			container
+				.getChildren({
+					types: new Set(['sw.os', 'hello']),
+				})
+				.map((c) => c.hash()),
+		).to.deep.equal([contract1.hash()]);
 	});
 
 	it('should return an empty array if no type matches', () => {
@@ -142,7 +161,12 @@ describe('Contract getChildren', () => {
 
 		container.addChildren([contract1, contract2]);
 
-		expect(container.getChildren()).to.deep.equal([contract1, contract2]);
+		expect(
+			container
+				.getChildren()
+				.map((c) => c.hash())
+				.sort(),
+		).to.deep.equal([contract1.hash(), contract2.hash()].sort());
 	});
 
 	it('should return nested children', () => {
@@ -157,7 +181,12 @@ describe('Contract getChildren', () => {
 
 		container.addChildren([contract1]);
 
-		expect(container.getChildren()).to.deep.equal([contract1, contract2]);
+		expect(
+			container
+				.getChildren()
+				.map((c) => c.hash())
+				.sort(),
+		).to.deep.equal([contract1.hash(), contract2.hash()].sort());
 	});
 
 	it('should return two level nested children', () => {
@@ -174,11 +203,14 @@ describe('Contract getChildren', () => {
 
 		container.addChildren([contract1]);
 
-		expect(container.getChildren()).to.deep.equal([
-			contract1,
-			contract2,
-			contract3,
-		]);
+		expect(
+			container
+				.getChildren()
+				.map((c) => c.hash())
+				.sort(),
+		).to.deep.equal(
+			[contract1.hash(), contract2.hash(), contract3.hash()].sort(),
+		);
 	});
 
 	it('should return nested children that match the desired type', () => {
@@ -194,9 +226,11 @@ describe('Contract getChildren', () => {
 		container.addChildren([contract1]);
 
 		expect(
-			container.getChildren({
-				types: new Set(['sw.blob']),
-			}),
-		).to.deep.equal([contract2]);
+			container
+				.getChildren({
+					types: new Set(['sw.blob']),
+				})
+				.map((c) => c.hash()),
+		).to.deep.equal([contract2.hash()]);
 	});
 });

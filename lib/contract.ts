@@ -24,7 +24,7 @@ import type { ContractObject } from './types';
 import { MATCHER } from './types';
 import { compileContract } from './template';
 import { build as buildVariants } from './variants';
-import { build as buildChildrentree } from './children-tree';
+import { build as buildChildrenTree } from './children-tree';
 import { getAll } from './children-tree';
 import { areSetsDisjoint } from './utils';
 
@@ -115,14 +115,14 @@ export default class Contract {
 	 * @summary Re-build the contract's internal data structures
 	 * @function
 	 * @name module:contrato.Contract#rebuild
-	 * @protected
+	 * @private
 	 *
 	 * @example
 	 * const contract = new Contract({ ... })
 	 * contract.rebuild()
 	 */
-	rebuild() {
-		const tree = buildChildrentree(this);
+	private rebuild() {
+		const tree = buildChildrenTree(this);
 		if (Object.keys(tree).length > 0) {
 			this.raw.children = tree;
 		}
@@ -155,7 +155,8 @@ export default class Contract {
 			return matcher;
 		};
 		// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-		for (const conjunct of this.raw.requires || []) {
+		for (const conjunct of this.raw.requires ||
+			([] as Array<Record<string, any>>)) {
 			if (conjunct.type) {
 				const matcher = registerMatcher(conjunct);
 				this.metadata.requirements.compiled.add(matcher, {
@@ -229,7 +230,7 @@ export default class Contract {
 	 *
 	 * console.log(contract.getVersion())
 	 */
-	getVersion(): string {
+	getVersion(): string | undefined {
 		return this.raw.version;
 	}
 	/**
@@ -249,7 +250,7 @@ export default class Contract {
 	 *
 	 * console.log(contract.getSlug())
 	 */
-	getSlug(): string {
+	getSlug(): string | undefined {
 		return this.raw.slug;
 	}
 	/**
@@ -273,7 +274,10 @@ export default class Contract {
 	 */
 	getAllSlugs(): Set<string> {
 		const slugs = new Set<string>(this.raw.aliases);
-		slugs.add(this.getSlug());
+		const thisSlug = this.getSlug();
+		if (thisSlug != null) {
+			slugs.add(thisSlug);
+		}
 		return slugs;
 	}
 	/**
@@ -297,7 +301,7 @@ export default class Contract {
 	 * }
 	 */
 	hasAliases(): boolean {
-		return Boolean(this.raw.aliases) && this.raw.aliases.length > 0;
+		return this.raw.aliases != null && this.raw.aliases.length > 0;
 	}
 	/**
 	 * @summary Get the contract canonical slug
@@ -317,7 +321,7 @@ export default class Contract {
 	 *
 	 * console.log(contract.getCanonicalSlug())
 	 */
-	getCanonicalSlug(): string {
+	getCanonicalSlug(): string | undefined {
 		// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 		return this.raw.canonicalSlug || this.getSlug();
 	}
@@ -359,7 +363,7 @@ export default class Contract {
 	 * console.log(contract.getReferenceString())
 	 */
 	getReferenceString(): string {
-		const slug = this.getSlug();
+		const slug = this.getSlug() ?? '';
 		const version = this.getVersion();
 		return version ? `${slug}@${version}` : slug;
 	}
@@ -650,12 +654,16 @@ export default class Contract {
 			// Notice we do use the slug key separately, in order to obtain
 			// the list of hashes we should check against.
 			const match = matches(omit(matcher.raw.data, ['slug', 'version']));
-			const versionMatch = matcher.raw.data.version;
+			const versionMatch = matcher.raw.data?.version;
 			if (contract.raw.provides) {
 				for (const capability of contract.raw.provides) {
 					if (match(capability)) {
 						if (versionMatch) {
-							if (valid(capability.version) && validRange(versionMatch)) {
+							if (
+								capability.version != null &&
+								valid(capability.version) &&
+								validRange(versionMatch)
+							) {
 								if (satisfies(capability.version, versionMatch)) {
 									results.push(contract);
 								}
@@ -736,7 +744,11 @@ export default class Contract {
 					const child = contract.getChildByHash(childHash);
 					if (child && match(child.raw)) {
 						if (versionMatch) {
-							if (valid(child.raw.version) && validRange(versionMatch)) {
+							if (
+								child.raw.version != null &&
+								valid(child.raw.version) &&
+								validRange(versionMatch)
+							) {
 								if (satisfies(child.raw.version, versionMatch)) {
 									results.push(child);
 								}
@@ -852,8 +864,8 @@ export default class Contract {
 	 */
 	getChildrenCombinations(options: {
 		type: string;
-		from: number;
-		to: number;
+		from?: number;
+		to?: number;
 		[index: string]: any;
 	}): Contract[][] {
 		let contracts = this.getChildrenByType(options.type);
@@ -867,8 +879,9 @@ export default class Contract {
 		if (contracts.length > 0) {
 			if (options['version']) {
 				if (isEqual(options['version'], 'latest')) {
+					contracts = contracts.filter((c) => c.getVersion() != null);
 					contracts.sort((left, right) => {
-						return compare(right.raw.version, left.raw.version);
+						return compare(right.getVersion()!, left.getVersion()!);
 					});
 					contracts = contracts.slice(
 						0,
@@ -876,7 +889,8 @@ export default class Contract {
 					);
 				} else {
 					contracts = contracts.filter((con) => {
-						return satisfies(con.raw.version, options['version']);
+						const v = con.getVersion();
+						return v != null && satisfies(v, options['version']);
 					});
 				}
 			}

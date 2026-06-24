@@ -21,7 +21,6 @@ import type { ContractObject } from './types';
 
 /**
  * @summary The name of the contract property that contains variants
- * @type {String}
  * @constant
  */
 const VARIANTS_PROPERTY = 'variants';
@@ -60,15 +59,16 @@ const VARIANTS_PROPERTY = 'variants';
  */
 export const build = (contract: ContractObject): ContractObject[] => {
 	// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-	const variants: ContractObject[] = contract[VARIANTS_PROPERTY] || [];
+	const variants = contract[VARIANTS_PROPERTY] || [];
 	const base = omit(contract, [VARIANTS_PROPERTY]) as ContractObject;
+	const type = base.type;
 
 	return variants.length === 0
 		? [base]
 		: variants.reduce<ContractObject[]>(
 				(accumulator, variation) =>
 					accumulator.concat(
-						build(variation).map((template) =>
+						build({ type, ...variation }).map((template) =>
 							mergeWith({}, base, template, (object, source) =>
 								Array.isArray(object) ? object.concat(source) : undefined,
 							),

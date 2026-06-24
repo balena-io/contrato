@@ -48,9 +48,7 @@ describe('Blueprint constructor', () => {
 				selectors: {
 					'hw.device-type': [
 						{
-							cardinality: _.merge(parse([1, 1]), {
-								type: 'hw.device-type',
-							}),
+							cardinality: parse([1, 1]),
 							filter: undefined,
 							version: undefined,
 							type: 'hw.device-type',
@@ -78,9 +76,7 @@ describe('Blueprint constructor', () => {
 				selectors: {
 					'hw.device-type': [
 						{
-							cardinality: _.merge(parse([2, 2]), {
-								type: 'hw.device-type',
-							}),
+							cardinality: parse([2, 2]),
 							filter: undefined,
 							version: undefined,
 							type: 'hw.device-type',
@@ -93,9 +89,7 @@ describe('Blueprint constructor', () => {
 				selectors: {
 					'arch.sw': [
 						{
-							cardinality: _.merge(parse([1, Infinity]), {
-								type: 'arch.sw',
-							}),
+							cardinality: parse([1, Infinity]),
 							filter: undefined,
 							version: undefined,
 							type: 'arch.sw',
@@ -126,9 +120,7 @@ describe('Blueprint constructor', () => {
 				selectors: {
 					'hw.device-type': [
 						{
-							cardinality: _.merge(parse([2, 2]), {
-								type: 'hw.device-type',
-							}),
+							cardinality: parse([2, 2]),
 							filter: undefined,
 							version: undefined,
 							type: 'hw.device-type',
@@ -141,9 +133,7 @@ describe('Blueprint constructor', () => {
 				selectors: {
 					'arch.sw': [
 						{
-							cardinality: _.merge(parse([1, Infinity]), {
-								type: 'arch.sw',
-							}),
+							cardinality: parse([1, Infinity]),
 							filter: filterFunction,
 							version: undefined,
 							type: 'arch.sw',

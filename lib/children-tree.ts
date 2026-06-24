@@ -7,7 +7,7 @@
 import reduce from 'lodash/reduce';
 import set from 'lodash/set';
 
-import type { ContractObject } from '.';
+import type { ContractObject, ChildrenTree } from './types';
 import type Contract from './contract';
 import { setFirst } from './utils';
 
@@ -30,7 +30,7 @@ import { setFirst } from './utils';
  *
  * const tree = childrenTree.build(contract)
  */
-export const build = (contract: Contract): object => {
+export const build = (contract: Contract): ChildrenTree => {
 	const tree = {};
 
 	for (const type of contract.metadata.children.types) {

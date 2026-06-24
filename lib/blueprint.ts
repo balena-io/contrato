@@ -7,6 +7,7 @@
 import reduce from 'lodash/reduce';
 
 import Contract from './contract';
+import type { Cardinality } from './cardinality';
 import { parse } from './cardinality';
 import type { BlueprintLayout, BlueprintObject } from './types';
 import { BLUEPRINT } from './types';
@@ -16,7 +17,30 @@ import {
 	filter as filterIterator,
 } from './utils';
 
+/** A single parsed blueprint layout selector. */
+interface BlueprintSelector {
+	cardinality: Cardinality;
+	filter?: any;
+	type: string;
+	version?: string;
+}
+
+/** A finite/infinite grouping of parsed selectors keyed by contract type. */
+interface BlueprintLayoutGroup {
+	selectors: Record<string, BlueprintSelector[]>;
+	types: Set<string>;
+}
+
+/** The parsed blueprint layout stored in contract metadata. */
+interface ParsedBlueprintLayout {
+	types: Set<string>;
+	finite: BlueprintLayoutGroup;
+	infinite: BlueprintLayoutGroup;
+}
+
 export default class Blueprint extends Contract {
+	declare raw: BlueprintObject;
+
 	/**
 	 * @summary A blueprint contract data structure
 	 * @name Blueprint
@@ -41,16 +65,26 @@ export default class Blueprint extends Contract {
 			type: BLUEPRINT,
 			skeleton,
 			layout,
-		} as BlueprintObject);
+		});
+
+		const initialLayout: ParsedBlueprintLayout = {
+			types: new Set<string>(),
+			finite: {
+				selectors: {},
+				types: new Set<string>(),
+			},
+			infinite: {
+				selectors: {},
+				types: new Set<string>(),
+			},
+		};
 
 		this.metadata.layout = reduce(
 			this.raw.layout,
 			(accumulator, value, type) => {
-				const selector = {
+				const selector: BlueprintSelector = {
 					// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-					cardinality: parse(value.cardinality || value) as ReturnType<
-						typeof parse
-					> & { type: string },
+					cardinality: parse(value.cardinality || value),
 					// Array has its own `filter` function, which we need to ignore
 					filter: Array.isArray(value) ? undefined : value.filter,
 					// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
@@ -58,11 +92,9 @@ export default class Blueprint extends Contract {
 					version: value.version,
 				};
 
-				selector.cardinality.type = selector.type;
-
 				const group = selector.cardinality.finite ? 'finite' : 'infinite';
 				accumulator[group].selectors[selector.type] = [
-					...(accumulator[group].selectors[selector.type] || []),
+					...(accumulator[group].selectors[selector.type] ?? []),
 					selector,
 				];
 				accumulator[group].types.add(selector.type);
@@ -70,17 +102,7 @@ export default class Blueprint extends Contract {
 
 				return accumulator;
 			},
-			{
-				types: new Set(),
-				finite: {
-					selectors: {} as { [type: string]: any[] },
-					types: new Set(),
-				},
-				infinite: {
-					selectors: {} as { [type: string]: any[] },
-					types: new Set(),
-				},
-			},
+			initialLayout,
 		);
 	}
 
@@ -116,10 +138,10 @@ export default class Blueprint extends Contract {
 	 * }
 	 */
 	reproduce(contract: Contract): IterableIterator<Contract> {
-		const layout = this.metadata.layout;
+		const layout: ParsedBlueprintLayout = this.metadata.layout;
 		const combinations = reduce(
 			layout.finite.selectors,
-			(accumulator, value) => {
+			(accumulator: Contract[][][], value) => {
 				let internalAccumulator = accumulator;
 				for (const option of value) {
 					internalAccumulator = internalAccumulator.concat([
@@ -128,7 +150,7 @@ export default class Blueprint extends Contract {
 				}
 				return internalAccumulator;
 			},
-			[] as Contract[][][],
+			[],
 		);
 
 		const productIterator = cartesianProductWith<

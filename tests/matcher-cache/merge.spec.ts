@@ -38,11 +38,11 @@ describe('MatcherCache merge', () => {
 
 		expect(cache1.data).to.deep.equal({
 			'sw.os': {
-				[matcher1.metadata.hash]: {
+				[matcher1.hash()]: {
 					value: true,
 					matcher: matcher1,
 				},
-				[matcher2.metadata.hash]: {
+				[matcher2.hash()]: {
 					value: true,
 					matcher: matcher2,
 				},
@@ -71,13 +71,13 @@ describe('MatcherCache merge', () => {
 
 		expect(cache1.data).to.deep.equal({
 			'sw.os': {
-				[matcher1.metadata.hash]: {
+				[matcher1.hash()]: {
 					value: true,
 					matcher: matcher1,
 				},
 			},
 			'sw.blob': {
-				[matcher2.metadata.hash]: {
+				[matcher2.hash()]: {
 					value: true,
 					matcher: matcher2,
 				},
@@ -106,13 +106,13 @@ describe('MatcherCache merge', () => {
 
 		expect(cache1.data).to.deep.equal({
 			'sw.os': {
-				[matcher1.metadata.hash]: {
+				[matcher1.hash()]: {
 					value: true,
 					matcher: matcher1,
 				},
 			},
 			'sw.blob': {
-				[matcher2.metadata.hash]: {
+				[matcher2.hash()]: {
 					value: true,
 					matcher: matcher2,
 				},
@@ -147,7 +147,7 @@ describe('MatcherCache merge', () => {
 
 		expect(cache1.data).to.deep.equal({
 			'sw.blob': {
-				[matcher2.metadata.hash]: {
+				[matcher2.hash()]: {
 					value: true,
 					matcher: matcher2,
 				},

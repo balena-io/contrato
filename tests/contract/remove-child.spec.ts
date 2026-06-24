@@ -26,6 +26,13 @@ it('should delete a contract from a set of contracts', () => {
 	const expected = new Contract(SKELETON);
 	expected.addChildren([contract1, contract3]);
 	expect(container).to.deep.equal(expected);
+
+	expect(container.getChildByHash(contract2.hash())).to.equal(undefined);
+	expect(
+		container.findChildren(
+			Contract.createMatcher({ type: 'sw.os', slug: 'debian' }),
+		),
+	).to.deep.equal([contract1]);
 });
 
 it('should ignore contracts that are not in the set', () => {

@@ -30,7 +30,7 @@ describe('Contract requirements', () => {
 			requires: [],
 		});
 
-		expect(contract.metadata.requirements).to.deep.equal({
+		expect(contract.$metadata.requirements).to.deep.equal({
 			matchers: {},
 			types: new Set(),
 			compiled: new ObjectSet(),
@@ -57,7 +57,7 @@ describe('Contract requirements', () => {
 			],
 		});
 
-		expect(contract.metadata.requirements).to.deep.equal({
+		expect(contract.$metadata.requirements).to.deep.equal({
 			matchers: {
 				'hw.device-type': createContractObjectSet([
 					Contract.createMatcher({
@@ -105,7 +105,7 @@ describe('Contract requirements', () => {
 			],
 		});
 
-		expect(contract.metadata.requirements).to.deep.equal({
+		expect(contract.$metadata.requirements).to.deep.equal({
 			matchers: {
 				'hw.device-type': createContractObjectSet([
 					Contract.createMatcher({
@@ -161,7 +161,7 @@ describe('Contract requirements', () => {
 			],
 		});
 
-		expect(contract.metadata.requirements).to.deep.equal({
+		expect(contract.$metadata.requirements).to.deep.equal({
 			matchers: {
 				'hw.device-type': createContractObjectSet([
 					Contract.createMatcher({
@@ -227,7 +227,7 @@ describe('Contract requirements', () => {
 			],
 		});
 
-		expect(contract.metadata.requirements).to.deep.equal({
+		expect(contract.$metadata.requirements).to.deep.equal({
 			matchers: {
 				'hw.device-type': createContractObjectSet([
 					Contract.createMatcher({
@@ -302,7 +302,7 @@ describe('Contract requirements', () => {
 			],
 		});
 
-		expect(contract.metadata.requirements).to.deep.equal({
+		expect(contract.$metadata.requirements).to.deep.equal({
 			matchers: {
 				'hw.device-type': createContractObjectSet([
 					Contract.createMatcher({

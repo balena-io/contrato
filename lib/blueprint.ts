@@ -7,6 +7,7 @@
 import reduce from 'lodash/reduce';
 
 import Contract from './contract';
+import type { ContractMetadata } from './contract';
 import type { Cardinality } from './cardinality';
 import { parse } from './cardinality';
 import type { BlueprintLayout, BlueprintObject } from './types';
@@ -38,8 +39,13 @@ interface ParsedBlueprintLayout {
 	infinite: BlueprintLayoutGroup;
 }
 
+interface BlueprintMetadata extends ContractMetadata {
+	layout: ParsedBlueprintLayout;
+}
+
 export default class Blueprint extends Contract {
 	declare raw: BlueprintObject;
+	declare protected $metadata: BlueprintMetadata;
 
 	/**
 	 * @summary A blueprint contract data structure
@@ -79,7 +85,7 @@ export default class Blueprint extends Contract {
 			},
 		};
 
-		this.metadata.layout = reduce(
+		this.$metadata.layout = reduce(
 			this.raw.layout,
 			(accumulator, value, type) => {
 				const selector: BlueprintSelector = {
@@ -138,7 +144,7 @@ export default class Blueprint extends Contract {
 	 * }
 	 */
 	reproduce(contract: Contract): IterableIterator<Contract> {
-		const layout: ParsedBlueprintLayout = this.metadata.layout;
+		const layout: ParsedBlueprintLayout = this.$metadata.layout;
 		const combinations = reduce(
 			layout.finite.selectors,
 			(accumulator: Contract[][][], value) => {

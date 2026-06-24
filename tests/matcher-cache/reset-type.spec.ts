@@ -36,7 +36,7 @@ describe('MatcherCache resetType', () => {
 
 		expect(cache.data).to.deep.equal({
 			'sw.stack': {
-				[matcher3.metadata.hash]: {
+				[matcher3.hash()]: {
 					value: true,
 					matcher: matcher3,
 				},
@@ -70,17 +70,17 @@ describe('MatcherCache resetType', () => {
 
 		expect(cache.data).to.deep.equal({
 			'sw.os': {
-				[matcher1.metadata.hash]: {
+				[matcher1.hash()]: {
 					value: true,
 					matcher: matcher1,
 				},
-				[matcher2.metadata.hash]: {
+				[matcher2.hash()]: {
 					value: false,
 					matcher: matcher2,
 				},
 			},
 			'sw.stack': {
-				[matcher3.metadata.hash]: {
+				[matcher3.hash()]: {
 					value: true,
 					matcher: matcher3,
 				},

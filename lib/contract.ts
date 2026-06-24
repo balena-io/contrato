@@ -24,8 +24,7 @@ import type { ContractObject } from './types';
 import { MATCHER } from './types';
 import { compileContract } from './template';
 import { build as buildVariants } from './variants';
-import { build as buildChildrenTree } from './children-tree';
-import { getAll } from './children-tree';
+import { getAll, build as buildChildrenTree } from './children-tree';
 import { areSetsDisjoint } from './utils';
 
 interface ContractChildrenMetadata {
@@ -43,15 +42,19 @@ interface ContractRequirementsMetadata {
 	compiled: ObjectSet<Contract>;
 }
 
-interface ContractMetadata {
-	hash?: string;
+export interface ContractMetadata {
 	children: ContractChildrenMetadata;
 	requirements: ContractRequirementsMetadata;
-	[key: string]: any;
 }
 
 export default class Contract {
-	metadata: ContractMetadata;
+	// Internal data about contract children and requirements
+	protected $metadata: ContractMetadata;
+
+	// The hash is lazily computed on the first `hash()` call and cached here.
+	// It is a  native private field so it is not used when comparing contracts
+	#hash: string | undefined;
+
 	raw: ContractObject;
 	/**
 	 * @summary A contract data structure
@@ -71,7 +74,7 @@ export default class Contract {
 	 */
 	constructor(object: ContractObject) {
 		this.raw = object;
-		this.metadata = {
+		this.$metadata = {
 			children: {
 				searchCache: new MatcherCache(),
 				types: new Set(),
@@ -87,20 +90,12 @@ export default class Contract {
 			},
 		};
 
-		// The hash is a lazy computed property, we don't want it to be used when
-		// comparing contracts so we declare it non-enumerable
-		Object.defineProperty(this.metadata, 'hash', {
-			value: undefined,
-			writable: true,
-			enumerable: false,
-			configurable: true,
-		});
-
 		for (const source of getAll(this.raw.children)) {
 			this.addChild(new Contract(source));
 		}
 		this.interpolate();
 	}
+
 	/**
 	 * @summary Get the contract hash, computing it lazily if necessary
 	 * @function
@@ -120,9 +115,10 @@ export default class Contract {
 	 * console.log(contract.hash())
 	 */
 	hash(): string {
-		this.metadata.hash ??= hashObject(this.raw);
-		return this.metadata.hash;
+		this.#hash ??= hashObject(this.raw);
+		return this.#hash;
 	}
+
 	/**
 	 * @summary Re-build the contract's internal data structures
 	 * @function
@@ -136,12 +132,12 @@ export default class Contract {
 	private rebuild() {
 		// Mutating the contract's raw object invalidates the cached hash,
 		// which will be recomputed lazily on the next `hash()` call.
-		this.metadata.hash = undefined;
-		const tree = buildChildrenTree(this);
+		this.#hash = undefined;
+		const tree = buildChildrenTree(this.$metadata);
 		if (Object.keys(tree).length > 0) {
 			this.raw.children = tree;
 		}
-		this.metadata.requirements = {
+		this.$metadata.requirements = {
 			matchers: {},
 			types: new Set(),
 			compiled: new ObjectSet(),
@@ -162,11 +158,11 @@ export default class Contract {
 		 */
 		const registerMatcher = (data: any): any => {
 			const matcher = Contract.createMatcher(data);
-			this.metadata.requirements.matchers[data.type] ??= new ObjectSet();
-			this.metadata.requirements.matchers[data.type].add(matcher, {
+			this.$metadata.requirements.matchers[data.type] ??= new ObjectSet();
+			this.$metadata.requirements.matchers[data.type].add(matcher, {
 				id: matcher.hash(),
 			});
-			this.metadata.requirements.types.add(data.type);
+			this.$metadata.requirements.types.add(data.type);
 			return matcher;
 		};
 		// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
@@ -174,7 +170,7 @@ export default class Contract {
 			([] as Array<Record<string, any>>)) {
 			if (conjunct.type) {
 				const matcher = registerMatcher(conjunct);
-				this.metadata.requirements.compiled.add(matcher, {
+				this.$metadata.requirements.compiled.add(matcher, {
 					id: matcher.hash(),
 				});
 				continue;
@@ -191,7 +187,7 @@ export default class Contract {
 				const operationContract = Contract.createMatcher(matchers, {
 					operation: operand,
 				});
-				this.metadata.requirements.compiled.add(operationContract, {
+				this.$metadata.requirements.compiled.add(operationContract, {
 					id: operationContract.hash(),
 				});
 			}
@@ -413,21 +409,21 @@ export default class Contract {
 	addChild(contract: Contract, options: { rebuild?: boolean } = {}): this {
 		const type = contract.getType();
 		const childHash = contract.hash();
-		if (this.metadata.children.map[childHash]) {
+		if (this.$metadata.children.map[childHash]) {
 			return this;
 		}
-		if (!this.metadata.children.types.has(type)) {
-			this.metadata.children.types.add(type);
-			this.metadata.children.byType[type] = new Set();
-			this.metadata.children.byTypeSlug[type] = {};
+		if (!this.$metadata.children.types.has(type)) {
+			this.$metadata.children.types.add(type);
+			this.$metadata.children.byType[type] = new Set();
+			this.$metadata.children.byTypeSlug[type] = {};
 		}
 		for (const slug of contract.getAllSlugs()) {
-			this.metadata.children.byTypeSlug[type][slug] ??= new Set();
-			this.metadata.children.byTypeSlug[type][slug].add(childHash);
+			this.$metadata.children.byTypeSlug[type][slug] ??= new Set();
+			this.$metadata.children.byTypeSlug[type][slug].add(childHash);
 		}
-		this.metadata.children.map[childHash] = contract;
-		this.metadata.children.byType[type].add(childHash);
-		this.metadata.children.searchCache.resetType(type);
+		this.$metadata.children.map[childHash] = contract;
+		this.$metadata.children.byType[type].add(childHash);
+		this.$metadata.children.searchCache.resetType(type);
 		if (options.rebuild ?? true) {
 			this.rebuild();
 		}
@@ -452,25 +448,25 @@ export default class Contract {
 	removeChild(contract: Contract): this {
 		const type = contract.getType();
 		const childHash = contract.hash();
-		if (!this.raw.children || !this.metadata.children.map[childHash]) {
+		if (!this.raw.children || !this.$metadata.children.map[childHash]) {
 			return this;
 		}
-		Reflect.deleteProperty(this.metadata.children.map, childHash);
-		this.metadata.children.byType[type].delete(childHash);
-		if (this.metadata.children.byType[type].size === 0) {
-			Reflect.deleteProperty(this.metadata.children.byType, type);
-			this.metadata.children.types.delete(type);
+		Reflect.deleteProperty(this.$metadata.children.map, childHash);
+		this.$metadata.children.byType[type].delete(childHash);
+		if (this.$metadata.children.byType[type].size === 0) {
+			Reflect.deleteProperty(this.$metadata.children.byType, type);
+			this.$metadata.children.types.delete(type);
 		}
 		for (const slug of contract.getAllSlugs()) {
-			this.metadata.children.byTypeSlug[type][slug].delete(childHash);
-			if (this.metadata.children.byTypeSlug[type][slug].size === 0) {
-				Reflect.deleteProperty(this.metadata.children.byTypeSlug[type], slug);
+			this.$metadata.children.byTypeSlug[type][slug].delete(childHash);
+			if (this.$metadata.children.byTypeSlug[type][slug].size === 0) {
+				Reflect.deleteProperty(this.$metadata.children.byTypeSlug[type], slug);
 			}
 		}
-		if (Object.keys(this.metadata.children.byTypeSlug[type]).length === 0) {
-			Reflect.deleteProperty(this.metadata.children.byTypeSlug, type);
+		if (Object.keys(this.$metadata.children.byTypeSlug[type]).length === 0) {
+			Reflect.deleteProperty(this.$metadata.children.byTypeSlug, type);
 		}
-		this.metadata.children.searchCache.resetType(contract.getType());
+		this.$metadata.children.searchCache.resetType(contract.getType());
 		this.rebuild();
 		return this;
 	}
@@ -525,7 +521,7 @@ export default class Contract {
 	 * console.log(contract.getChildrenTypes())
 	 */
 	getChildrenTypes(): Set<string> {
-		const types = new Set<string>(this.metadata.children.types);
+		const types = new Set<string>(this.$metadata.children.types);
 		for (const contract of this.getChildren()) {
 			for (const type of contract.getChildrenTypes()) {
 				types.add(type);
@@ -553,7 +549,7 @@ export default class Contract {
 	 * }
 	 */
 	getChildByHash(childHash: string): Contract | undefined {
-		return this.metadata.children.map[childHash];
+		return this.$metadata.children.map[childHash];
 	}
 	/**
 	 * @summary Recursively get a set of children contracts
@@ -577,7 +573,7 @@ export default class Contract {
 	 */
 	getChildren(options: { types?: Set<string> } = {}): Contract[] {
 		const contracts: Contract[] = [];
-		for (const contract of Object.values(this.metadata.children.map)) {
+		for (const contract of Object.values(this.$metadata.children.map)) {
 			if (!options.types || options.types.has(contract.raw.type)) {
 				contracts.push(contract);
 			}
@@ -604,10 +600,10 @@ export default class Contract {
 	 * })
 	 */
 	getChildrenByType(type: string): Contract[] {
-		this.metadata.children.typeMatchers[type] ??= Contract.createMatcher({
+		this.$metadata.children.typeMatchers[type] ??= Contract.createMatcher({
 			type,
 		});
-		return this.findChildren(this.metadata.children.typeMatchers[type]);
+		return this.findChildren(this.$metadata.children.typeMatchers[type]);
 	}
 	/**
 	 * @summary Recursively find children using a matcher contract
@@ -698,7 +694,7 @@ export default class Contract {
 		) {
 			return [];
 		}
-		const cache = this.metadata.children.searchCache.get(matcher);
+		const cache = this.$metadata.children.searchCache.get(matcher);
 		if (cache) {
 			return cache;
 		}
@@ -706,7 +702,7 @@ export default class Contract {
 		const type = matcher.raw.data.type;
 		const slug = matcher.raw.data.slug;
 		for (const contract of this.getChildren().concat([this])) {
-			if (!contract.metadata.children.types.has(type)) {
+			if (!contract.$metadata.children.types.has(type)) {
 				continue;
 			}
 			// We need to omit the slug from the matcher object, otherwise
@@ -717,8 +713,8 @@ export default class Contract {
 			const match = matches(omit(matcher.raw.data, ['slug', 'version']));
 			const versionMatch = matcher.raw.data.version;
 			const hashes = slug
-				? (contract.metadata.children.byTypeSlug[type][slug] ?? new Set())
-				: contract.metadata.children.byType[type];
+				? (contract.$metadata.children.byTypeSlug[type][slug] ?? new Set())
+				: contract.$metadata.children.byType[type];
 			// Means that we are matching just the type
 			if (Object.keys(matcher.raw.data).length === 1) {
 				for (const childHash of hashes) {
@@ -751,7 +747,7 @@ export default class Contract {
 				}
 			}
 		}
-		this.metadata.children.searchCache.add(matcher, results);
+		this.$metadata.children.searchCache.add(matcher, results);
 		return results;
 	}
 	/**
@@ -933,11 +929,11 @@ export default class Contract {
 	} {
 		const references: { [index: string]: Contract[] } = {};
 		for (const type of options.types) {
-			if (!this.metadata.requirements.types.has(type)) {
+			if (!this.$metadata.requirements.types.has(type)) {
 				continue;
 			}
 			references[type] = [];
-			const matchers = this.metadata.requirements.matchers[type].getAll();
+			const matchers = this.$metadata.requirements.matchers[type].getAll();
 			for (const matcher of matchers) {
 				for (const find of options.from.findChildren(matcher)) {
 					references[find.getType()].push(find);
@@ -1184,12 +1180,12 @@ export default class Contract {
 		contract: Contract,
 		options: { types?: Set<string> } = {},
 	) {
-		const conjuncts: Contract[] = contract.metadata.requirements.compiled
+		const conjuncts: Contract[] = contract.$metadata.requirements.compiled
 			.getAll()
 			.concat(
 				contract
 					.getChildren()
-					.flatMap((child) => child.metadata.requirements.compiled.getAll()),
+					.flatMap((child) => child.$metadata.requirements.compiled.getAll()),
 			);
 		// (1) If the top level list of conjuncts is empty,
 		// then we can assume the requirements are fulfilled
@@ -1267,12 +1263,12 @@ export default class Contract {
 		contract: Contract,
 		options: { types?: Set<string> } = {},
 	): boolean {
-		const conjuncts: Contract[] = contract.metadata.requirements.compiled
+		const conjuncts: Contract[] = contract.$metadata.requirements.compiled
 			.getAll()
 			.concat(
 				contract
 					.getChildren()
-					.flatMap((child) => child.metadata.requirements.compiled.getAll()),
+					.flatMap((child) => child.$metadata.requirements.compiled.getAll()),
 			);
 
 		// (1) If the top level list of conjuncts is empty,
@@ -1329,7 +1325,7 @@ export default class Contract {
 			// requirements in vain.
 			if (
 				options.types &&
-				areSetsDisjoint(options.types, contract.metadata.requirements.types)
+				areSetsDisjoint(options.types, contract.$metadata.requirements.types)
 			) {
 				continue;
 			}
@@ -1361,10 +1357,10 @@ export default class Contract {
 			// requirements in vain.
 			if (
 				options.types &&
-				areSetsDisjoint(options.types, contract.metadata.requirements.types)
+				areSetsDisjoint(options.types, contract.$metadata.requirements.types)
 			) {
 				requirements = requirements.concat(
-					contract.metadata.requirements.compiled
+					contract.$metadata.requirements.compiled
 						.getAll()
 						.map((c) => c.raw.data),
 				);

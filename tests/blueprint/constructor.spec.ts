@@ -42,7 +42,7 @@ describe('Blueprint constructor', () => {
 			'hw.device-type': 1,
 		});
 
-		expect(blueprint.metadata.layout).to.deep.equal({
+		expect(blueprint.$metadata.layout).to.deep.equal({
 			types: new Set(['hw.device-type']),
 			finite: {
 				selectors: {
@@ -70,7 +70,7 @@ describe('Blueprint constructor', () => {
 			'arch.sw': '1+',
 		});
 
-		expect(blueprint.metadata.layout).to.deep.equal({
+		expect(blueprint.$metadata.layout).to.deep.equal({
 			types: new Set(['hw.device-type', 'arch.sw']),
 			finite: {
 				selectors: {
@@ -114,7 +114,7 @@ describe('Blueprint constructor', () => {
 			},
 		});
 
-		expect(blueprint.metadata.layout).to.deep.equal({
+		expect(blueprint.$metadata.layout).to.deep.equal({
 			types: new Set(['hw.device-type', 'arch.sw']),
 			finite: {
 				selectors: {

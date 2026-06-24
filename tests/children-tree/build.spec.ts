@@ -6,7 +6,6 @@
 
 import { expect } from '../chai';
 
-import { build } from '../../lib/children-tree';
 import Contract from '../../lib/contract';
 
 import CONTRACTS from '../contracts.json';
@@ -21,26 +20,19 @@ describe('build children tree', () => {
 		const contract1 = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
 		container.addChild(contract1);
 
-		container.metadata.children = {
-			types: new Set(['sw.os']),
-			byType: {
-				'sw.os': new Set([contract1.metadata.hash]),
-			},
-			byTypeSlug: {
-				'sw.os': {
-					debian: new Set([contract1.metadata.hash]),
-				},
-			},
-			map: {
-				[contract1.metadata.hash]: contract1,
-			},
-		};
-
-		expect(build(container)).to.deep.equal({
+		expect(container.raw.children).to.deep.equal({
 			sw: {
 				os: contract1.raw,
 			},
 		});
+
+		expect(container.getChildByHash(contract1.hash())).to.deep.equal(contract1);
+		expect(container.getChildrenByType('sw.os')).to.deep.equal([contract1]);
+		expect(
+			container.findChildren(
+				Contract.createMatcher({ type: 'sw.os', slug: 'debian' }),
+			),
+		).to.deep.equal([contract1]);
 	});
 
 	it('should build a tree with two contracts of different types', () => {
@@ -55,32 +47,17 @@ describe('build children tree', () => {
 		container.addChild(contract1);
 		container.addChild(contract2);
 
-		container.metadata.children = {
-			types: new Set(['sw.os', 'sw.blob']),
-			byType: {
-				'sw.os': new Set([contract1.metadata.hash]),
-				'sw.blob': new Set([contract2.metadata.hash]),
-			},
-			byTypeSlug: {
-				'sw.os': {
-					debian: new Set([contract1.metadata.hash]),
-				},
-				'sw.blob': {
-					nodejs: new Set([contract2.metadata.hash]),
-				},
-			},
-			map: {
-				[contract1.metadata.hash]: contract1,
-				[contract2.metadata.hash]: contract2,
-			},
-		};
-
-		expect(build(container)).to.deep.equal({
+		expect(container.raw.children).to.deep.equal({
 			sw: {
 				os: contract1.raw,
 				blob: contract2.raw,
 			},
 		});
+
+		expect(container.getChildByHash(contract1.hash())).to.deep.equal(contract1);
+		expect(container.getChildByHash(contract2.hash())).to.deep.equal(contract2);
+		expect(container.getChildrenByType('sw.os')).to.deep.equal([contract1]);
+		expect(container.getChildrenByType('sw.blob')).to.deep.equal([contract2]);
 	});
 
 	it('should build a tree with two contracts of the same type', () => {
@@ -95,24 +72,7 @@ describe('build children tree', () => {
 		container.addChild(contract1);
 		container.addChild(contract2);
 
-		container.metadata.children = {
-			types: new Set(['sw.os']),
-			byType: {
-				'sw.os': new Set([contract1.metadata.hash, contract2.metadata.hash]),
-			},
-			byTypeSlug: {
-				'sw.os': {
-					debian: new Set([contract1.metadata.hash]),
-					fedora: new Set([contract2.metadata.hash]),
-				},
-			},
-			map: {
-				[contract1.metadata.hash]: contract1,
-				[contract2.metadata.hash]: contract2,
-			},
-		};
-
-		expect(build(container)).to.deep.equal({
+		expect(container.raw.children).to.deep.equal({
 			sw: {
 				os: {
 					debian: contract1.raw,
@@ -120,6 +80,23 @@ describe('build children tree', () => {
 				},
 			},
 		});
+
+		expect(container.getChildByHash(contract1.hash())).to.deep.equal(contract1);
+		expect(container.getChildByHash(contract2.hash())).to.deep.equal(contract2);
+		expect(container.getChildrenByType('sw.os')).to.have.deep.members([
+			contract1,
+			contract2,
+		]);
+		expect(
+			container.findChildren(
+				Contract.createMatcher({ type: 'sw.os', slug: 'debian' }),
+			),
+		).to.deep.equal([contract1]);
+		expect(
+			container.findChildren(
+				Contract.createMatcher({ type: 'sw.os', slug: 'fedora' }),
+			),
+		).to.deep.equal([contract2]);
 	});
 
 	it('should build a tree with two versions of the same slug', () => {
@@ -134,35 +111,31 @@ describe('build children tree', () => {
 		container.addChild(contract1);
 		container.addChild(contract2);
 
-		container.metadata.children = {
-			types: new Set(['sw.os']),
-			byType: {
-				'sw.os': new Set([contract1.metadata.hash, contract2.metadata.hash]),
-			},
-			byTypeSlug: {
-				'sw.os': {
-					debian: new Set([contract1.metadata.hash, contract2.metadata.hash]),
-				},
-			},
-			map: {
-				[contract1.metadata.hash]: contract1,
-				[contract2.metadata.hash]: contract2,
-			},
-		};
-
-		expect(build(container)).to.deep.equal({
+		expect(container.raw.children).to.deep.equal({
 			sw: {
 				os: {
 					debian: [contract1.raw, contract2.raw],
 				},
 			},
 		});
+
+		expect(container.getChildByHash(contract1.hash())).to.deep.equal(contract1);
+		expect(container.getChildByHash(contract2.hash())).to.deep.equal(contract2);
+		expect(container.getChildrenByType('sw.os')).to.have.deep.members([
+			contract1,
+			contract2,
+		]);
+		expect(
+			container.findChildren(
+				Contract.createMatcher({ type: 'sw.os', slug: 'debian' }),
+			),
+		).to.have.deep.members([contract1, contract2]);
 	});
 
 	it('should create a tree of two variants of the same contract', () => {
 		const contract1 = new Contract({
 			type: 'sw.os',
-			slug: 'Debian Wheezy',
+			slug: 'debian',
 			version: 'wheezy',
 			requires: [
 				{
@@ -174,7 +147,7 @@ describe('build children tree', () => {
 
 		const contract2 = new Contract({
 			type: 'sw.os',
-			slug: 'Debian Wheezy',
+			slug: 'debian',
 			version: 'wheezy',
 			requires: [
 				{
@@ -192,28 +165,24 @@ describe('build children tree', () => {
 		container.addChild(contract1);
 		container.addChild(contract2);
 
-		container.metadata.children = {
-			types: new Set(['sw.os']),
-			byType: {
-				'sw.os': new Set([contract1.metadata.hash, contract2.metadata.hash]),
-			},
-			byTypeSlug: {
-				'sw.os': {
-					debian: new Set([contract1.metadata.hash, contract2.metadata.hash]),
-				},
-			},
-			map: {
-				[contract1.metadata.hash]: contract1,
-				[contract2.metadata.hash]: contract2,
-			},
-		};
-
-		expect(build(container)).to.deep.equal({
+		expect(container.raw.children).to.deep.equal({
 			sw: {
 				os: {
 					debian: [contract1.raw, contract2.raw],
 				},
 			},
 		});
+
+		expect(container.getChildByHash(contract1.hash())).to.deep.equal(contract1);
+		expect(container.getChildByHash(contract2.hash())).to.deep.equal(contract2);
+		expect(container.getChildrenByType('sw.os')).to.have.deep.members([
+			contract1,
+			contract2,
+		]);
+		expect(
+			container.findChildren(
+				Contract.createMatcher({ type: 'sw.os', slug: 'debian' }),
+			),
+		).to.have.deep.members([contract1, contract2]);
 	});
 });

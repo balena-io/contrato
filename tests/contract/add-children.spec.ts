@@ -6,7 +6,6 @@
 
 import { expect } from '../chai';
 
-import MatcherCache from '../../lib/matcher-cache';
 import Contract from '../../lib/contract';
 import CONTRACTS from '../contracts.json';
 
@@ -20,22 +19,9 @@ describe('Contract addChildren', () => {
 
 		container.addChildren([contract1]);
 
-		expect(container.metadata.children).to.deep.equal({
-			typeMatchers: {},
-			searchCache: new MatcherCache(),
-			types: new Set(['sw.os']),
-			byType: {
-				'sw.os': new Set([contract1.metadata.hash]),
-			},
-			byTypeSlug: {
-				'sw.os': {
-					debian: new Set([contract1.metadata.hash]),
-				},
-			},
-			map: {
-				[contract1.metadata.hash]: contract1,
-			},
-		});
+		expect(container.getChildren()).to.deep.equal([contract1]);
+		expect(container.getChildrenTypes()).to.deep.equal(new Set(['sw.os']));
+		expect(container.getChildrenByType('sw.os')).to.deep.equal([contract1]);
 
 		expect(container.raw).to.deep.equal({
 			type: 'foo',
@@ -57,22 +43,9 @@ describe('Contract addChildren', () => {
 
 		container.addChildren([contract1, contract1, contract1]);
 
-		expect(container.metadata.children).to.deep.equal({
-			typeMatchers: {},
-			searchCache: new MatcherCache(),
-			types: new Set(['sw.os']),
-			byType: {
-				'sw.os': new Set([contract1.metadata.hash]),
-			},
-			byTypeSlug: {
-				'sw.os': {
-					debian: new Set([contract1.metadata.hash]),
-				},
-			},
-			map: {
-				[contract1.metadata.hash]: contract1,
-			},
-		});
+		expect(container.getChildren()).to.deep.equal([contract1]);
+		expect(container.getChildrenTypes()).to.deep.equal(new Set(['sw.os']));
+		expect(container.getChildrenByType('sw.os')).to.deep.equal([contract1]);
 
 		expect(container.raw).to.deep.equal({
 			type: 'foo',
@@ -96,23 +69,15 @@ describe('Contract addChildren', () => {
 
 		container.addChildren([contract1, contract2]);
 
-		expect(container.metadata.children).to.deep.equal({
-			typeMatchers: {},
-			searchCache: new MatcherCache(),
-			types: new Set(['sw.os']),
-			byType: {
-				'sw.os': new Set([contract1.metadata.hash, contract2.metadata.hash]),
-			},
-			byTypeSlug: {
-				'sw.os': {
-					debian: new Set([contract1.metadata.hash, contract2.metadata.hash]),
-				},
-			},
-			map: {
-				[contract1.metadata.hash]: contract1,
-				[contract2.metadata.hash]: contract2,
-			},
-		});
+		expect(container.getChildren()).to.have.deep.members([
+			contract1,
+			contract2,
+		]);
+		expect(container.getChildrenTypes()).to.deep.equal(new Set(['sw.os']));
+		expect(container.getChildrenByType('sw.os')).to.have.deep.members([
+			contract1,
+			contract2,
+		]);
 
 		expect(container.raw).to.deep.equal({
 			type: 'foo',
@@ -175,29 +140,17 @@ describe('Contract addChildren', () => {
 
 		container.addChildren([contract1, contract2, contract3]);
 
-		expect(container.metadata.children).to.deep.equal({
-			typeMatchers: {},
-			searchCache: new MatcherCache(),
-			types: new Set(['sw.os']),
-			byType: {
-				'sw.os': new Set([
-					contract1.metadata.hash,
-					contract2.metadata.hash,
-					contract3.metadata.hash,
-				]),
-			},
-			byTypeSlug: {
-				'sw.os': {
-					debian: new Set([contract1.metadata.hash, contract2.metadata.hash]),
-					fedora: new Set([contract3.metadata.hash]),
-				},
-			},
-			map: {
-				[contract1.metadata.hash]: contract1,
-				[contract2.metadata.hash]: contract2,
-				[contract3.metadata.hash]: contract3,
-			},
-		});
+		expect(container.getChildren()).to.have.deep.members([
+			contract1,
+			contract2,
+			contract3,
+		]);
+		expect(container.getChildrenTypes()).to.deep.equal(new Set(['sw.os']));
+		expect(container.getChildrenByType('sw.os')).to.have.deep.members([
+			contract1,
+			contract2,
+			contract3,
+		]);
 
 		expect(container.raw).to.deep.equal({
 			type: 'foo',
@@ -226,31 +179,19 @@ describe('Contract addChildren', () => {
 
 		container.addChildren([contract1, contract2, contract3, contract4]);
 
-		expect(container.metadata.children).to.deep.equal({
-			typeMatchers: {},
-			searchCache: new MatcherCache(),
-			types: new Set(['sw.os']),
-			byType: {
-				'sw.os': new Set([
-					contract1.metadata.hash,
-					contract2.metadata.hash,
-					contract3.metadata.hash,
-					contract4.metadata.hash,
-				]),
-			},
-			byTypeSlug: {
-				'sw.os': {
-					debian: new Set([contract1.metadata.hash, contract2.metadata.hash]),
-					fedora: new Set([contract3.metadata.hash, contract4.metadata.hash]),
-				},
-			},
-			map: {
-				[contract1.metadata.hash]: contract1,
-				[contract2.metadata.hash]: contract2,
-				[contract3.metadata.hash]: contract3,
-				[contract4.metadata.hash]: contract4,
-			},
-		});
+		expect(container.getChildren()).to.have.deep.members([
+			contract1,
+			contract2,
+			contract3,
+			contract4,
+		]);
+		expect(container.getChildrenTypes()).to.deep.equal(new Set(['sw.os']));
+		expect(container.getChildrenByType('sw.os')).to.have.deep.members([
+			contract1,
+			contract2,
+			contract3,
+			contract4,
+		]);
 
 		expect(container.raw).to.deep.equal({
 			type: 'foo',

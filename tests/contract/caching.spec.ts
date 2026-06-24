@@ -21,7 +21,7 @@ describe('Contract caching', () => {
 		});
 
 		container.addChildren([contract1, contract2]);
-		expect(container.metadata.children.searchCache).to.deep.equal(
+		expect(container.$metadata.children.searchCache).to.deep.equal(
 			new MatcherCache(),
 		);
 	});
@@ -47,7 +47,7 @@ describe('Contract caching', () => {
 		const cache = new MatcherCache();
 		cache.add(matcher, [contract1]);
 
-		expect(container.metadata.children.searchCache).to.deep.equal(cache);
+		expect(container.$metadata.children.searchCache).to.deep.equal(cache);
 	});
 
 	it('should be able to store multiple entries', () => {
@@ -78,7 +78,7 @@ describe('Contract caching', () => {
 		cache.add(matcher1, [contract1]);
 		cache.add(matcher2, [contract2]);
 
-		expect(container.metadata.children.searchCache).to.deep.equal(cache);
+		expect(container.$metadata.children.searchCache).to.deep.equal(cache);
 	});
 
 	it('should still store an entry if there were no results', () => {
@@ -102,7 +102,7 @@ describe('Contract caching', () => {
 		const cache = new MatcherCache();
 		cache.add(matcher, []);
 
-		expect(container.metadata.children.searchCache).to.deep.equal(cache);
+		expect(container.$metadata.children.searchCache).to.deep.equal(cache);
 	});
 
 	it('should honor a matcher over and over again', () => {
@@ -158,7 +158,7 @@ describe('Contract caching', () => {
 		const cache = new MatcherCache();
 		cache.add(matcher2, [contract3]);
 
-		expect(container.metadata.children.searchCache).to.deep.equal(cache);
+		expect(container.$metadata.children.searchCache).to.deep.equal(cache);
 	});
 
 	it('should clear the cache for a certain type if a contract is removed', () => {
@@ -198,7 +198,7 @@ describe('Contract caching', () => {
 		const cache = new MatcherCache();
 		cache.add(matcher2, [contract3]);
 
-		expect(container.metadata.children.searchCache).to.deep.equal(cache);
+		expect(container.$metadata.children.searchCache).to.deep.equal(cache);
 	});
 
 	it('should clear the cache for a certain type if the removed contract did not exist', () => {
@@ -224,6 +224,6 @@ describe('Contract caching', () => {
 		const cache = new MatcherCache();
 		cache.add(matcher1, [contract1]);
 
-		expect(container.metadata.children.searchCache).to.deep.equal(cache);
+		expect(container.$metadata.children.searchCache).to.deep.equal(cache);
 	});
 });

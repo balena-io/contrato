@@ -23,6 +23,30 @@ export interface Asset {
 	checksumType?: string;
 }
 
+/// A matcher that references contracts by type and optional additional criteria.
+///
+/// Used both as requirement targets (what a contract needs) and as capability
+/// declarations (what a contract provides). Per the CUE spec, additional matching
+/// criteria should be placed in `data`, not as top-level fields.
+export interface MatcherObject {
+	/** The contract type to match against. */
+	type: string;
+
+	/** Unique identifier of the contract within its type. */
+	slug?: string;
+
+	/** Version string: semver or a plain identifier (e.g. `wheezy`). */
+	version?: string;
+
+	/** Free-form data specific to the contract type. */
+	data?: any;
+}
+
+export type ContractRequirement =
+	| MatcherObject
+	| { or: MatcherObject[] }
+	| { not: MatcherObject[] };
+
 export type ChildrenTree = Record<string, unknown>;
 
 interface PartialContract {
@@ -48,7 +72,7 @@ interface PartialContract {
 	assets?: Record<string, Asset>;
 
 	/** Requirements that must be satisfied for this contract. */
-	requires?: Array<Record<string, unknown>>;
+	requires?: ContractRequirement[];
 
 	/** Capabilities this contract provides */
 	provides?: ContractCapability[];

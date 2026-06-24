@@ -20,7 +20,7 @@ import { isValid } from './json-schema';
 import ObjectSet from './object-set';
 import MatcherCache from './matcher-cache';
 import { hashObject } from './hash';
-import type { ContractObject } from './types';
+import type { ContractObject, MatcherObject } from './types';
 import { MATCHER } from './types';
 import { compileContract } from './template';
 import { build as buildVariants } from './variants';
@@ -161,54 +161,61 @@ export default class Contract {
 			compiled: new ObjectSet(),
 		};
 		/**
-		 * @summary Create and register a requirements matcher
+		 * @summary Register a leaf matcher so the contracts it references can
+		 * be resolved by type later on (see getReferencedContracts)
 		 * @function
 		 * @private
 		 *
-		 * @param {Object} data - matcher data
-		 * @returns {Object} matcher object
+		 * @param {Object} data - leaf matcher
 		 *
 		 * @example
-		 * const matcher = registerMatcher({
+		 * registerMatcher({
 		 *   type: 'arch.sw',
 		 *   slug: 'armv7hf'
 		 * })
 		 */
-		const registerMatcher = (data: any): any => {
+		const registerMatcher = (data: MatcherObject): void => {
 			const matcher = Contract.createMatcher(data);
 			this.$metadata.requirements.matchers[data.type] ??= new ObjectSet();
 			this.$metadata.requirements.matchers[data.type].add(matcher, {
 				id: matcher.hash(),
 			});
 			this.$metadata.requirements.types.add(data.type);
-			return matcher;
 		};
-		// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-		for (const conjunct of this.$raw.requires ||
-			([] as Array<Record<string, any>>)) {
-			if (conjunct.type) {
-				const matcher = registerMatcher(conjunct);
-				this.$metadata.requirements.compiled.add(matcher, {
-					id: matcher.hash(),
-				});
-				continue;
-			}
-			const operand = Object.keys(conjunct)[0];
-			if (operand) {
-				const matchers = new ObjectSet();
-				for (const disjunct of conjunct[operand]) {
-					const matcher = registerMatcher(disjunct);
-					matchers.add(matcher, {
-						id: matcher.hash(),
-					});
+
+		for (const conjunct of this.$raw.requires ?? []) {
+			// A bare matcher is a single requirement on a contract type, while
+			// an `or`/`not` operation wraps a list of sub-matchers.
+			let matcher: Contract;
+			let leaves: MatcherObject[];
+			if ('type' in conjunct) {
+				matcher = Contract.createMatcher(conjunct);
+				leaves = [conjunct];
+			} else {
+				if (!('or' in conjunct) && !('not' in conjunct)) {
+					throw new Error(
+						'expected requirement to be a contract matcher or a `or/not` operation, got',
+						conjunct,
+					);
 				}
-				const operationContract = Contract.createMatcher(matchers, {
-					operation: operand,
-				});
-				this.$metadata.requirements.compiled.add(operationContract, {
-					id: operationContract.hash(),
-				});
+
+				const [operation, disjuncts] =
+					'or' in conjunct
+						? (['or', conjunct.or] as const)
+						: (['not', conjunct.not] as const);
+				// Drop duplicate sub-matchers so an operation never carries the
+				// same requirement twice.
+				leaves = uniqWith(disjuncts, isEqual);
+				matcher = Contract.createMatcher(leaves, { operation });
 			}
+			// Register every leaf so the contracts it references stay
+			// discoverable by type.
+			for (const leaf of leaves) {
+				registerMatcher(leaf);
+			}
+			this.$metadata.requirements.compiled.add(matcher, {
+				id: matcher.hash(),
+			});
 		}
 	}
 	/**
@@ -1093,16 +1100,20 @@ export default class Contract {
 			// such transformation here, so we can then consider
 			// the disjunction as fulfilled if there are no
 			// remaining disjuncts.
-			const disjuncts = filter(requirement.$raw.data.getAll(), (disjunct) => {
-				return shouldEvaluateType(disjunct.$raw.data.type);
-			});
+			const disjuncts = filter(
+				requirement.$raw.data as MatcherObject[],
+				(disjunct) => shouldEvaluateType(disjunct.type),
+			);
 			// (3.2) An empty disjuction means that this particular
 			// requirement is fulfilled, so we can carry on.
 			// A disjunction naturally contains a list of further
 			// requirements we need to check for. If at least one
 			// of the members is fulfilled, we can proceed with
 			// next requirement.
-			if (disjuncts.length === 0 || disjuncts.some(hasMatch)) {
+			if (
+				disjuncts.length === 0 ||
+				disjuncts.some((disjunct) => hasMatch(Contract.createMatcher(disjunct)))
+			) {
 				return true;
 			}
 			// (3.3) If no members were fulfilled, then we know
@@ -1118,9 +1129,10 @@ export default class Contract {
 			// disjuncts is not empty, and we have at least one of
 			// them in the context.
 			if (
-				some(requirement.$raw.data.getAll(), (disjunct) => {
+				some(requirement.$raw.data as MatcherObject[], (disjunct) => {
 					return (
-						shouldEvaluateType(disjunct.$raw.data.type) && hasMatch(disjunct)
+						shouldEvaluateType(disjunct.type) &&
+						hasMatch(Contract.createMatcher(disjunct))
 					);
 				})
 			) {
@@ -1400,7 +1412,8 @@ export default class Contract {
 	 * @name module:contrato.Contract.createMatcher
 	 * @protected
 	 *
-	 * @param {(Object|Object[])} data - matcher data
+	 * @param {(Object|Object[])} obj - a single matcher, or the list of
+	 * sub-matchers when building an `or`/`not` operation
 	 * @param {Object} [options] - options
 	 * @param {String} [options.operation] - the matcher's operation
 	 * @returns {Object} matcher contract
@@ -1412,13 +1425,13 @@ export default class Contract {
 	 * })
 	 */
 	static createMatcher(
-		data: object | object[],
-		options: { operation?: string } = {},
+		obj: MatcherObject | MatcherObject[],
+		options: { operation?: 'or' | 'not' } = {},
 	): Matcher {
 		return new Matcher({
 			type: MATCHER,
 			operation: options.operation,
-			data,
+			data: obj,
 		});
 	}
 	/**

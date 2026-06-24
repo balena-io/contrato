@@ -243,16 +243,16 @@ describe('Contract requirements', () => {
 			types: new Set(['hw.device-type']),
 			compiled: createContractObjectSet([
 				Contract.createMatcher(
-					createContractObjectSet([
-						Contract.createMatcher({
+					[
+						{
 							type: 'hw.device-type',
 							slug: 'raspberry-pi',
-						}),
-						Contract.createMatcher({
+						},
+						{
 							slug: 'raspberry-pi2',
 							type: 'hw.device-type',
-						}),
-					]),
+						},
+					],
 					{
 						operation: 'or',
 					},
@@ -314,16 +314,12 @@ describe('Contract requirements', () => {
 			types: new Set(['hw.device-type']),
 			compiled: createContractObjectSet([
 				Contract.createMatcher(
-					createContractObjectSet([
-						Contract.createMatcher({
+					[
+						{
 							type: 'hw.device-type',
 							slug: 'raspberry-pi',
-						}),
-						Contract.createMatcher({
-							type: 'hw.device-type',
-							slug: 'raspberry-pi',
-						}),
-					]),
+						},
+					],
 					{
 						operation: 'or',
 					},

@@ -1428,6 +1428,25 @@ export default class Contract {
 		obj: MatcherObject | MatcherObject[],
 		options: { operation?: 'or' | 'not' } = {},
 	): Matcher {
+		// Reject matchers carrying anything other than these fields; further
+		// matching criteria belong under `data`.
+		const fields = new Set(['type', 'slug', 'version', 'data'] satisfies Array<
+			keyof MatcherObject
+		>);
+		for (const matcher of Array.isArray(obj) ? obj : [obj]) {
+			const unknownProp = Object.keys(matcher).find(
+				(key) => !fields.has(key as keyof MatcherObject),
+			);
+			if (unknownProp) {
+				throw new Error(
+					`unknown field \`${unknownProp}\`, expected one of ${Array.from(
+						fields,
+					)
+						.map((field) => `\`${field}\``)
+						.join(', ')}`,
+				);
+			}
+		}
 		return new Matcher({
 			type: MATCHER,
 			operation: options.operation,

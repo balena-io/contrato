@@ -52,4 +52,30 @@ describe('Contract createMatcher', () => {
 
 		expect(matcher.raw().operation).to.equal('or');
 	});
+
+	it('should reject a matcher with properties outside the allowed fields', () => {
+		expect(() =>
+			Contract.createMatcher({
+				type: 'arch.sw',
+				slug: 'armv7hf',
+				arch: 'armv7hf',
+			} as any),
+		).to.throw(
+			'unknown field `arch`, expected one of `type`, `slug`, `version`, `data`',
+		);
+	});
+
+	it('should reject a sub-matcher with properties outside the allowed fields', () => {
+		expect(() =>
+			Contract.createMatcher(
+				[
+					{ type: 'arch.sw', slug: 'armv7hf' },
+					{ type: 'arch.sw', arch: 'amd64' } as any,
+				],
+				{ operation: 'or' },
+			),
+		).to.throw(
+			'unknown field `arch`, expected one of `type`, `slug`, `version`, `data`',
+		);
+	});
 });

@@ -21,25 +21,6 @@ describe('Contract hash', () => {
 		);
 	});
 
-	it('should recompute the hash after an operation that changes the contract', () => {
-		const contract = new Contract({
-			type: 'arch.sw',
-			name: 'armv7hf',
-			slug: 'armv7hf',
-		});
-
-		expect(contract.hash()).to.equal(
-			'e3d3b7f2e5820db4b45975380a3f467bc2ff2999',
-		);
-
-		contract.raw.name = 'ARM v7';
-		contract.interpolate();
-
-		expect(contract.hash()).to.equal(
-			'3408d9c3746f9cc45e4c4d1b83b65d0239fbd346',
-		);
-	});
-
 	it('should produce different hashes for different contracts', () => {
 		const contract1 = new Contract({
 			type: 'arch.sw',

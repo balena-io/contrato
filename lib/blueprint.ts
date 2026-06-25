@@ -44,7 +44,7 @@ interface BlueprintMetadata extends ContractMetadata {
 }
 
 export default class Blueprint extends Contract {
-	declare raw: BlueprintObject;
+	declare protected $raw: BlueprintObject;
 	declare protected $metadata: BlueprintMetadata;
 
 	/**
@@ -86,7 +86,7 @@ export default class Blueprint extends Contract {
 		};
 
 		this.$metadata.layout = reduce(
-			this.raw.layout,
+			this.$raw.layout,
 			(accumulator, value, type) => {
 				const selector: BlueprintSelector = {
 					// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
@@ -166,7 +166,7 @@ export default class Blueprint extends Contract {
 			combinations,
 			(accumulator, element) => {
 				if (accumulator instanceof Contract) {
-					const prodContext = new Contract(this.raw.skeleton);
+					const prodContext = new Contract(this.$raw.skeleton);
 
 					prodContext.addChildren(element.concat(accumulator.getChildren()));
 
@@ -183,7 +183,7 @@ export default class Blueprint extends Contract {
 				}
 
 				// If the accumulator is an array of contracts
-				const context = new Contract(this.raw.skeleton);
+				const context = new Contract(this.$raw.skeleton);
 
 				return context.addChildren(accumulator.concat(element));
 			},

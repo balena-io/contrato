@@ -19,7 +19,9 @@ describe('Contract findChildren', () => {
 
 		container.addChild(contract1);
 
-		expect(container.findChildren({})).to.deep.equal([]);
+		expect(container.findChildren(Contract.createMatcher({}))).to.deep.equal(
+			[],
+		);
 	});
 
 	it('should find a specific unique contract based on its type and name', () => {

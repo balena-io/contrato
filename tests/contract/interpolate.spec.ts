@@ -9,34 +9,6 @@ import { expect } from '../chai';
 import Contract from '../../lib/contract';
 
 describe('Contract interpolate', () => {
-	it('should build missing templates', () => {
-		const contract = new Contract({
-			name: 'Debian {{this.data.codename}}',
-			slug: 'debian',
-			version: 'wheezy',
-			type: 'sw.os',
-			data: {
-				url: 'https://contracts.org/downloads/{{this.type}}/{{this.slug}}/{{this.version}}.tar.gz',
-			},
-		});
-
-		contract.raw.data.codename = 'Wheezy';
-		contract.interpolate();
-
-		expect(contract).to.deep.equal(
-			new Contract({
-				name: 'Debian Wheezy',
-				slug: 'debian',
-				version: 'wheezy',
-				type: 'sw.os',
-				data: {
-					codename: 'Wheezy',
-					url: 'https://contracts.org/downloads/sw.os/debian/wheezy.tar.gz',
-				},
-			}),
-		);
-	});
-
 	it('should return the contract instance', () => {
 		const contract = new Contract({
 			name: 'Debian {{this.data.codename}}',

@@ -7,7 +7,6 @@
 import reduce from 'lodash/reduce';
 
 import Contract from './contract';
-import type { ContractMetadata } from './contract';
 import type { Cardinality } from './cardinality';
 import { parse } from './cardinality';
 import type { BlueprintLayout, BlueprintObject } from './types';
@@ -32,20 +31,18 @@ interface BlueprintLayoutGroup {
 	types: Set<string>;
 }
 
-/** The parsed blueprint layout stored in contract metadata. */
+/** The parsed blueprint layout. */
 interface ParsedBlueprintLayout {
 	types: Set<string>;
 	finite: BlueprintLayoutGroup;
 	infinite: BlueprintLayoutGroup;
 }
 
-interface BlueprintMetadata extends ContractMetadata {
-	layout: ParsedBlueprintLayout;
-}
-
 export default class Blueprint extends Contract {
 	declare protected $raw: BlueprintObject;
-	declare protected $metadata: BlueprintMetadata;
+
+	/** The parsed blueprint layout. */
+	private $layout: ParsedBlueprintLayout;
 
 	/**
 	 * @summary A blueprint contract data structure
@@ -70,7 +67,6 @@ export default class Blueprint extends Contract {
 		super({
 			type: BLUEPRINT,
 			skeleton,
-			layout,
 		});
 
 		const initialLayout: ParsedBlueprintLayout = {
@@ -85,8 +81,8 @@ export default class Blueprint extends Contract {
 			},
 		};
 
-		this.$metadata.layout = reduce(
-			this.$raw.layout,
+		this.$layout = reduce(
+			layout,
 			(accumulator, value, type) => {
 				const selector: BlueprintSelector = {
 					// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
@@ -144,7 +140,7 @@ export default class Blueprint extends Contract {
 	 * }
 	 */
 	reproduce(contract: Contract): IterableIterator<Contract> {
-		const layout: ParsedBlueprintLayout = this.$metadata.layout;
+		const layout: ParsedBlueprintLayout = this.$layout;
 		const combinations = reduce(
 			layout.finite.selectors,
 			(accumulator: Contract[][][], value) => {

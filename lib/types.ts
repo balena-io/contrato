@@ -109,11 +109,11 @@ export interface ContractObject extends PartialContract {
 export type BlueprintLayout = Record<string, any>;
 
 /**
- * A blueprint contract: a contract of type `meta.blueprint` carrying a layout
- * and an optional skeleton.
+ * A blueprint contract: a contract of type `meta.blueprint` carrying a
+ * skeleton. The layout is parsed and kept separately, not on the raw object,
+ * since selectors may carry functions that cannot be structurally cloned.
  */
 export type BlueprintObject = ContractObject & {
 	type?: typeof BLUEPRINT;
-	layout?: BlueprintLayout;
 	skeleton: ContractObject;
 };

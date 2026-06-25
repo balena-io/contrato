@@ -42,7 +42,8 @@ describe('Blueprint constructor', () => {
 			'hw.device-type': 1,
 		});
 
-		expect(blueprint.$metadata.layout).to.deep.equal({
+		// @ts-expect-error reading private properties for testing purposes
+		expect(blueprint.$layout).to.deep.equal({
 			types: new Set(['hw.device-type']),
 			finite: {
 				selectors: {
@@ -70,7 +71,8 @@ describe('Blueprint constructor', () => {
 			'arch.sw': '1+',
 		});
 
-		expect(blueprint.$metadata.layout).to.deep.equal({
+		// @ts-expect-error reading private properties for testing purposes
+		expect(blueprint.$layout).to.deep.equal({
 			types: new Set(['hw.device-type', 'arch.sw']),
 			finite: {
 				selectors: {
@@ -114,7 +116,8 @@ describe('Blueprint constructor', () => {
 			},
 		});
 
-		expect(blueprint.$metadata.layout).to.deep.equal({
+		// @ts-expect-error reading private properties for testing purposes
+		expect(blueprint.$layout).to.deep.equal({
 			types: new Set(['hw.device-type', 'arch.sw']),
 			finite: {
 				selectors: {
@@ -143,6 +146,22 @@ describe('Blueprint constructor', () => {
 				types: new Set(['arch.sw']),
 			},
 		});
+	});
+
+	it('should keep the layout off the raw object so it can be cloned', () => {
+		const blueprint = new Blueprint({
+			'arch.sw': {
+				cardinality: '1+',
+				filter: _.identity,
+			},
+		});
+
+		// The raw accessor structurally clones the contract, which would throw
+		// if the layout (carrying a filter function) were stored on it.
+		expect(() => blueprint.raw).to.not.throw();
+
+		// @ts-expect-error reading private properties for testing purposes
+		expect(blueprint.raw.layout).to.be.undefined;
 	});
 
 	it('should allow passing a skeleton object', () => {

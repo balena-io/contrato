@@ -7,7 +7,6 @@
 import { expect } from '../chai';
 
 import Contract from '../../lib/contract';
-import { hashObject } from '../../lib/hash';
 import CONTRACTS from '../contracts.json';
 
 const SKELETON = {
@@ -226,24 +225,9 @@ it('should re-hash the universe', () => {
 
 	const container = new Contract(SKELETON);
 	container.addChildren([contract1, contract2, contract3]);
-	const oldHash = container.metadata.hash;
+	const oldHash = container.hash();
 	container.removeChild(contract3);
 
-	expect(container.metadata.hash).to.not.equal(oldHash);
-	expect(container.metadata.hash).to.equal(hashObject(container.raw));
-});
-
-it('should not re-hash the universe if the rehash option is false', () => {
-	const contract1 = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
-	const contract2 = new Contract(CONTRACTS['sw.os'].debian.jessie.object);
-	const contract3 = new Contract(CONTRACTS['sw.blob'].nodejs['4.8.0'].object);
-
-	const container = new Contract(SKELETON);
-	container.addChildren([contract1, contract2, contract3]);
-	const oldHash = container.metadata.hash;
-	container.removeChild(contract3, {
-		rehash: false,
-	});
-
-	expect(container.metadata.hash).to.equal(oldHash);
+	expect(container.hash()).to.not.equal(oldHash);
+	expect(container.hash()).to.equal(new Contract(container.raw).hash());
 });

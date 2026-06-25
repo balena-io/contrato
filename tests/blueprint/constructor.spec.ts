@@ -29,12 +29,12 @@ describe('Blueprint constructor', () => {
 		expect(blueprint.raw.type).to.equal('meta.blueprint');
 	});
 
-	it('should be a hashed contract', () => {
+	it('should be a hashable contract', () => {
 		const blueprint = new Blueprint({
 			'hw.device-type': 1,
 		});
 
-		expect(typeof blueprint.metadata.hash).to.equal('string');
+		expect(typeof blueprint.hash()).to.equal('string');
 	});
 
 	it('should parse a layout with one number selector', () => {

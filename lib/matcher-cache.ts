@@ -24,7 +24,7 @@ import type Contract from './contract';
  */
 const getMatcherCachePath = (matcher: Contract): string[] => [
 	matcher.raw.data.type,
-	matcher.metadata.hash,
+	matcher.hash(),
 ];
 
 /**

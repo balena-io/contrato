@@ -37,38 +37,6 @@ describe('Contract interpolate', () => {
 		);
 	});
 
-	it('should not rehash the contract if the rehash option is set to false', () => {
-		const contract = new Contract({
-			name: 'Debian {{this.data.codename}}',
-			slug: 'debian',
-			version: 'wheezy',
-			type: 'sw.os',
-			data: {
-				url: 'https://contracts.org/downloads/{{this.type}}/{{this.slug}}/{{this.version}}.tar.gz',
-			},
-		});
-
-		const hash = contract.metadata.hash;
-
-		contract.raw.data.codename = 'Wheezy';
-		contract.interpolate({
-			rehash: false,
-		});
-
-		expect(contract.raw).to.deep.equal({
-			name: 'Debian Wheezy',
-			slug: 'debian',
-			version: 'wheezy',
-			type: 'sw.os',
-			data: {
-				codename: 'Wheezy',
-				url: 'https://contracts.org/downloads/sw.os/debian/wheezy.tar.gz',
-			},
-		});
-
-		expect(contract.metadata.hash).to.equal(hash);
-	});
-
 	it('should return the contract instance', () => {
 		const contract = new Contract({
 			name: 'Debian {{this.data.codename}}',

@@ -14,7 +14,7 @@ const createContractObjectSet = (contracts: Contract[]) => {
 
 	for (const contract of contracts) {
 		set.add(contract, {
-			id: contract.metadata.hash,
+			id: contract.hash(),
 		});
 	}
 

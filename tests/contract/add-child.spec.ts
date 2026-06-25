@@ -290,23 +290,8 @@ describe('Contract addChild', () => {
 			slug: 'bar',
 		});
 
-		const hash = container.metadata.hash;
+		const hash = container.hash();
 		container.addChild(contract1);
-		expect(container.metadata.hash).to.not.equal(hash);
-	});
-
-	it('should not re-hash the parent contract if the rehash option is false', () => {
-		const contract1 = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
-		const container = new Contract({
-			type: 'foo',
-			slug: 'bar',
-		});
-
-		const hash = container.metadata.hash;
-		container.addChild(contract1, {
-			rehash: false,
-		});
-
-		expect(container.metadata.hash).to.equal(hash);
+		expect(container.hash()).to.not.equal(hash);
 	});
 });

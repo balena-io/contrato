@@ -160,13 +160,9 @@ export default class Blueprint extends Contract {
 			combinations,
 			(accumulator, element) => {
 				if (accumulator instanceof Contract) {
-					const prodContext = new Contract(this.raw.skeleton, {
-						hash: false,
-					});
+					const prodContext = new Contract(this.raw.skeleton);
 
-					prodContext.addChildren(element.concat(accumulator.getChildren()), {
-						rehash: false,
-					});
+					prodContext.addChildren(element.concat(accumulator.getChildren()));
 
 					// TODO: Make sure this is cached
 					if (
@@ -181,13 +177,9 @@ export default class Blueprint extends Contract {
 				}
 
 				// If the accumulator is an array of contracts
-				const context = new Contract(this.raw.skeleton, {
-					hash: false,
-				});
+				const context = new Contract(this.raw.skeleton);
 
-				return context.addChildren(accumulator.concat(element), {
-					rehash: false,
-				});
+				return context.addChildren(accumulator.concat(element));
 			},
 			[[]],
 		);
@@ -205,9 +197,7 @@ export default class Blueprint extends Contract {
 						})
 					: references;
 
-			context.addChildren(contracts, {
-				rehash: false,
-			});
+			context.addChildren(contracts);
 
 			for (const reference of contracts) {
 				if (
@@ -215,9 +205,7 @@ export default class Blueprint extends Contract {
 						types: layout.types,
 					})
 				) {
-					context.removeChild(reference, {
-						rehash: false,
-					});
+					context.removeChild(reference);
 				}
 			}
 

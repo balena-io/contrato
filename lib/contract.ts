@@ -61,8 +61,6 @@ export default class Contract {
 	 * @public
 	 *
 	 * @param {ContractObject} object - the contract plain object
-	 * @param {Object} [options] - options
-	 * @param {Boolean} [options.hash=true] - whether to hash the contract
 	 *
 	 * @example
 	 * const contract = new Contract({
@@ -71,7 +69,7 @@ export default class Contract {
 	 *   slug: 'armv7hf'
 	 * })
 	 */
-	constructor(object: ContractObject, options: { hash?: boolean } = {}) {
+	constructor(object: ContractObject) {
 		this.raw = object;
 		this.metadata = {
 			children: {
@@ -88,28 +86,42 @@ export default class Contract {
 				compiled: new ObjectSet(),
 			},
 		};
+
+		// The hash is a lazy computed property, we don't want it to be used when
+		// comparing contracts so we declare it non-enumerable
+		Object.defineProperty(this.metadata, 'hash', {
+			value: undefined,
+			writable: true,
+			enumerable: false,
+			configurable: true,
+		});
+
 		for (const source of getAll(this.raw.children)) {
 			this.addChild(new Contract(source));
 		}
-		this.interpolate({
-			rehash: false,
-		});
-		if (options.hash ?? true) {
-			this.hash();
-		}
+		this.interpolate();
 	}
 	/**
-	 * @summary Re-hash the contract
+	 * @summary Get the contract hash, computing it lazily if necessary
 	 * @function
 	 * @name module:contrato.Contract#hash
 	 * @protected
 	 *
+	 * @description
+	 * The hash is computed from the contract's raw object the first time
+	 * it is requested, and cached afterwards. Operations that mutate the
+	 * contract invalidate the cached hash, so it is recomputed on the next
+	 * call.
+	 *
+	 * @returns {String} the contract hash
+	 *
 	 * @example
 	 * const contract = new Contract({ ... })
-	 * contract.hash()
+	 * console.log(contract.hash())
 	 */
-	hash() {
-		this.metadata.hash = hashObject(this.raw);
+	hash(): string {
+		this.metadata.hash ??= hashObject(this.raw);
+		return this.metadata.hash;
 	}
 	/**
 	 * @summary Re-build the contract's internal data structures
@@ -122,6 +134,9 @@ export default class Contract {
 	 * contract.rebuild()
 	 */
 	private rebuild() {
+		// Mutating the contract's raw object invalidates the cached hash,
+		// which will be recomputed lazily on the next `hash()` call.
+		this.metadata.hash = undefined;
 		const tree = buildChildrenTree(this);
 		if (Object.keys(tree).length > 0) {
 			this.raw.children = tree;
@@ -149,7 +164,7 @@ export default class Contract {
 			const matcher = Contract.createMatcher(data);
 			this.metadata.requirements.matchers[data.type] ??= new ObjectSet();
 			this.metadata.requirements.matchers[data.type].add(matcher, {
-				id: matcher.metadata.hash,
+				id: matcher.hash(),
 			});
 			this.metadata.requirements.types.add(data.type);
 			return matcher;
@@ -160,7 +175,7 @@ export default class Contract {
 			if (conjunct.type) {
 				const matcher = registerMatcher(conjunct);
 				this.metadata.requirements.compiled.add(matcher, {
-					id: matcher.metadata.hash,
+					id: matcher.hash(),
 				});
 				continue;
 			}
@@ -170,14 +185,14 @@ export default class Contract {
 				for (const disjunct of conjunct[operand]) {
 					const matcher = registerMatcher(disjunct);
 					matchers.add(matcher, {
-						id: matcher.metadata.hash,
+						id: matcher.hash(),
 					});
 				}
 				const operationContract = Contract.createMatcher(matchers, {
 					operation: operand,
 				});
 				this.metadata.requirements.compiled.add(operationContract, {
-					id: operationContract.metadata.hash,
+					id: operationContract.hash(),
 				});
 			}
 		}
@@ -188,15 +203,13 @@ export default class Contract {
 	 * @name module:contrato.Contract#interpolate
 	 * @protected
 	 *
-	 * @param {Object} [options] - options
-	 * @param {Boolean} [options.rehash=true] - whether to re-hash the contract
 	 * @returns {Object} contract instance
 	 *
 	 * @example
 	 * const contract = new Contract({ ... })
 	 * contract.interpolate()
 	 */
-	interpolate(options: { rehash?: boolean } = {}): this {
+	interpolate(): this {
 		// TODO: Find a way to keep track of whether the contract
 		// has already been fully templated, and if so, avoid
 		// running this function.
@@ -207,9 +220,6 @@ export default class Contract {
 			blacklist: new Set(['children']),
 		});
 		this.rebuild();
-		if (options.rehash ?? true) {
-			this.hash();
-		}
 		return this;
 	}
 	/**
@@ -393,7 +403,6 @@ export default class Contract {
 	 *
 	 * @param {Object} contract - contract
 	 * @param {Object} [options] - options
-	 * @param {Boolean} [options.rehash=true] - whether to re-hash the parent contract
 	 * @param {Boolean} [options.rebuild=true] - whether to re-build the parent contract
 	 * @returns {Object} contract
 	 *
@@ -401,12 +410,9 @@ export default class Contract {
 	 * const contract = new Contract({ ... })
 	 * contract.addChild(new Contract({ ... }))
 	 */
-	addChild(
-		contract: Contract,
-		options: { rehash?: boolean; rebuild?: boolean } = {},
-	): this {
+	addChild(contract: Contract, options: { rebuild?: boolean } = {}): this {
 		const type = contract.getType();
-		const childHash = contract.metadata.hash!;
+		const childHash = contract.hash();
 		if (this.metadata.children.map[childHash]) {
 			return this;
 		}
@@ -425,9 +431,6 @@ export default class Contract {
 		if (options.rebuild ?? true) {
 			this.rebuild();
 		}
-		if (options.rehash ?? true) {
-			this.hash();
-		}
 		return this;
 	}
 	/**
@@ -437,8 +440,6 @@ export default class Contract {
 	 * @public
 	 *
 	 * @param {Object} contract - contract
-	 * @param {Object} [options] - options
-	 * @param {Boolean} [options.rehash=true] - whether to rehash the contract
 	 * @returns {Object} parent contract
 	 *
 	 * @example
@@ -448,9 +449,9 @@ export default class Contract {
 	 * contract.addChild(child)
 	 * contract.removeChild(child)
 	 */
-	removeChild(contract: Contract, options: { rehash?: boolean } = {}): this {
+	removeChild(contract: Contract): this {
 		const type = contract.getType();
-		const childHash = contract.metadata.hash!;
+		const childHash = contract.hash();
 		if (!this.raw.children || !this.metadata.children.map[childHash]) {
 			return this;
 		}
@@ -471,9 +472,6 @@ export default class Contract {
 		}
 		this.metadata.children.searchCache.resetType(contract.getType());
 		this.rebuild();
-		if (options.rehash ?? true) {
-			this.hash();
-		}
 		return this;
 	}
 	/**
@@ -486,8 +484,6 @@ export default class Contract {
 	 * This is a utility method over `.addChild()`.
 	 *
 	 * @param {Object[]} contracts - contracts
-	 * @param {Object} [options] - options
-	 * @param {Boolean} [options.rehash=true] - whether to rehash the contract
 	 * @returns {Object} contract
 	 *
 	 * @example
@@ -498,10 +494,7 @@ export default class Contract {
 	 *   new Contract({ ... })
 	 * ])
 	 */
-	addChildren(
-		contracts: Contract[] = [],
-		options: { rehash?: boolean } = {},
-	): this {
+	addChildren(contracts: Contract[] = []): this {
 		if (!contracts) {
 			return this;
 		}
@@ -512,14 +505,10 @@ export default class Contract {
 				// N is the number of contracts passed to this function.
 				// Intead, we can prevent re-building and only do it
 				// once when the function completes.
-				rehash: false,
 				rebuild: false,
 			});
 		}
 		this.rebuild();
-		if (options.rehash ?? true) {
-			this.hash();
-		}
 		return this;
 	}
 	/**
@@ -1439,10 +1428,7 @@ export default class Contract {
 	 * }
 	 */
 	static isEqual(contract1: Contract, contract2: Contract): boolean {
-		if (contract1.metadata.hash && contract2.metadata.hash) {
-			return contract1.metadata.hash === contract2.metadata.hash;
-		}
-		return isEqual(contract1.raw, contract2.raw);
+		return contract1 === contract2 || contract1.hash() === contract2.hash();
 	}
 	/**
 	 * @summary Build a source contract

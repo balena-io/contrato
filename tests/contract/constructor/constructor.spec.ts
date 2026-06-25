@@ -19,7 +19,6 @@ describe('Contract constructor', () => {
 		});
 
 		expect(contract.metadata).to.deep.equal({
-			hash: 'e3d3b7f2e5820db4b45975380a3f467bc2ff2999',
 			children: {
 				typeMatchers: {},
 				searchCache: new MatcherCache(),

@@ -20,12 +20,12 @@ describe('Contract addChild', () => {
 		container.addChild(contract1);
 
 		expect(container.getChildren()).to.have.lengthOf(1);
-		expect(container.raw).to.deep.equal({
+		expect(container.raw()).to.deep.equal({
 			type: 'foo',
 			slug: 'bar',
 			children: {
 				sw: {
-					os: contract1.raw,
+					os: contract1.raw(),
 				},
 			},
 		});
@@ -53,13 +53,13 @@ describe('Contract addChild', () => {
 		expect(container.getChildrenByType('sw.os')).to.deep.equal([contract1]);
 		expect(container.getChildrenByType('sw.blob')).to.deep.equal([contract2]);
 
-		expect(container.raw).to.deep.equal({
+		expect(container.raw()).to.deep.equal({
 			type: 'foo',
 			slug: 'bar',
 			children: {
 				sw: {
-					os: contract1.raw,
-					blob: contract2.raw,
+					os: contract1.raw(),
+					blob: contract2.raw(),
 				},
 			},
 		});
@@ -78,12 +78,12 @@ describe('Contract addChild', () => {
 		expect(container.getChildrenTypes()).to.deep.equal(new Set(['sw.os']));
 		expect(container.getChildrenByType('sw.os')).to.deep.equal([contract1]);
 
-		expect(container.raw).to.deep.equal({
+		expect(container.raw()).to.deep.equal({
 			type: 'foo',
 			slug: 'bar',
 			children: {
 				sw: {
-					os: contract1.raw,
+					os: contract1.raw(),
 				},
 			},
 		});
@@ -111,14 +111,14 @@ describe('Contract addChild', () => {
 			contract2,
 		]);
 
-		expect(container.raw).to.deep.equal({
+		expect(container.raw()).to.deep.equal({
 			type: 'foo',
 			slug: 'bar',
 			children: {
 				sw: {
 					os: {
-						debian: contract1.raw,
-						fedora: contract2.raw,
+						debian: contract1.raw(),
+						fedora: contract2.raw(),
 					},
 				},
 			},
@@ -147,13 +147,13 @@ describe('Contract addChild', () => {
 			contract2,
 		]);
 
-		expect(container.raw).to.deep.equal({
+		expect(container.raw()).to.deep.equal({
 			type: 'foo',
 			slug: 'bar',
 			children: {
 				sw: {
 					os: {
-						debian: [contract1.raw, contract2.raw],
+						debian: [contract1.raw(), contract2.raw()],
 					},
 				},
 			},
@@ -186,13 +186,13 @@ describe('Contract addChild', () => {
 			contract3,
 		]);
 
-		expect(container.raw).to.deep.equal({
+		expect(container.raw()).to.deep.equal({
 			type: 'foo',
 			slug: 'bar',
 			children: {
 				sw: {
 					os: {
-						debian: [contract1.raw, contract2.raw, contract3.raw],
+						debian: [contract1.raw(), contract2.raw(), contract3.raw()],
 					},
 				},
 			},

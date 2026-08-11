@@ -20,9 +20,9 @@ describe('build children tree', () => {
 		const contract1 = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
 		container.addChild(contract1);
 
-		expect(container.raw.children).to.deep.equal({
+		expect(container.raw().children).to.deep.equal({
 			sw: {
-				os: contract1.raw,
+				os: contract1.raw(),
 			},
 		});
 
@@ -47,10 +47,10 @@ describe('build children tree', () => {
 		container.addChild(contract1);
 		container.addChild(contract2);
 
-		expect(container.raw.children).to.deep.equal({
+		expect(container.raw().children).to.deep.equal({
 			sw: {
-				os: contract1.raw,
-				blob: contract2.raw,
+				os: contract1.raw(),
+				blob: contract2.raw(),
 			},
 		});
 
@@ -72,11 +72,11 @@ describe('build children tree', () => {
 		container.addChild(contract1);
 		container.addChild(contract2);
 
-		expect(container.raw.children).to.deep.equal({
+		expect(container.raw().children).to.deep.equal({
 			sw: {
 				os: {
-					debian: contract1.raw,
-					fedora: contract2.raw,
+					debian: contract1.raw(),
+					fedora: contract2.raw(),
 				},
 			},
 		});
@@ -111,10 +111,10 @@ describe('build children tree', () => {
 		container.addChild(contract1);
 		container.addChild(contract2);
 
-		expect(container.raw.children).to.deep.equal({
+		expect(container.raw().children).to.deep.equal({
 			sw: {
 				os: {
-					debian: [contract1.raw, contract2.raw],
+					debian: [contract1.raw(), contract2.raw()],
 				},
 			},
 		});
@@ -165,10 +165,10 @@ describe('build children tree', () => {
 		container.addChild(contract1);
 		container.addChild(contract2);
 
-		expect(container.raw.children).to.deep.equal({
+		expect(container.raw().children).to.deep.equal({
 			sw: {
 				os: {
-					debian: [contract1.raw, contract2.raw],
+					debian: [contract1.raw(), contract2.raw()],
 				},
 			},
 		});

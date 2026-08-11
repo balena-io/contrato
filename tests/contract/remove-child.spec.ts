@@ -236,5 +236,5 @@ it('should re-hash the universe', () => {
 	container.removeChild(contract3);
 
 	expect(container.hash()).to.not.equal(oldHash);
-	expect(container.hash()).to.equal(new Contract(container.raw).hash());
+	expect(container.hash()).to.equal(new Contract(container.raw()).hash());
 });

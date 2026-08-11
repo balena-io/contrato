@@ -17,7 +17,7 @@ describe('Contract templates', () => {
 			slug: 'armv7hf',
 		});
 
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'arch.sw',
 			version: '7',
 			name: 'ARM v7',
@@ -32,7 +32,7 @@ describe('Contract templates', () => {
 			slug: 'armv7hf',
 		});
 
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'arch.sw',
 			name: '{{this.displayName}}',
 			slug: 'armv7hf',

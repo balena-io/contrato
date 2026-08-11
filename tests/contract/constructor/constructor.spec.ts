@@ -16,7 +16,7 @@ describe('Contract constructor', () => {
 			slug: 'armv7hf',
 		});
 
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'arch.sw',
 			name: 'armv7hf',
 			slug: 'armv7hf',

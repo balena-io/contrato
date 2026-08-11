@@ -68,9 +68,9 @@ export default class Contract {
 	 *
 	 * @example
 	 * const contract = new Contract({ ... })
-	 * console.log(contract.raw)
+	 * console.log(contract.raw())
 	 */
-	get raw(): ContractObject {
+	public raw(): ContractObject {
 		return structuredClone(this.$raw);
 	}
 

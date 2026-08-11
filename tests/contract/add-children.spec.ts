@@ -23,12 +23,12 @@ describe('Contract addChildren', () => {
 		expect(container.getChildrenTypes()).to.deep.equal(new Set(['sw.os']));
 		expect(container.getChildrenByType('sw.os')).to.deep.equal([contract1]);
 
-		expect(container.raw).to.deep.equal({
+		expect(container.raw()).to.deep.equal({
 			type: 'foo',
 			slug: 'bar',
 			children: {
 				sw: {
-					os: contract1.raw,
+					os: contract1.raw(),
 				},
 			},
 		});
@@ -47,12 +47,12 @@ describe('Contract addChildren', () => {
 		expect(container.getChildrenTypes()).to.deep.equal(new Set(['sw.os']));
 		expect(container.getChildrenByType('sw.os')).to.deep.equal([contract1]);
 
-		expect(container.raw).to.deep.equal({
+		expect(container.raw()).to.deep.equal({
 			type: 'foo',
 			slug: 'bar',
 			children: {
 				sw: {
-					os: contract1.raw,
+					os: contract1.raw(),
 				},
 			},
 		});
@@ -79,13 +79,13 @@ describe('Contract addChildren', () => {
 			contract2,
 		]);
 
-		expect(container.raw).to.deep.equal({
+		expect(container.raw()).to.deep.equal({
 			type: 'foo',
 			slug: 'bar',
 			children: {
 				sw: {
 					os: {
-						debian: [contract1.raw, contract2.raw],
+						debian: [contract1.raw(), contract2.raw()],
 					},
 				},
 			},
@@ -152,14 +152,14 @@ describe('Contract addChildren', () => {
 			contract3,
 		]);
 
-		expect(container.raw).to.deep.equal({
+		expect(container.raw()).to.deep.equal({
 			type: 'foo',
 			slug: 'bar',
 			children: {
 				sw: {
 					os: {
-						debian: [contract1.raw, contract2.raw],
-						fedora: contract3.raw,
+						debian: [contract1.raw(), contract2.raw()],
+						fedora: contract3.raw(),
 					},
 				},
 			},
@@ -193,14 +193,14 @@ describe('Contract addChildren', () => {
 			contract4,
 		]);
 
-		expect(container.raw).to.deep.equal({
+		expect(container.raw()).to.deep.equal({
 			type: 'foo',
 			slug: 'bar',
 			children: {
 				sw: {
 					os: {
-						debian: [contract1.raw, contract2.raw],
-						fedora: [contract3.raw, contract4.raw],
+						debian: [contract1.raw(), contract2.raw()],
+						fedora: [contract3.raw(), contract4.raw()],
 					},
 				},
 			},

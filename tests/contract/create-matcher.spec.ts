@@ -24,7 +24,7 @@ describe('Contract createMatcher', () => {
 			slug: 'armv7hf',
 		});
 
-		expect(matcher.raw.data).to.deep.equal({
+		expect(matcher.raw().data).to.deep.equal({
 			type: 'arch.sw',
 			slug: 'armv7hf',
 		});
@@ -50,6 +50,6 @@ describe('Contract createMatcher', () => {
 			},
 		);
 
-		expect(matcher.raw.operation).to.equal('or');
+		expect(matcher.raw().operation).to.equal('or');
 	});
 });

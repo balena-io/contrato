@@ -38,7 +38,7 @@ describe('Contract interpolate', () => {
 			},
 		});
 
-		expect(contract.interpolate().raw).to.deep.equal({
+		expect(contract.interpolate().raw()).to.deep.equal({
 			slug: 'debian',
 			version: 'wheezy',
 			type: 'sw.os',

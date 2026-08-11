@@ -36,7 +36,7 @@ describe('Contract requirements', () => {
 			compiled: new ObjectSet(),
 		});
 
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'arch.sw',
 			name: 'armv7hf',
 			slug: 'armv7hf',
@@ -75,7 +75,7 @@ describe('Contract requirements', () => {
 			]),
 		});
 
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'arch.sw',
 			name: 'armv7hf',
 			slug: 'armv7hf',
@@ -127,7 +127,7 @@ describe('Contract requirements', () => {
 			]),
 		});
 
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'arch.sw',
 			name: 'armv7hf',
 			slug: 'armv7hf',
@@ -189,7 +189,7 @@ describe('Contract requirements', () => {
 			]),
 		});
 
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'sw.os',
 			name: 'Debian',
 			slug: 'debian',
@@ -260,7 +260,7 @@ describe('Contract requirements', () => {
 			]),
 		});
 
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'arch.sw',
 			name: 'armv7hf',
 			slug: 'armv7hf',
@@ -331,7 +331,7 @@ describe('Contract requirements', () => {
 			]),
 		});
 
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'arch.sw',
 			name: 'armv7hf',
 			slug: 'armv7hf',

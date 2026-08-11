@@ -26,7 +26,7 @@ describe('Blueprint constructor', () => {
 			'hw.device-type': 1,
 		});
 
-		expect(blueprint.raw.type).to.equal('meta.blueprint');
+		expect(blueprint.raw().type).to.equal('meta.blueprint');
 	});
 
 	it('should be a hashable contract', () => {
@@ -156,7 +156,7 @@ describe('Blueprint constructor', () => {
 			},
 		);
 
-		expect(blueprint.raw.skeleton).to.deep.equal({
+		expect(blueprint.raw().skeleton).to.deep.equal({
 			type: 'sw.os-image',
 			name: 'Generic OS Image',
 		});

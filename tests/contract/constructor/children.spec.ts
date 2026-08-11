@@ -24,7 +24,7 @@ describe('Contract children', () => {
 			},
 		});
 
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'misc.collection',
 			slug: 'my-collection',
 			children: {
@@ -38,7 +38,7 @@ describe('Contract children', () => {
 			},
 		});
 
-		expect(new Contract(contract.raw)).to.deep.equal(contract);
+		expect(new Contract(contract.raw())).to.deep.equal(contract);
 
 		const child = new Contract({
 			type: 'arch.sw',
@@ -77,7 +77,7 @@ describe('Contract children', () => {
 			},
 		});
 
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'misc.collection',
 			slug: 'my-collection',
 			children: {
@@ -98,7 +98,7 @@ describe('Contract children', () => {
 			},
 		});
 
-		expect(new Contract(contract.raw)).to.deep.equal(contract);
+		expect(new Contract(contract.raw())).to.deep.equal(contract);
 
 		const armv7hf = new Contract({
 			type: 'arch.sw',
@@ -155,7 +155,7 @@ describe('Contract children', () => {
 			},
 		});
 
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'misc.collection',
 			slug: 'my-collection',
 			children: {
@@ -180,7 +180,7 @@ describe('Contract children', () => {
 			},
 		});
 
-		expect(new Contract(contract.raw)).to.deep.equal(contract);
+		expect(new Contract(contract.raw())).to.deep.equal(contract);
 
 		const wheezy = new Contract({
 			type: 'sw.distro',
@@ -231,7 +231,7 @@ describe('Contract children', () => {
 			},
 		});
 
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'misc.collection',
 			slug: 'my-collection',
 			children: {
@@ -253,7 +253,7 @@ describe('Contract children', () => {
 			},
 		});
 
-		expect(new Contract(contract.raw)).to.deep.equal(contract);
+		expect(new Contract(contract.raw())).to.deep.equal(contract);
 
 		const arch = new Contract({
 			type: 'arch.sw',

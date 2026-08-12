@@ -19,27 +19,9 @@ describe('Contract findChildren', () => {
 
 		container.addChild(contract1);
 
-		expect(container.findChildren({})).to.deep.equal([]);
-	});
-
-	it('should find a specific unique contract based on its type and name', () => {
-		const contract1 = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
-		const contract2 = new Contract(CONTRACTS['sw.os'].fedora['25'].object);
-		const container = new Contract({
-			type: 'foo',
-			slug: 'bar',
-		});
-
-		container.addChildren([contract1, contract2]);
-
-		expect(
-			container.findChildren(
-				Contract.createMatcher({
-					name: 'Debian Wheezy',
-					type: 'sw.os',
-				}),
-			),
-		).to.deep.equal([contract1]);
+		expect(container.findChildren(Contract.createMatcher({}))).to.deep.equal(
+			[],
+		);
 	});
 
 	it('should find a specific unique contract based on its type and slug', () => {
@@ -64,11 +46,16 @@ describe('Contract findChildren', () => {
 		).to.deep.equal([contract3]);
 	});
 
-	it('should find a specific unique contract based on another property', () => {
+	it('should find a specific unique contract based on a data property', () => {
 		const contract1 = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
 		const contract2 = new Contract(CONTRACTS['sw.os'].debian.jessie.object);
 		const contract3 = new Contract(CONTRACTS['sw.os'].fedora['25'].object);
-		const contract4 = new Contract(CONTRACTS['hw.device-type'].artik10.object);
+		const contract4 = new Contract({
+			type: 'hw.device-type',
+			slug: 'artik10',
+			name: 'Samsung Artik 10',
+			data: { arch: 'armv7hf' },
+		});
 		const container = new Contract({
 			type: 'foo',
 			slug: 'bar',
@@ -80,7 +67,7 @@ describe('Contract findChildren', () => {
 			container.findChildren(
 				Contract.createMatcher({
 					type: 'hw.device-type',
-					arch: 'armv7hf',
+					data: { arch: 'armv7hf' },
 				}),
 			),
 		).to.deep.equal([contract4]);

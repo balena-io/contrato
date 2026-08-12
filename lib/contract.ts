@@ -20,12 +20,11 @@ import { isValid } from './json-schema';
 import ObjectSet from './object-set';
 import MatcherCache from './matcher-cache';
 import { hashObject } from './hash';
-import type { ContractObject } from './types';
+import type { ContractObject, MatcherObject } from './types';
 import { MATCHER } from './types';
 import { compileContract } from './template';
 import { build as buildVariants } from './variants';
-import { build as buildChildrentree } from './children-tree';
-import { getAll } from './children-tree';
+import { getAll, build as buildChildrenTree } from './children-tree';
 import { areSetsDisjoint } from './utils';
 
 interface ContractChildrenMetadata {
@@ -34,7 +33,7 @@ interface ContractChildrenMetadata {
 	map: Record<string, Contract>;
 	byType: Record<string, Set<string>>;
 	byTypeSlug: Record<string, Record<string, Set<string>>>;
-	typeMatchers: Record<string, Contract>;
+	typeMatchers: Record<string, Matcher>;
 }
 
 interface ContractRequirementsMetadata {
@@ -43,16 +42,38 @@ interface ContractRequirementsMetadata {
 	compiled: ObjectSet<Contract>;
 }
 
-interface ContractMetadata {
-	hash?: string;
+export interface ContractMetadata {
 	children: ContractChildrenMetadata;
 	requirements: ContractRequirementsMetadata;
-	[key: string]: any;
 }
 
 export default class Contract {
-	metadata: ContractMetadata;
-	raw: ContractObject;
+	// Internal data about contract children and requirements
+	protected $metadata: ContractMetadata;
+
+	// The hash is lazily computed on the first `hash()` call and cached here.
+	// It is a  native private field so it is not used when comparing contracts
+	#hash: string | undefined;
+
+	// The internal raw contract
+	protected $raw: ContractObject;
+
+	/**
+	 * @summary Get a deep copy of the raw serializable contract
+	 * @function
+	 * @name module:contrato.Contract#raw
+	 * @public
+	 *
+	 * @returns {ContractObject} a structural clone of the internal raw contract
+	 *
+	 * @example
+	 * const contract = new Contract({ ... })
+	 * console.log(contract.raw())
+	 */
+	public raw(): ContractObject {
+		return structuredClone(this.$raw);
+	}
+
 	/**
 	 * @summary A contract data structure
 	 * @name Contract
@@ -61,8 +82,6 @@ export default class Contract {
 	 * @public
 	 *
 	 * @param {ContractObject} object - the contract plain object
-	 * @param {Object} [options] - options
-	 * @param {Boolean} [options.hash=true] - whether to hash the contract
 	 *
 	 * @example
 	 * const contract = new Contract({
@@ -71,9 +90,9 @@ export default class Contract {
 	 *   slug: 'armv7hf'
 	 * })
 	 */
-	constructor(object: ContractObject, options: { hash?: boolean } = {}) {
-		this.raw = object;
-		this.metadata = {
+	constructor(object: ContractObject) {
+		this.$raw = object;
+		this.$metadata = {
 			children: {
 				searchCache: new MatcherCache(),
 				types: new Set(),
@@ -88,97 +107,115 @@ export default class Contract {
 				compiled: new ObjectSet(),
 			},
 		};
-		for (const source of getAll(this.raw.children)) {
+
+		for (const source of getAll(this.$raw.children)) {
 			this.addChild(new Contract(source));
 		}
-		this.interpolate({
-			rehash: false,
-		});
-		if (options.hash ?? true) {
-			this.hash();
-		}
+		this.interpolate();
 	}
+
 	/**
-	 * @summary Re-hash the contract
+	 * @summary Get the contract hash, computing it lazily if necessary
 	 * @function
 	 * @name module:contrato.Contract#hash
 	 * @protected
 	 *
+	 * @description
+	 * The hash is computed from the contract's raw object the first time
+	 * it is requested, and cached afterwards. Operations that mutate the
+	 * contract invalidate the cached hash, so it is recomputed on the next
+	 * call.
+	 *
+	 * @returns {String} the contract hash
+	 *
 	 * @example
 	 * const contract = new Contract({ ... })
-	 * contract.hash()
+	 * console.log(contract.hash())
 	 */
-	hash() {
-		this.metadata.hash = hashObject(this.raw);
+	hash(): string {
+		this.#hash ??= hashObject(this.$raw);
+		return this.#hash;
 	}
+
 	/**
 	 * @summary Re-build the contract's internal data structures
 	 * @function
 	 * @name module:contrato.Contract#rebuild
-	 * @protected
+	 * @private
 	 *
 	 * @example
 	 * const contract = new Contract({ ... })
 	 * contract.rebuild()
 	 */
-	rebuild() {
-		const tree = buildChildrentree(this);
+	private rebuild() {
+		// Mutating the contract's raw object invalidates the cached hash,
+		// which will be recomputed lazily on the next `hash()` call.
+		this.#hash = undefined;
+		const tree = buildChildrenTree(this.$metadata);
 		if (Object.keys(tree).length > 0) {
-			this.raw.children = tree;
+			this.$raw.children = tree;
 		}
-		this.metadata.requirements = {
+		this.$metadata.requirements = {
 			matchers: {},
 			types: new Set(),
 			compiled: new ObjectSet(),
 		};
 		/**
-		 * @summary Create and register a requirements matcher
+		 * @summary Register a leaf matcher so the contracts it references can
+		 * be resolved by type later on (see getReferencedContracts)
 		 * @function
 		 * @private
 		 *
-		 * @param {Object} data - matcher data
-		 * @returns {Object} matcher object
+		 * @param {Object} data - leaf matcher
 		 *
 		 * @example
-		 * const matcher = registerMatcher({
+		 * registerMatcher({
 		 *   type: 'arch.sw',
 		 *   slug: 'armv7hf'
 		 * })
 		 */
-		const registerMatcher = (data: any): any => {
+		const registerMatcher = (data: MatcherObject): void => {
 			const matcher = Contract.createMatcher(data);
-			this.metadata.requirements.matchers[data.type] ??= new ObjectSet();
-			this.metadata.requirements.matchers[data.type].add(matcher, {
-				id: matcher.metadata.hash,
+			this.$metadata.requirements.matchers[data.type] ??= new ObjectSet();
+			this.$metadata.requirements.matchers[data.type].add(matcher, {
+				id: matcher.hash(),
 			});
-			this.metadata.requirements.types.add(data.type);
-			return matcher;
+			this.$metadata.requirements.types.add(data.type);
 		};
-		// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-		for (const conjunct of this.raw.requires || []) {
-			if (conjunct.type) {
-				const matcher = registerMatcher(conjunct);
-				this.metadata.requirements.compiled.add(matcher, {
-					id: matcher.metadata.hash,
-				});
-				continue;
-			}
-			const operand = Object.keys(conjunct)[0];
-			if (operand) {
-				const matchers = new ObjectSet();
-				for (const disjunct of conjunct[operand]) {
-					const matcher = registerMatcher(disjunct);
-					matchers.add(matcher, {
-						id: matcher.metadata.hash,
-					});
+
+		for (const conjunct of this.$raw.requires ?? []) {
+			// A bare matcher is a single requirement on a contract type, while
+			// an `or`/`not` operation wraps a list of sub-matchers.
+			let matcher: Contract;
+			let leaves: MatcherObject[];
+			if ('type' in conjunct) {
+				matcher = Contract.createMatcher(conjunct);
+				leaves = [conjunct];
+			} else {
+				if (!('or' in conjunct) && !('not' in conjunct)) {
+					throw new Error(
+						'expected requirement to be a contract matcher or a `or/not` operation, got',
+						conjunct,
+					);
 				}
-				const operationContract = Contract.createMatcher(matchers, {
-					operation: operand,
-				});
-				this.metadata.requirements.compiled.add(operationContract, {
-					id: operationContract.metadata.hash,
-				});
+
+				const [operation, disjuncts] =
+					'or' in conjunct
+						? (['or', conjunct.or] as const)
+						: (['not', conjunct.not] as const);
+				// Drop duplicate sub-matchers so an operation never carries the
+				// same requirement twice.
+				leaves = uniqWith(disjuncts, isEqual);
+				matcher = Contract.createMatcher(leaves, { operation });
 			}
+			// Register every leaf so the contracts it references stay
+			// discoverable by type.
+			for (const leaf of leaves) {
+				registerMatcher(leaf);
+			}
+			this.$metadata.requirements.compiled.add(matcher, {
+				id: matcher.hash(),
+			});
 		}
 	}
 	/**
@@ -187,28 +224,23 @@ export default class Contract {
 	 * @name module:contrato.Contract#interpolate
 	 * @protected
 	 *
-	 * @param {Object} [options] - options
-	 * @param {Boolean} [options.rehash=true] - whether to re-hash the contract
 	 * @returns {Object} contract instance
 	 *
 	 * @example
 	 * const contract = new Contract({ ... })
 	 * contract.interpolate()
 	 */
-	interpolate(options: { rehash?: boolean } = {}): this {
+	interpolate(): this {
 		// TODO: Find a way to keep track of whether the contract
 		// has already been fully templated, and if so, avoid
 		// running this function.
-		this.raw = compileContract(this.raw, {
+		this.$raw = compileContract(this.$raw, {
 			// Each contract is only templated using its own
 			// properties, so here we prevent interpolations
 			// on children using the master contract as a root.
 			blacklist: new Set(['children']),
 		});
 		this.rebuild();
-		if (options.rehash ?? true) {
-			this.hash();
-		}
 		return this;
 	}
 	/**
@@ -229,8 +261,8 @@ export default class Contract {
 	 *
 	 * console.log(contract.getVersion())
 	 */
-	getVersion(): string {
-		return this.raw.version;
+	getVersion(): string | undefined {
+		return this.$raw.version;
 	}
 	/**
 	 * @summary Get the contract slug
@@ -249,8 +281,8 @@ export default class Contract {
 	 *
 	 * console.log(contract.getSlug())
 	 */
-	getSlug(): string {
-		return this.raw.slug;
+	getSlug(): string | undefined {
+		return this.$raw.slug;
 	}
 	/**
 	 * @summary Get all the slugs this contract can be referenced with
@@ -272,8 +304,11 @@ export default class Contract {
 	 * > Set { raspberrypi, rpi, raspberry-pi }
 	 */
 	getAllSlugs(): Set<string> {
-		const slugs = new Set<string>(this.raw.aliases);
-		slugs.add(this.getSlug());
+		const slugs = new Set<string>(this.$raw.aliases);
+		const thisSlug = this.getSlug();
+		if (thisSlug != null) {
+			slugs.add(thisSlug);
+		}
 		return slugs;
 	}
 	/**
@@ -297,7 +332,7 @@ export default class Contract {
 	 * }
 	 */
 	hasAliases(): boolean {
-		return Boolean(this.raw.aliases) && this.raw.aliases.length > 0;
+		return this.$raw.aliases != null && this.$raw.aliases.length > 0;
 	}
 	/**
 	 * @summary Get the contract canonical slug
@@ -317,9 +352,9 @@ export default class Contract {
 	 *
 	 * console.log(contract.getCanonicalSlug())
 	 */
-	getCanonicalSlug(): string {
+	getCanonicalSlug(): string | undefined {
 		// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-		return this.raw.canonicalSlug || this.getSlug();
+		return this.$raw.canonicalSlug || this.getSlug();
 	}
 	/**
 	 * @summary Get the contract type
@@ -339,7 +374,7 @@ export default class Contract {
 	 * console.log(contract.getType())
 	 */
 	getType(): string {
-		return this.raw.type;
+		return this.$raw.type;
 	}
 	/**
 	 * @summary Get a reference string for the contract
@@ -359,7 +394,7 @@ export default class Contract {
 	 * console.log(contract.getReferenceString())
 	 */
 	getReferenceString(): string {
-		const slug = this.getSlug();
+		const slug = this.getSlug() ?? '';
 		const version = this.getVersion();
 		return version ? `${slug}@${version}` : slug;
 	}
@@ -379,7 +414,7 @@ export default class Contract {
 	toJSON(): ContractObject {
 		// Ensure changes to the returned reference don't
 		// accidentally mutate the contract's internal state
-		return Object.assign({}, this.raw);
+		return Object.assign({}, this.$raw);
 	}
 	/**
 	 * @summary Add a child contract
@@ -389,7 +424,6 @@ export default class Contract {
 	 *
 	 * @param {Object} contract - contract
 	 * @param {Object} [options] - options
-	 * @param {Boolean} [options.rehash=true] - whether to re-hash the parent contract
 	 * @param {Boolean} [options.rebuild=true] - whether to re-build the parent contract
 	 * @returns {Object} contract
 	 *
@@ -397,32 +431,26 @@ export default class Contract {
 	 * const contract = new Contract({ ... })
 	 * contract.addChild(new Contract({ ... }))
 	 */
-	addChild(
-		contract: Contract,
-		options: { rehash?: boolean; rebuild?: boolean } = {},
-	): this {
+	addChild(contract: Contract, options: { rebuild?: boolean } = {}): this {
 		const type = contract.getType();
-		const childHash = contract.metadata.hash!;
-		if (this.metadata.children.map[childHash]) {
+		const childHash = contract.hash();
+		if (this.$metadata.children.map[childHash]) {
 			return this;
 		}
-		if (!this.metadata.children.types.has(type)) {
-			this.metadata.children.types.add(type);
-			this.metadata.children.byType[type] = new Set();
-			this.metadata.children.byTypeSlug[type] = {};
+		if (!this.$metadata.children.types.has(type)) {
+			this.$metadata.children.types.add(type);
+			this.$metadata.children.byType[type] = new Set();
+			this.$metadata.children.byTypeSlug[type] = {};
 		}
 		for (const slug of contract.getAllSlugs()) {
-			this.metadata.children.byTypeSlug[type][slug] ??= new Set();
-			this.metadata.children.byTypeSlug[type][slug].add(childHash);
+			this.$metadata.children.byTypeSlug[type][slug] ??= new Set();
+			this.$metadata.children.byTypeSlug[type][slug].add(childHash);
 		}
-		this.metadata.children.map[childHash] = contract;
-		this.metadata.children.byType[type].add(childHash);
-		this.metadata.children.searchCache.resetType(type);
+		this.$metadata.children.map[childHash] = contract;
+		this.$metadata.children.byType[type].add(childHash);
+		this.$metadata.children.searchCache.resetType(type);
 		if (options.rebuild ?? true) {
 			this.rebuild();
-		}
-		if (options.rehash ?? true) {
-			this.hash();
 		}
 		return this;
 	}
@@ -433,8 +461,6 @@ export default class Contract {
 	 * @public
 	 *
 	 * @param {Object} contract - contract
-	 * @param {Object} [options] - options
-	 * @param {Boolean} [options.rehash=true] - whether to rehash the contract
 	 * @returns {Object} parent contract
 	 *
 	 * @example
@@ -444,32 +470,29 @@ export default class Contract {
 	 * contract.addChild(child)
 	 * contract.removeChild(child)
 	 */
-	removeChild(contract: Contract, options: { rehash?: boolean } = {}): this {
+	removeChild(contract: Contract): this {
 		const type = contract.getType();
-		const childHash = contract.metadata.hash!;
-		if (!this.raw.children || !this.metadata.children.map[childHash]) {
+		const childHash = contract.hash();
+		if (!this.$raw.children || !this.$metadata.children.map[childHash]) {
 			return this;
 		}
-		Reflect.deleteProperty(this.metadata.children.map, childHash);
-		this.metadata.children.byType[type].delete(childHash);
-		if (this.metadata.children.byType[type].size === 0) {
-			Reflect.deleteProperty(this.metadata.children.byType, type);
-			this.metadata.children.types.delete(type);
+		Reflect.deleteProperty(this.$metadata.children.map, childHash);
+		this.$metadata.children.byType[type].delete(childHash);
+		if (this.$metadata.children.byType[type].size === 0) {
+			Reflect.deleteProperty(this.$metadata.children.byType, type);
+			this.$metadata.children.types.delete(type);
 		}
 		for (const slug of contract.getAllSlugs()) {
-			this.metadata.children.byTypeSlug[type][slug].delete(childHash);
-			if (this.metadata.children.byTypeSlug[type][slug].size === 0) {
-				Reflect.deleteProperty(this.metadata.children.byTypeSlug[type], slug);
+			this.$metadata.children.byTypeSlug[type][slug].delete(childHash);
+			if (this.$metadata.children.byTypeSlug[type][slug].size === 0) {
+				Reflect.deleteProperty(this.$metadata.children.byTypeSlug[type], slug);
 			}
 		}
-		if (Object.keys(this.metadata.children.byTypeSlug[type]).length === 0) {
-			Reflect.deleteProperty(this.metadata.children.byTypeSlug, type);
+		if (Object.keys(this.$metadata.children.byTypeSlug[type]).length === 0) {
+			Reflect.deleteProperty(this.$metadata.children.byTypeSlug, type);
 		}
-		this.metadata.children.searchCache.resetType(contract.getType());
+		this.$metadata.children.searchCache.resetType(contract.getType());
 		this.rebuild();
-		if (options.rehash ?? true) {
-			this.hash();
-		}
 		return this;
 	}
 	/**
@@ -482,8 +505,6 @@ export default class Contract {
 	 * This is a utility method over `.addChild()`.
 	 *
 	 * @param {Object[]} contracts - contracts
-	 * @param {Object} [options] - options
-	 * @param {Boolean} [options.rehash=true] - whether to rehash the contract
 	 * @returns {Object} contract
 	 *
 	 * @example
@@ -494,10 +515,7 @@ export default class Contract {
 	 *   new Contract({ ... })
 	 * ])
 	 */
-	addChildren(
-		contracts: Contract[] = [],
-		options: { rehash?: boolean } = {},
-	): this {
+	addChildren(contracts: Contract[] = []): this {
 		if (!contracts) {
 			return this;
 		}
@@ -508,14 +526,10 @@ export default class Contract {
 				// N is the number of contracts passed to this function.
 				// Intead, we can prevent re-building and only do it
 				// once when the function completes.
-				rehash: false,
 				rebuild: false,
 			});
 		}
 		this.rebuild();
-		if (options.rehash ?? true) {
-			this.hash();
-		}
 		return this;
 	}
 	/**
@@ -532,7 +546,7 @@ export default class Contract {
 	 * console.log(contract.getChildrenTypes())
 	 */
 	getChildrenTypes(): Set<string> {
-		const types = new Set<string>(this.metadata.children.types);
+		const types = new Set<string>(this.$metadata.children.types);
 		for (const contract of this.getChildren()) {
 			for (const type of contract.getChildrenTypes()) {
 				types.add(type);
@@ -560,7 +574,7 @@ export default class Contract {
 	 * }
 	 */
 	getChildByHash(childHash: string): Contract | undefined {
-		return this.metadata.children.map[childHash];
+		return this.$metadata.children.map[childHash];
 	}
 	/**
 	 * @summary Recursively get a set of children contracts
@@ -584,8 +598,8 @@ export default class Contract {
 	 */
 	getChildren(options: { types?: Set<string> } = {}): Contract[] {
 		const contracts: Contract[] = [];
-		for (const contract of Object.values(this.metadata.children.map)) {
-			if (!options.types || options.types.has(contract.raw.type)) {
+		for (const contract of Object.values(this.$metadata.children.map)) {
+			if (!options.types || options.types.has(contract.$raw.type)) {
 				contracts.push(contract);
 			}
 			contracts.push(...contract.getChildren(options));
@@ -611,10 +625,10 @@ export default class Contract {
 	 * })
 	 */
 	getChildrenByType(type: string): Contract[] {
-		this.metadata.children.typeMatchers[type] ??= Contract.createMatcher({
+		this.$metadata.children.typeMatchers[type] ??= Contract.createMatcher({
 			type,
 		});
-		return this.findChildren(this.metadata.children.typeMatchers[type]);
+		return this.findChildren(this.$metadata.children.typeMatchers[type]);
 	}
 	/**
 	 * @summary Recursively find children using a matcher contract
@@ -639,7 +653,7 @@ export default class Contract {
 	 * })
 	 */
 	findChildrenWithCapabilities(matcher: Contract): Contract[] {
-		if (!matcher.raw) {
+		if (!matcher.$raw) {
 			return [];
 		}
 		const results: Contract[] = [];
@@ -649,13 +663,17 @@ export default class Contract {
 			// structure of the actual contract.
 			// Notice we do use the slug key separately, in order to obtain
 			// the list of hashes we should check against.
-			const match = matches(omit(matcher.raw.data, ['slug', 'version']));
-			const versionMatch = matcher.raw.data.version;
-			if (contract.raw.provides) {
-				for (const capability of contract.raw.provides) {
+			const match = matches(omit(matcher.$raw.data, ['slug', 'version']));
+			const versionMatch = matcher.$raw.data?.version;
+			if (contract.$raw.provides) {
+				for (const capability of contract.$raw.provides) {
 					if (match(capability)) {
 						if (versionMatch) {
-							if (valid(capability.version) && validRange(versionMatch)) {
+							if (
+								capability.version != null &&
+								valid(capability.version) &&
+								validRange(versionMatch)
+							) {
 								if (satisfies(capability.version, versionMatch)) {
 									results.push(contract);
 								}
@@ -693,23 +711,22 @@ export default class Contract {
 	 *   console.log(child)
 	 * })
 	 */
-	findChildren(matcher: Contract | object): Contract[] {
-		if (
-			!(matcher instanceof Contract) ||
-			!matcher.raw ||
-			!this.getChildrenTypes().has(matcher.raw.data.type)
-		) {
+	findChildren(matcher: Contract): Contract[] {
+		if (!(matcher instanceof Matcher)) {
+			throw new Error('expected contract to be a Matcher instance');
+		}
+		const type = matcher.getMatchedType();
+		if (type == null || !this.getChildrenTypes().has(type)) {
 			return [];
 		}
-		const cache = this.metadata.children.searchCache.get(matcher);
+		const cache = this.$metadata.children.searchCache.get(matcher);
 		if (cache) {
 			return cache;
 		}
 		const results: Contract[] = [];
-		const type = matcher.raw.data.type;
-		const slug = matcher.raw.data.slug;
+		const slug = matcher.$raw.data.slug;
 		for (const contract of this.getChildren().concat([this])) {
-			if (!contract.metadata.children.types.has(type)) {
+			if (!contract.$metadata.children.types.has(type)) {
 				continue;
 			}
 			// We need to omit the slug from the matcher object, otherwise
@@ -717,13 +734,13 @@ export default class Contract {
 			// structure of the actual contract.
 			// Notice we do use the slug key separately, in order to obtain
 			// the list of hashes we should check against.
-			const match = matches(omit(matcher.raw.data, ['slug', 'version']));
-			const versionMatch = matcher.raw.data.version;
+			const match = matches(omit(matcher.$raw.data, ['slug', 'version']));
+			const versionMatch = matcher.$raw.data.version;
 			const hashes = slug
-				? (contract.metadata.children.byTypeSlug[type][slug] ?? new Set())
-				: contract.metadata.children.byType[type];
+				? (contract.$metadata.children.byTypeSlug[type][slug] ?? new Set())
+				: contract.$metadata.children.byType[type];
 			// Means that we are matching just the type
-			if (Object.keys(matcher.raw.data).length === 1) {
+			if (Object.keys(matcher.$raw.data).length === 1) {
 				for (const childHash of hashes) {
 					const child = contract.getChildByHash(childHash);
 					if (!child) {
@@ -734,13 +751,17 @@ export default class Contract {
 			} else {
 				for (const childHash of hashes) {
 					const child = contract.getChildByHash(childHash);
-					if (child && match(child.raw)) {
+					if (child && match(child.$raw)) {
 						if (versionMatch) {
-							if (valid(child.raw.version) && validRange(versionMatch)) {
-								if (satisfies(child.raw.version, versionMatch)) {
+							if (
+								child.$raw.version != null &&
+								valid(child.$raw.version) &&
+								validRange(versionMatch)
+							) {
+								if (satisfies(child.$raw.version, versionMatch)) {
 									results.push(child);
 								}
-							} else if (isEqual(child.raw.version, versionMatch)) {
+							} else if (isEqual(child.$raw.version, versionMatch)) {
 								results.push(child);
 							}
 							continue;
@@ -750,7 +771,7 @@ export default class Contract {
 				}
 			}
 		}
-		this.metadata.children.searchCache.add(matcher, results);
+		this.$metadata.children.searchCache.add(matcher, results);
 		return results;
 	}
 	/**
@@ -852,8 +873,8 @@ export default class Contract {
 	 */
 	getChildrenCombinations(options: {
 		type: string;
-		from: number;
-		to: number;
+		from?: number;
+		to?: number;
 		[index: string]: any;
 	}): Contract[][] {
 		let contracts = this.getChildrenByType(options.type);
@@ -861,14 +882,15 @@ export default class Contract {
 		const cardinality = options['cardinality'] || options;
 		if (options['filter']) {
 			contracts = contracts.filter((con) => {
-				return isValid(options['filter'], con.raw);
+				return isValid(options['filter'], con.$raw);
 			});
 		}
 		if (contracts.length > 0) {
 			if (options['version']) {
 				if (isEqual(options['version'], 'latest')) {
+					contracts = contracts.filter((c) => c.getVersion() != null);
 					contracts.sort((left, right) => {
-						return compare(right.raw.version, left.raw.version);
+						return compare(right.getVersion()!, left.getVersion()!);
 					});
 					contracts = contracts.slice(
 						0,
@@ -876,7 +898,8 @@ export default class Contract {
 					);
 				} else {
 					contracts = contracts.filter((con) => {
-						return satisfies(con.raw.version, options['version']);
+						const v = con.getVersion();
+						return v != null && satisfies(v, options['version']);
 					});
 				}
 			}
@@ -930,11 +953,11 @@ export default class Contract {
 	} {
 		const references: { [index: string]: Contract[] } = {};
 		for (const type of options.types) {
-			if (!this.metadata.requirements.types.has(type)) {
+			if (!this.$metadata.requirements.types.has(type)) {
 				continue;
 			}
 			references[type] = [];
-			const matchers = this.metadata.requirements.matchers[type].getAll();
+			const matchers = this.$metadata.requirements.matchers[type].getAll();
 			for (const matcher of matchers) {
 				for (const find of options.from.findChildren(matcher)) {
 					references[find.getType()].push(find);
@@ -1071,28 +1094,32 @@ export default class Contract {
 			);
 		};
 
-		if (requirement.raw.operation === 'or') {
+		if (requirement.$raw.operation === 'or') {
 			// (3.1) Note that we should only consider disjuncts
 			// of types we are allowed to check. We can make
 			// such transformation here, so we can then consider
 			// the disjunction as fulfilled if there are no
 			// remaining disjuncts.
-			const disjuncts = filter(requirement.raw.data.getAll(), (disjunct) => {
-				return shouldEvaluateType(disjunct.raw.data.type);
-			});
+			const disjuncts = filter(
+				requirement.$raw.data as MatcherObject[],
+				(disjunct) => shouldEvaluateType(disjunct.type),
+			);
 			// (3.2) An empty disjuction means that this particular
 			// requirement is fulfilled, so we can carry on.
 			// A disjunction naturally contains a list of further
 			// requirements we need to check for. If at least one
 			// of the members is fulfilled, we can proceed with
 			// next requirement.
-			if (disjuncts.length === 0 || disjuncts.some(hasMatch)) {
+			if (
+				disjuncts.length === 0 ||
+				disjuncts.some((disjunct) => hasMatch(Contract.createMatcher(disjunct)))
+			) {
 				return true;
 			}
 			// (3.3) If no members were fulfilled, then we know
 			// that this requirement was not fullfilled, so it will be returned
 			return false;
-		} else if (requirement.raw.operation === 'not') {
+		} else if (requirement.$raw.operation === 'not') {
 			// (3.4) Note that we should only consider disjuncts
 			// of types we are allowed to check. We can make
 			// such transformation here, so we can then consider
@@ -1102,9 +1129,10 @@ export default class Contract {
 			// disjuncts is not empty, and we have at least one of
 			// them in the context.
 			if (
-				some(requirement.raw.data.getAll(), (disjunct) => {
+				some(requirement.$raw.data as MatcherObject[], (disjunct) => {
 					return (
-						shouldEvaluateType(disjunct.raw.data.type) && hasMatch(disjunct)
+						shouldEvaluateType(disjunct.type) &&
+						hasMatch(Contract.createMatcher(disjunct))
 					);
 				})
 			) {
@@ -1115,7 +1143,7 @@ export default class Contract {
 		// (4) If we should evaluate this requirement and it is not fullfilled
 		// it will be returned
 		if (
-			shouldEvaluateType(requirement.raw.data.type) &&
+			shouldEvaluateType(requirement.$raw.data.type) &&
 			!hasMatch(requirement)
 		) {
 			return false;
@@ -1181,12 +1209,12 @@ export default class Contract {
 		contract: Contract,
 		options: { types?: Set<string> } = {},
 	) {
-		const conjuncts: Contract[] = contract.metadata.requirements.compiled
+		const conjuncts: Contract[] = contract.$metadata.requirements.compiled
 			.getAll()
 			.concat(
 				contract
 					.getChildren()
-					.flatMap((child) => child.metadata.requirements.compiled.getAll()),
+					.flatMap((child) => child.$metadata.requirements.compiled.getAll()),
 			);
 		// (1) If the top level list of conjuncts is empty,
 		// then we can assume the requirements are fulfilled
@@ -1202,7 +1230,7 @@ export default class Contract {
 		// break out of the loop as soon as possible.
 		return conjuncts
 			.filter((conjunct) => !this.isRequirementSatisfied(conjunct, options))
-			.map((conjunct) => conjunct.raw.data);
+			.map((conjunct) => conjunct.$raw.data);
 		// (5) If we reached this far, then it means that all the
 		// requirements were checked, and they were all satisfied,
 		// so this is good to go!
@@ -1264,12 +1292,12 @@ export default class Contract {
 		contract: Contract,
 		options: { types?: Set<string> } = {},
 	): boolean {
-		const conjuncts: Contract[] = contract.metadata.requirements.compiled
+		const conjuncts: Contract[] = contract.$metadata.requirements.compiled
 			.getAll()
 			.concat(
 				contract
 					.getChildren()
-					.flatMap((child) => child.metadata.requirements.compiled.getAll()),
+					.flatMap((child) => child.$metadata.requirements.compiled.getAll()),
 			);
 
 		// (1) If the top level list of conjuncts is empty,
@@ -1326,7 +1354,7 @@ export default class Contract {
 			// requirements in vain.
 			if (
 				options.types &&
-				areSetsDisjoint(options.types, contract.metadata.requirements.types)
+				areSetsDisjoint(options.types, contract.$metadata.requirements.types)
 			) {
 				continue;
 			}
@@ -1358,12 +1386,12 @@ export default class Contract {
 			// requirements in vain.
 			if (
 				options.types &&
-				areSetsDisjoint(options.types, contract.metadata.requirements.types)
+				areSetsDisjoint(options.types, contract.$metadata.requirements.types)
 			) {
 				requirements = requirements.concat(
-					contract.metadata.requirements.compiled
+					contract.$metadata.requirements.compiled
 						.getAll()
-						.map((c) => c.raw.data),
+						.map((c) => c.$raw.data),
 				);
 				continue;
 			}
@@ -1384,7 +1412,8 @@ export default class Contract {
 	 * @name module:contrato.Contract.createMatcher
 	 * @protected
 	 *
-	 * @param {(Object|Object[])} data - matcher data
+	 * @param {(Object|Object[])} obj - a single matcher, or the list of
+	 * sub-matchers when building an `or`/`not` operation
 	 * @param {Object} [options] - options
 	 * @param {String} [options.operation] - the matcher's operation
 	 * @returns {Object} matcher contract
@@ -1396,13 +1425,32 @@ export default class Contract {
 	 * })
 	 */
 	static createMatcher(
-		data: object | object[],
-		options: { operation?: string } = {},
-	): Contract {
-		return new Contract({
+		obj: MatcherObject | MatcherObject[],
+		options: { operation?: 'or' | 'not' } = {},
+	): Matcher {
+		// Reject matchers carrying anything other than these fields; further
+		// matching criteria belong under `data`.
+		const fields = new Set(['type', 'slug', 'version', 'data'] satisfies Array<
+			keyof MatcherObject
+		>);
+		for (const matcher of Array.isArray(obj) ? obj : [obj]) {
+			const unknownProp = Object.keys(matcher).find(
+				(key) => !fields.has(key as keyof MatcherObject),
+			);
+			if (unknownProp) {
+				throw new Error(
+					`unknown field \`${unknownProp}\`, expected one of ${Array.from(
+						fields,
+					)
+						.map((field) => `\`${field}\``)
+						.join(', ')}`,
+				);
+			}
+		}
+		return new Matcher({
 			type: MATCHER,
 			operation: options.operation,
-			data,
+			data: obj,
 		});
 	}
 	/**
@@ -1425,10 +1473,7 @@ export default class Contract {
 	 * }
 	 */
 	static isEqual(contract1: Contract, contract2: Contract): boolean {
-		if (contract1.metadata.hash && contract2.metadata.hash) {
-			return contract1.metadata.hash === contract2.metadata.hash;
-		}
-		return isEqual(contract1.raw, contract2.raw);
+		return contract1 === contract2 || contract1.hash() === contract2.hash();
 	}
 	/**
 	 * @summary Build a source contract
@@ -1476,5 +1521,38 @@ export default class Contract {
 			contracts.push(new Contract(obj));
 			return accumulator.concat(contracts);
 		}, []);
+	}
+}
+
+/**
+ * @summary A matcher contract
+ * @name Matcher
+ * @class
+ * @protected
+ *
+ * @description
+ * A contract of type `meta.matcher` whose `data` describes the contracts
+ * to look for. Instances are created via {@link Contract.createMatcher}.
+ */
+export class Matcher extends Contract {
+	/**
+	 * @summary Get the contract type matched by this matcher
+	 * @function
+	 * @name module:contrato.Matcher#getMatchedType
+	 * @protected
+	 *
+	 * @description
+	 * Operation matchers (e.g. `or`, `not`) group other matchers instead of
+	 * describing a single contract, so they have no matched type.
+	 *
+	 * @returns {String|undefined} the matched contract type, if any
+	 *
+	 * @example
+	 * const matcher = Contract.createMatcher({ type: 'sw.os', slug: 'debian' })
+	 * console.log(matcher.getMatchedType())
+	 * > 'sw.os'
+	 */
+	getMatchedType(): string | undefined {
+		return this.$raw.data.type;
 	}
 }

@@ -221,7 +221,7 @@ export const buildTemplate = async (
 				context,
 			},
 		},
-		context.toJSON().children,
+		context.children,
 	);
 
 	return stripExtraBlankLines(await hb.compile(template)(data));

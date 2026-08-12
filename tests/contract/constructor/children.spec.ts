@@ -6,7 +6,6 @@
 
 import { expect } from '../../chai';
 
-import MatcherCache from '../../../lib/matcher-cache';
 import Contract from '../../../lib/contract';
 
 describe('Contract children', () => {
@@ -25,28 +24,7 @@ describe('Contract children', () => {
 			},
 		});
 
-		expect(contract.metadata.children).to.deep.equal({
-			typeMatchers: {},
-			searchCache: new MatcherCache(),
-			types: new Set(['arch.sw']),
-			byType: {
-				'arch.sw': new Set(['e3d3b7f2e5820db4b45975380a3f467bc2ff2999']),
-			},
-			byTypeSlug: {
-				'arch.sw': {
-					armv7hf: new Set(['e3d3b7f2e5820db4b45975380a3f467bc2ff2999']),
-				},
-			},
-			map: {
-				e3d3b7f2e5820db4b45975380a3f467bc2ff2999: new Contract({
-					type: 'arch.sw',
-					name: 'armv7hf',
-					slug: 'armv7hf',
-				}),
-			},
-		});
-
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'misc.collection',
 			slug: 'my-collection',
 			children: {
@@ -60,7 +38,21 @@ describe('Contract children', () => {
 			},
 		});
 
-		expect(new Contract(contract.raw)).to.deep.equal(contract);
+		expect(new Contract(contract.raw())).to.deep.equal(contract);
+
+		const child = new Contract({
+			type: 'arch.sw',
+			name: 'armv7hf',
+			slug: 'armv7hf',
+		});
+
+		expect(contract.getChildrenByType('arch.sw')).to.deep.equal([child]);
+		expect(
+			contract.findChildren(
+				Contract.createMatcher({ type: 'arch.sw', slug: 'armv7hf' }),
+			),
+		).to.deep.equal([child]);
+		expect(contract.getChildByHash(child.hash())).to.deep.equal(child);
 	});
 
 	it('should take a contract with two children of the same type', () => {
@@ -85,37 +77,7 @@ describe('Contract children', () => {
 			},
 		});
 
-		expect(contract.metadata.children).to.deep.equal({
-			typeMatchers: {},
-			searchCache: new MatcherCache(),
-			types: new Set(['arch.sw']),
-			byType: {
-				'arch.sw': new Set([
-					'e3d3b7f2e5820db4b45975380a3f467bc2ff2999',
-					'6e26947f07bcacc28733ef81eea2d33579c5502e',
-				]),
-			},
-			byTypeSlug: {
-				'arch.sw': {
-					armv7hf: new Set(['e3d3b7f2e5820db4b45975380a3f467bc2ff2999']),
-					armel: new Set(['6e26947f07bcacc28733ef81eea2d33579c5502e']),
-				},
-			},
-			map: {
-				e3d3b7f2e5820db4b45975380a3f467bc2ff2999: new Contract({
-					type: 'arch.sw',
-					name: 'armv7hf',
-					slug: 'armv7hf',
-				}),
-				'6e26947f07bcacc28733ef81eea2d33579c5502e': new Contract({
-					type: 'arch.sw',
-					name: 'armel',
-					slug: 'armel',
-				}),
-			},
-		});
-
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'misc.collection',
 			slug: 'my-collection',
 			children: {
@@ -136,7 +98,35 @@ describe('Contract children', () => {
 			},
 		});
 
-		expect(new Contract(contract.raw)).to.deep.equal(contract);
+		expect(new Contract(contract.raw())).to.deep.equal(contract);
+
+		const armv7hf = new Contract({
+			type: 'arch.sw',
+			name: 'armv7hf',
+			slug: 'armv7hf',
+		});
+		const armel = new Contract({
+			type: 'arch.sw',
+			name: 'armel',
+			slug: 'armel',
+		});
+
+		expect(contract.getChildrenByType('arch.sw')).to.have.deep.members([
+			armv7hf,
+			armel,
+		]);
+		expect(
+			contract.findChildren(
+				Contract.createMatcher({ type: 'arch.sw', slug: 'armv7hf' }),
+			),
+		).to.deep.equal([armv7hf]);
+		expect(
+			contract.findChildren(
+				Contract.createMatcher({ type: 'arch.sw', slug: 'armel' }),
+			),
+		).to.deep.equal([armel]);
+		expect(contract.getChildByHash(armv7hf.hash())).to.deep.equal(armv7hf);
+		expect(contract.getChildByHash(armel.hash())).to.deep.equal(armel);
 	});
 
 	it('should take a contract with two children of the same type and slug', () => {
@@ -165,41 +155,7 @@ describe('Contract children', () => {
 			},
 		});
 
-		expect(contract.metadata.children).to.deep.equal({
-			typeMatchers: {},
-			searchCache: new MatcherCache(),
-			types: new Set(['sw.distro']),
-			byType: {
-				'sw.distro': new Set([
-					'73adf497b1e8cde552e3be4eab317032f8dd65a0',
-					'91c4f16ff328631011d49d2edc654cf3d9a36c75',
-				]),
-			},
-			byTypeSlug: {
-				'sw.distro': {
-					debian: new Set([
-						'73adf497b1e8cde552e3be4eab317032f8dd65a0',
-						'91c4f16ff328631011d49d2edc654cf3d9a36c75',
-					]),
-				},
-			},
-			map: {
-				'73adf497b1e8cde552e3be4eab317032f8dd65a0': new Contract({
-					type: 'sw.distro',
-					name: 'debian',
-					version: 'wheezy',
-					slug: 'debian',
-				}),
-				'91c4f16ff328631011d49d2edc654cf3d9a36c75': new Contract({
-					type: 'sw.distro',
-					name: 'debian',
-					version: 'jessie',
-					slug: 'debian',
-				}),
-			},
-		});
-
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'misc.collection',
 			slug: 'my-collection',
 			children: {
@@ -224,7 +180,32 @@ describe('Contract children', () => {
 			},
 		});
 
-		expect(new Contract(contract.raw)).to.deep.equal(contract);
+		expect(new Contract(contract.raw())).to.deep.equal(contract);
+
+		const wheezy = new Contract({
+			type: 'sw.distro',
+			name: 'debian',
+			version: 'wheezy',
+			slug: 'debian',
+		});
+		const jessie = new Contract({
+			type: 'sw.distro',
+			name: 'debian',
+			version: 'jessie',
+			slug: 'debian',
+		});
+
+		expect(contract.getChildrenByType('sw.distro')).to.have.deep.members([
+			wheezy,
+			jessie,
+		]);
+		expect(
+			contract.findChildren(
+				Contract.createMatcher({ type: 'sw.distro', slug: 'debian' }),
+			),
+		).to.have.deep.members([wheezy, jessie]);
+		expect(contract.getChildByHash(wheezy.hash())).to.deep.equal(wheezy);
+		expect(contract.getChildByHash(jessie.hash())).to.deep.equal(jessie);
 	});
 
 	it('should take a contract with two children of different types', () => {
@@ -250,38 +231,7 @@ describe('Contract children', () => {
 			},
 		});
 
-		expect(contract.metadata.children).to.deep.equal({
-			typeMatchers: {},
-			searchCache: new MatcherCache(),
-			types: new Set(['arch.sw', 'sw.distro']),
-			byType: {
-				'arch.sw': new Set(['e3d3b7f2e5820db4b45975380a3f467bc2ff2999']),
-				'sw.distro': new Set(['73adf497b1e8cde552e3be4eab317032f8dd65a0']),
-			},
-			byTypeSlug: {
-				'arch.sw': {
-					armv7hf: new Set(['e3d3b7f2e5820db4b45975380a3f467bc2ff2999']),
-				},
-				'sw.distro': {
-					debian: new Set(['73adf497b1e8cde552e3be4eab317032f8dd65a0']),
-				},
-			},
-			map: {
-				e3d3b7f2e5820db4b45975380a3f467bc2ff2999: new Contract({
-					type: 'arch.sw',
-					name: 'armv7hf',
-					slug: 'armv7hf',
-				}),
-				'73adf497b1e8cde552e3be4eab317032f8dd65a0': new Contract({
-					type: 'sw.distro',
-					name: 'debian',
-					version: 'wheezy',
-					slug: 'debian',
-				}),
-			},
-		});
-
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'misc.collection',
 			slug: 'my-collection',
 			children: {
@@ -303,6 +253,33 @@ describe('Contract children', () => {
 			},
 		});
 
-		expect(new Contract(contract.raw)).to.deep.equal(contract);
+		expect(new Contract(contract.raw())).to.deep.equal(contract);
+
+		const arch = new Contract({
+			type: 'arch.sw',
+			name: 'armv7hf',
+			slug: 'armv7hf',
+		});
+		const distro = new Contract({
+			type: 'sw.distro',
+			name: 'debian',
+			version: 'wheezy',
+			slug: 'debian',
+		});
+
+		expect(contract.getChildrenByType('arch.sw')).to.deep.equal([arch]);
+		expect(contract.getChildrenByType('sw.distro')).to.deep.equal([distro]);
+		expect(
+			contract.findChildren(
+				Contract.createMatcher({ type: 'arch.sw', slug: 'armv7hf' }),
+			),
+		).to.deep.equal([arch]);
+		expect(
+			contract.findChildren(
+				Contract.createMatcher({ type: 'sw.distro', slug: 'debian' }),
+			),
+		).to.deep.equal([distro]);
+		expect(contract.getChildByHash(arch.hash())).to.deep.equal(arch);
+		expect(contract.getChildByHash(distro.hash())).to.deep.equal(distro);
 	});
 });

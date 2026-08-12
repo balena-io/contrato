@@ -12,10 +12,16 @@ import isEqual from 'lodash/isEqual';
 
 /**
  * @summary The length of a cardinality ordered pair (a tuple)
- * @type {Number}
  * @constant
  */
 const ORDERED_LIST_LENGTH = 2;
+
+/** A cardinality range parsed from a layout selector. */
+export interface Cardinality {
+	from: number;
+	to: number;
+	finite: boolean;
+}
 
 /**
  * @summary Parse a contracts cardinality tuple/string/number
@@ -49,8 +55,8 @@ const ORDERED_LIST_LENGTH = 2;
  * }
  */
 export const parse = (
-	input: Array<string | number> | string | number,
-): { from: number; to: number; finite: boolean } => {
+	input: string | number | Array<string | number>,
+): Cardinality => {
 	if (typeof input === 'number') {
 		return parse([input, input]);
 	}

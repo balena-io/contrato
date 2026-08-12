@@ -14,7 +14,7 @@ const createContractObjectSet = (contracts: Contract[]) => {
 
 	for (const contract of contracts) {
 		set.add(contract, {
-			id: contract.metadata.hash,
+			id: contract.hash(),
 		});
 	}
 
@@ -30,13 +30,13 @@ describe('Contract requirements', () => {
 			requires: [],
 		});
 
-		expect(contract.metadata.requirements).to.deep.equal({
+		expect(contract.$metadata.requirements).to.deep.equal({
 			matchers: {},
 			types: new Set(),
 			compiled: new ObjectSet(),
 		});
 
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'arch.sw',
 			name: 'armv7hf',
 			slug: 'armv7hf',
@@ -57,7 +57,7 @@ describe('Contract requirements', () => {
 			],
 		});
 
-		expect(contract.metadata.requirements).to.deep.equal({
+		expect(contract.$metadata.requirements).to.deep.equal({
 			matchers: {
 				'hw.device-type': createContractObjectSet([
 					Contract.createMatcher({
@@ -75,7 +75,7 @@ describe('Contract requirements', () => {
 			]),
 		});
 
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'arch.sw',
 			name: 'armv7hf',
 			slug: 'armv7hf',
@@ -105,7 +105,7 @@ describe('Contract requirements', () => {
 			],
 		});
 
-		expect(contract.metadata.requirements).to.deep.equal({
+		expect(contract.$metadata.requirements).to.deep.equal({
 			matchers: {
 				'hw.device-type': createContractObjectSet([
 					Contract.createMatcher({
@@ -127,7 +127,7 @@ describe('Contract requirements', () => {
 			]),
 		});
 
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'arch.sw',
 			name: 'armv7hf',
 			slug: 'armv7hf',
@@ -161,7 +161,7 @@ describe('Contract requirements', () => {
 			],
 		});
 
-		expect(contract.metadata.requirements).to.deep.equal({
+		expect(contract.$metadata.requirements).to.deep.equal({
 			matchers: {
 				'hw.device-type': createContractObjectSet([
 					Contract.createMatcher({
@@ -189,7 +189,7 @@ describe('Contract requirements', () => {
 			]),
 		});
 
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'sw.os',
 			name: 'Debian',
 			slug: 'debian',
@@ -227,7 +227,7 @@ describe('Contract requirements', () => {
 			],
 		});
 
-		expect(contract.metadata.requirements).to.deep.equal({
+		expect(contract.$metadata.requirements).to.deep.equal({
 			matchers: {
 				'hw.device-type': createContractObjectSet([
 					Contract.createMatcher({
@@ -243,16 +243,16 @@ describe('Contract requirements', () => {
 			types: new Set(['hw.device-type']),
 			compiled: createContractObjectSet([
 				Contract.createMatcher(
-					createContractObjectSet([
-						Contract.createMatcher({
+					[
+						{
 							type: 'hw.device-type',
 							slug: 'raspberry-pi',
-						}),
-						Contract.createMatcher({
+						},
+						{
 							slug: 'raspberry-pi2',
 							type: 'hw.device-type',
-						}),
-					]),
+						},
+					],
 					{
 						operation: 'or',
 					},
@@ -260,7 +260,7 @@ describe('Contract requirements', () => {
 			]),
 		});
 
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'arch.sw',
 			name: 'armv7hf',
 			slug: 'armv7hf',
@@ -302,7 +302,7 @@ describe('Contract requirements', () => {
 			],
 		});
 
-		expect(contract.metadata.requirements).to.deep.equal({
+		expect(contract.$metadata.requirements).to.deep.equal({
 			matchers: {
 				'hw.device-type': createContractObjectSet([
 					Contract.createMatcher({
@@ -314,16 +314,12 @@ describe('Contract requirements', () => {
 			types: new Set(['hw.device-type']),
 			compiled: createContractObjectSet([
 				Contract.createMatcher(
-					createContractObjectSet([
-						Contract.createMatcher({
+					[
+						{
 							type: 'hw.device-type',
 							slug: 'raspberry-pi',
-						}),
-						Contract.createMatcher({
-							type: 'hw.device-type',
-							slug: 'raspberry-pi',
-						}),
-					]),
+						},
+					],
 					{
 						operation: 'or',
 					},
@@ -331,7 +327,7 @@ describe('Contract requirements', () => {
 			]),
 		});
 
-		expect(contract.raw).to.deep.equal({
+		expect(contract.raw()).to.deep.equal({
 			type: 'arch.sw',
 			name: 'armv7hf',
 			slug: 'armv7hf',

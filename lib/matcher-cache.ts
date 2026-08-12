@@ -6,7 +6,7 @@
 
 import get from 'lodash/get';
 import set from 'lodash/set';
-import type Contract from './contract';
+import type { Matcher } from './contract';
 
 /**
  * @summary Get the path of a matcher in the cache
@@ -22,10 +22,13 @@ import type Contract from './contract';
  *   slug: 'debian'
  * }))
  */
-const getMatcherCachePath = (matcher: Contract): string[] => [
-	matcher.raw.data.type,
-	matcher.metadata.hash,
-];
+const getMatcherCachePath = (matcher: Matcher): string[] => {
+	const type = matcher.getMatchedType();
+	if (type == null) {
+		throw new Error('Operation matchers cannot be cached');
+	}
+	return [type, matcher.hash()];
+};
 
 /**
  * @ignore
@@ -66,13 +69,14 @@ export default class MatcherCache {
 	 *   foo: 'bar'
 	 * })
 	 */
-	add(matcher: Contract, value: any) {
-		set(this.data, getMatcherCachePath(matcher), {
+	add(matcher: Matcher, value: any) {
+		const [type, hash] = getMatcherCachePath(matcher);
+		set(this.data, [type, hash], {
 			value,
 			matcher,
 		});
 
-		this.types.add(matcher.raw.data.type);
+		this.types.add(type);
 	}
 
 	/**
@@ -100,7 +104,7 @@ export default class MatcherCache {
 	 * >   foo: 'bar'
 	 * > }
 	 */
-	get(matcher: Contract): any {
+	get(matcher: Matcher): any {
 		const path = getMatcherCachePath(matcher);
 		return get(this.data, [...path, 'value'], null);
 	}

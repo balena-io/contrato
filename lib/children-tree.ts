@@ -7,8 +7,8 @@
 import reduce from 'lodash/reduce';
 import set from 'lodash/set';
 
-import type { ContractObject } from '.';
-import type Contract from './contract';
+import type { ContractMetadata } from './contract';
+import type { ContractObject, ChildrenTree } from './types';
 import { setFirst } from './utils';
 
 /**
@@ -16,31 +16,28 @@ import { setFirst } from './utils';
  */
 
 /**
- * @summary Build a plain children tree out of a built contract
+ * @summary Build a plain children tree out of a contract internal metadata
  * @function
  * @public
  * @memberof module:children-tree
  *
- * @param {Object} contract - contract
+ * @param {Object} metadata - contract metadata
  * @returns {Object} children tree
- *
- * @example
- * const contract = new Contract({ ... })
- * contract.addChildren([ ... ])
- *
- * const tree = childrenTree.build(contract)
  */
-export const build = (contract: Contract): object => {
+export const build = (metadata: ContractMetadata): ChildrenTree => {
 	const tree = {};
 
-	for (const type of contract.metadata.children.types) {
-		if (contract.metadata.children.byType[type].size === 1) {
-			const hash = setFirst<string>(contract.metadata.children.byType[type]);
+	const getChildByHash = (childHash: string) =>
+		metadata.children.map[childHash];
+
+	for (const type of metadata.children.types) {
+		if (metadata.children.byType[type].size === 1) {
+			const hash = setFirst<string>(metadata.children.byType[type]);
 			if (hash === undefined) {
 				throw new Error('Error retrieving child');
 			}
 
-			const child = contract.getChildByHash(hash);
+			const child = getChildByHash(hash);
 			if (child === undefined) {
 				throw new Error('Error retrieving child');
 			}
@@ -48,12 +45,10 @@ export const build = (contract: Contract): object => {
 			continue;
 		}
 
-		for (const slug of Object.keys(
-			contract.metadata.children.byTypeSlug[type],
-		)) {
+		for (const slug of Object.keys(metadata.children.byTypeSlug[type])) {
 			const sources: object[] = [];
-			for (const hash of contract.metadata.children.byTypeSlug[type][slug]) {
-				const child = contract.getChildByHash(hash);
+			for (const hash of metadata.children.byTypeSlug[type][slug]) {
+				const child = getChildByHash(hash);
 				if (child === undefined) {
 					throw new Error('Error retrieving child');
 				}

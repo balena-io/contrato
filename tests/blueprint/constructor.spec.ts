@@ -26,15 +26,15 @@ describe('Blueprint constructor', () => {
 			'hw.device-type': 1,
 		});
 
-		expect(blueprint.raw.type).to.equal('meta.blueprint');
+		expect(blueprint.raw().type).to.equal('meta.blueprint');
 	});
 
-	it('should be a hashed contract', () => {
+	it('should be a hashable contract', () => {
 		const blueprint = new Blueprint({
 			'hw.device-type': 1,
 		});
 
-		expect(typeof blueprint.metadata.hash).to.equal('string');
+		expect(typeof blueprint.hash()).to.equal('string');
 	});
 
 	it('should parse a layout with one number selector', () => {
@@ -42,15 +42,14 @@ describe('Blueprint constructor', () => {
 			'hw.device-type': 1,
 		});
 
-		expect(blueprint.metadata.layout).to.deep.equal({
+		// @ts-expect-error reading private properties for testing purposes
+		expect(blueprint.$layout).to.deep.equal({
 			types: new Set(['hw.device-type']),
 			finite: {
 				selectors: {
 					'hw.device-type': [
 						{
-							cardinality: _.merge(parse([1, 1]), {
-								type: 'hw.device-type',
-							}),
+							cardinality: parse([1, 1]),
 							filter: undefined,
 							version: undefined,
 							type: 'hw.device-type',
@@ -72,15 +71,14 @@ describe('Blueprint constructor', () => {
 			'arch.sw': '1+',
 		});
 
-		expect(blueprint.metadata.layout).to.deep.equal({
+		// @ts-expect-error reading private properties for testing purposes
+		expect(blueprint.$layout).to.deep.equal({
 			types: new Set(['hw.device-type', 'arch.sw']),
 			finite: {
 				selectors: {
 					'hw.device-type': [
 						{
-							cardinality: _.merge(parse([2, 2]), {
-								type: 'hw.device-type',
-							}),
+							cardinality: parse([2, 2]),
 							filter: undefined,
 							version: undefined,
 							type: 'hw.device-type',
@@ -93,9 +91,7 @@ describe('Blueprint constructor', () => {
 				selectors: {
 					'arch.sw': [
 						{
-							cardinality: _.merge(parse([1, Infinity]), {
-								type: 'arch.sw',
-							}),
+							cardinality: parse([1, Infinity]),
 							filter: undefined,
 							version: undefined,
 							type: 'arch.sw',
@@ -120,15 +116,14 @@ describe('Blueprint constructor', () => {
 			},
 		});
 
-		expect(blueprint.metadata.layout).to.deep.equal({
+		// @ts-expect-error reading private properties for testing purposes
+		expect(blueprint.$layout).to.deep.equal({
 			types: new Set(['hw.device-type', 'arch.sw']),
 			finite: {
 				selectors: {
 					'hw.device-type': [
 						{
-							cardinality: _.merge(parse([2, 2]), {
-								type: 'hw.device-type',
-							}),
+							cardinality: parse([2, 2]),
 							filter: undefined,
 							version: undefined,
 							type: 'hw.device-type',
@@ -141,9 +136,7 @@ describe('Blueprint constructor', () => {
 				selectors: {
 					'arch.sw': [
 						{
-							cardinality: _.merge(parse([1, Infinity]), {
-								type: 'arch.sw',
-							}),
+							cardinality: parse([1, Infinity]),
 							filter: filterFunction,
 							version: undefined,
 							type: 'arch.sw',
@@ -153,6 +146,22 @@ describe('Blueprint constructor', () => {
 				types: new Set(['arch.sw']),
 			},
 		});
+	});
+
+	it('should keep the layout off the raw object so it can be cloned', () => {
+		const blueprint = new Blueprint({
+			'arch.sw': {
+				cardinality: '1+',
+				filter: _.identity,
+			},
+		});
+
+		// The raw accessor structurally clones the contract, which would throw
+		// if the layout (carrying a filter function) were stored on it.
+		expect(() => blueprint.raw).to.not.throw();
+
+		// @ts-expect-error reading private properties for testing purposes
+		expect(blueprint.raw.layout).to.be.undefined;
 	});
 
 	it('should allow passing a skeleton object', () => {
@@ -166,7 +175,7 @@ describe('Blueprint constructor', () => {
 			},
 		);
 
-		expect(blueprint.raw.skeleton).to.deep.equal({
+		expect(blueprint.raw().skeleton).to.deep.equal({
 			type: 'sw.os-image',
 			name: 'Generic OS Image',
 		});

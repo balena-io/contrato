@@ -130,7 +130,7 @@ describe('Contract toJSON', () => {
 			slug: 'bar',
 			children: {
 				hw: {
-					'device-type': contract1.raw,
+					'device-type': contract1.raw(),
 				},
 			},
 		});
@@ -166,11 +166,11 @@ describe('Contract toJSON', () => {
 			children: {
 				hw: {
 					'device-type': {
-						raspberrypi: contract1.raw,
-						rpi: contract1.raw,
-						'raspberry-pi': contract1.raw,
-						'intel-nuc': contract2.raw,
-						nuc: contract2.raw,
+						raspberrypi: contract1.raw(),
+						rpi: contract1.raw(),
+						'raspberry-pi': contract1.raw(),
+						'intel-nuc': contract2.raw(),
+						nuc: contract2.raw(),
 					},
 				},
 			},
@@ -206,10 +206,10 @@ describe('Contract toJSON', () => {
 			children: {
 				hw: {
 					'device-type': {
-						raspberrypi: contract1.raw,
-						rpi: contract1.raw,
-						'raspberry-pi': contract1.raw,
-						'intel-nuc': contract2.raw,
+						raspberrypi: contract1.raw(),
+						rpi: contract1.raw(),
+						'raspberry-pi': contract1.raw(),
+						'intel-nuc': contract2.raw(),
 					},
 				},
 			},
@@ -245,10 +245,10 @@ describe('Contract toJSON', () => {
 			children: {
 				hw: {
 					'device-type': {
-						raspberrypi: contract2.raw,
-						rpi: contract2.raw,
-						'raspberry-pi': contract2.raw,
-						'intel-nuc': contract1.raw,
+						raspberrypi: contract2.raw(),
+						rpi: contract2.raw(),
+						'raspberry-pi': contract2.raw(),
+						'intel-nuc': contract1.raw(),
 					},
 				},
 			},

@@ -164,6 +164,21 @@ export function* filter<T>(
 	}
 }
 
+// Clones an accumulator before handing it to the iteratee. Values that
+// expose their own `clone()` method (e.g. a WASM-backed Contract, whose
+// internal handle is non-enumerable and would be lost by a shallow clone)
+// are cloned through it; everything else falls back to a shallow lodash
+// clone.
+function cloneCombination<V>(combination: V): V {
+	if (
+		combination != null &&
+		typeof (combination as { clone?: unknown }).clone === 'function'
+	) {
+		return (combination as unknown as { clone(): V }).clone();
+	}
+	return clone(combination);
+}
+
 function* nextCartesianProduct<T, V>(
 	sets: T[][],
 	iteratee: (arg0: V, arg1: T) => V | undefined,
@@ -190,7 +205,7 @@ function* nextCartesianProduct<T, V>(
 
 	// Calculate first the combination with the values up to the current row
 	const value = set[setCol];
-	const newCombination = iteratee(clone(combination), value);
+	const newCombination = iteratee(cloneCombination(combination), value);
 	if (newCombination) {
 		yield* nextCartesianProduct(sets, iteratee, newCombination, setRow + 1, 0);
 	}

@@ -27,7 +27,7 @@ describe('Contract constructor', () => {
 		expect(contract.getVersion()).to.equal(undefined);
 		expect(contract.getCanonicalSlug()).to.equal('armv7hf');
 		expect(contract.hash()).to.equal(
-			'e3d3b7f2e5820db4b45975380a3f467bc2ff2999',
+			'471d73db7a92c2e05b5b1426805f7bdd85659741f1366f1c06955a3d39b3ea68',
 		);
 	});
 
@@ -51,7 +51,7 @@ describe('Contract constructor', () => {
 		expect(contract.getVersion()).to.equal(undefined);
 		expect(contract.getCanonicalSlug()).to.equal('armv7hf');
 		expect(contract.hash()).to.equal(
-			'5fd152eb6917143accc7fea3771e92835ffe0c50',
+			'8d09f2bcabd5eec6ff6d619c07a4fdd8de2ab184b5aaab647fdb85594420b758',
 		);
 	});
 });

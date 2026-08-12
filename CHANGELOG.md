@@ -5,6 +5,18 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## v0.0.6 - 2018-08-17
 
+## 0.14.0 - 2026-08-12
+
+* Fix fixtures using top-level `arch` property [Felipe Lalanne]
+* Add runtime validation for ContractMatcher [Felipe Lalanne]
+* Move Blueprint layout out of metadata. [Felipe Lalanne]
+* Add ContractRequirement and MatcherObject types [Felipe Lalanne]
+* Create Contract.raw() replacing `Contract.raw` getter [Felipe Lalanne]
+* Make Contract.raw a protected property [Felipe Lalanne]
+* Make Contract.metadata into a protected property [Felipe Lalanne]
+* Make Contract.hash() compute lazily [Felipe Lalanne]
+* Add more strict type definitions for core types [Felipe Lalanne]
+
 ## 0.13.4 - 2026-03-30
 
 * Switch lodash map to native equivalents [Pagan Gazzard]

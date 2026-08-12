@@ -1,4 +1,126 @@
 - commits:
+    - subject: Fix fixtures using top-level `arch` property
+      hash: 91d9d4ee08de1dc3e4c7ee47297528eda6f48840
+      body: |
+        The `arch` property is not part of the contract spec. The right way to
+        define an architecture is via `data: {arch: 'xxx'}`
+
+        This updates the fixtures to follow the correct format
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Add runtime validation for ContractMatcher
+      hash: 4fd14682aa77df9c43b90f9b63d68d48c471069f
+      body: >
+        This validates that matchers can only be defined for specific
+
+        properties `type`/`slug`/`data` and avoids validating by accident on
+        descriptive properties.
+      footer:
+        Change-type: minor
+        change-type: minor
+      author: Felipe Lalanne
+      nested: []
+    - subject: Move Blueprint layout out of metadata.
+      hash: cba7eaf2eaba05e85814054aab3fa264353e6a05
+      body: |
+        Avoids re-declaring the metadata type. This also removes the layout from
+        the raw contract since the layout can contain functions that are not
+        cloneable/serializable
+      footer:
+        Change-type: minor
+        change-type: minor
+      author: Felipe Lalanne
+      nested: []
+    - subject: Add ContractRequirement and MatcherObject types
+      hash: 3ef1501ad6367dbc80f292b45ba021fe92121f9d
+      body: |
+        The `createMatcher` method now validates the input at compile time
+        via its arguments.
+      footer:
+        Change-type: minor
+        change-type: minor
+      author: Felipe Lalanne
+      nested: []
+    - subject: Create Contract.raw() replacing `Contract.raw` getter
+      hash: 7a1d6a56ecbae44a1fb54e5858d5f5b9a9bee959
+      body: |
+        This makes it clear that accessing the raw contract object has a cost,
+        since it involves a `structuralClone` of the object to avoid outside
+        modification of the object.
+
+        This is made into a separate commit from making Contract.raw into an
+        internal property given the number of changes it involves.
+      footer:
+        Change-type: minor
+        change-type: minor
+      author: Felipe Lalanne
+      nested: []
+    - subject: Make Contract.raw a protected property
+      hash: 905f94e54e36ddad15e3cad27b87fe6fe108d140
+      body: |
+        Renames it to `$raw`. It adds an accessor `get raw()` that returns a
+        structural clone of the raw contract to prevent mutation of the internal
+        contract structure.
+
+        This introduces the need for a new `Matcher` sub-class of contract, to
+        allow `MatcherCache` to be able to read the matched contract type
+        without direct access to the `$raw` property.
+      footer:
+        Change-type: minor
+        change-type: minor
+      author: Felipe Lalanne
+      nested: []
+    - subject: Make Contract.metadata into a protected property
+      hash: c4e614e5cb2e4bc7cd7be1c0ed5abc77cac892f9
+      body: |
+        The property should not be accessible to users and is only used in tests
+        that need to check the shape of the internal metadata property.
+
+        The property has been renamed to `$metadata` to further highlight the
+        protected nature.
+
+        `ContractMetadata.hash` has been moved to `Contract.#hash` (native
+        private property) to avoid its use in deep comparison of objects.
+      footer:
+        Change-type: minor
+        change-type: minor
+      author: Felipe Lalanne
+      nested: []
+    - subject: Make Contract.hash() compute lazily
+      hash: 8f0b52990467ca09392dd4566bf2b97ea6ea6aae
+      body: >
+        Removes all `rehash` options on Contract methods, modifications to
+
+        contracts invalidate the previous hash to allow the hash to be
+
+        re-calculated on the next call to hash().
+
+
+        This also removes usage of `metadata.hash` in code and replaces those
+        calls for calls to hash().
+
+
+        Updates tests removing tests that no longer make sense.
+      footer:
+        Change-type: minor
+        change-type: minor
+      author: Felipe Lalanne
+      nested: []
+    - subject: Add more strict type definitions for core types
+      hash: 66d50e0adc9d230938022093675ceb0a1fc5506b
+      body: ""
+      footer:
+        Change-type: minor
+        change-type: minor
+      author: Felipe Lalanne
+      nested: []
+  version: 0.14.0
+  title: ""
+  date: 2026-08-12T16:33:30.899Z
+- commits:
     - subject: Switch lodash map to native equivalents
       hash: 8638d79d7dcd26ad4e5038842a2007c8e2f5470b
       body: ""

@@ -30,4 +30,28 @@ describe('Contract constructor', () => {
 			'e3d3b7f2e5820db4b45975380a3f467bc2ff2999',
 		);
 	});
+
+	it('should should allow extra fields on round trip', () => {
+		const contract = new Contract({
+			type: 'arch.sw',
+			name: 'armv7hf',
+			slug: 'armv7hf',
+			xxx: '123',
+		});
+
+		expect(contract.raw()).to.deep.equal({
+			type: 'arch.sw',
+			name: 'armv7hf',
+			slug: 'armv7hf',
+			xxx: '123',
+		});
+
+		expect(contract.getType()).to.equal('arch.sw');
+		expect(contract.getSlug()).to.equal('armv7hf');
+		expect(contract.getVersion()).to.equal(undefined);
+		expect(contract.getCanonicalSlug()).to.equal('armv7hf');
+		expect(contract.hash()).to.equal(
+			'5fd152eb6917143accc7fea3771e92835ffe0c50',
+		);
+	});
 });

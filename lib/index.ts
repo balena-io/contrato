@@ -69,7 +69,7 @@ export {
 export function query(
 	universe: Contract,
 	layout: BlueprintLayout,
-	skeleton: object,
+	skeleton: ContractObject,
 ): IterableIterator<Contract> {
 	return new Blueprint(layout, skeleton).reproduce(universe);
 }

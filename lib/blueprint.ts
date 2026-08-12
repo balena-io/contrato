@@ -9,8 +9,8 @@ import reduce from 'lodash/reduce';
 import Contract from './contract';
 import type { Cardinality } from './cardinality';
 import { parse } from './cardinality';
-import type { BlueprintLayout, BlueprintObject } from './types';
-import { BLUEPRINT } from './types';
+import type { BlueprintLayout, BlueprintObject, ContractObject } from './types';
+import { BLUEPRINT, CONTEXT } from './types';
 import {
 	cartesianProductWith,
 	flatten as flattenIterator,
@@ -54,6 +54,10 @@ export default class Blueprint extends Contract {
 	 * @param {Object} layout - the blueprint layout
 	 * @param {Object} skeleton - the blueprint skeleton
 	 *
+	 * @description Creates a new Blueprint with a given layout and skeleton
+	 *
+	 * If no skeleton is given, a default `{"type": "meta.context"}` skeleton will be used.
+	 *
 	 * @example
 	 * const blueprint = new Blueprint({
 	 *   'arch.sw': 1,
@@ -63,10 +67,10 @@ export default class Blueprint extends Contract {
 	 *   slug: '{{children.arch.sw.slug}}-{{children.hw.device-type.slug}}'
 	 * })
 	 */
-	constructor(layout: BlueprintLayout, skeleton?: any) {
+	constructor(layout: BlueprintLayout, skeleton?: ContractObject) {
 		super({
 			type: BLUEPRINT,
-			skeleton,
+			skeleton: skeleton ?? { type: CONTEXT },
 		});
 
 		const initialLayout: ParsedBlueprintLayout = {

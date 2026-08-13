@@ -5,6 +5,11 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## v0.0.6 - 2018-08-17
 
+## 0.15.0 - 2026-08-13
+
+* Test that raw contract extra properties are preserved [Felipe Lalanne]
+* Use default Blueprint skeleton [Felipe Lalanne]
+
 ## 0.14.0 - 2026-08-12
 
 * Fix fixtures using top-level `arch` property [Felipe Lalanne]

@@ -1,4 +1,47 @@
 - commits:
+    - subject: Test that raw contract extra properties are preserved
+      hash: 2e2de07b0e19fd21521f6cdafa9d976182096352
+      body: |
+        The blueprint skeleton has been used internally as a way to expand
+        templates for automated blob generation. While the contract spec
+        recommends using the `data` property for additional properties, use of
+        blueprints has often relied on additional top level properties. This
+        adds a test to extra properties are kept as part of contract
+        serialization.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Use default Blueprint skeleton
+      hash: a4ccc311c896c7c6ffc0872d2616a5b7c99fe8c1
+      body: >
+        This fixes a bug that existed for a while. The Blueprint constructor
+
+        allowed skeleton as an optional argument. However failing to provide a
+
+        skeleton would fail when calling `reproduce` with `TypeError Cannot read
+        properties of undefined (reading 'children')`.
+
+
+        This keeps `skeleton` as an optional property, but uses `{"type":
+        "meta.context"}`
+
+        as the default contract skeleton.
+
+
+        This also requires that the skeleton is of `ContractObject` type for
+
+        additional compile time checks.
+      footer:
+        Change-type: minor
+        change-type: minor
+      author: Felipe Lalanne
+      nested: []
+  version: 0.15.0
+  title: ""
+  date: 2026-08-13T12:33:03.800Z
+- commits:
     - subject: Fix fixtures using top-level `arch` property
       hash: 91d9d4ee08de1dc3e4c7ee47297528eda6f48840
       body: |

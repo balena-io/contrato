@@ -90,4 +90,40 @@ describe('Blueprint reproduce', () => {
 		expect(contexts[0].hash()).to.equal(derivedContract1.hash());
 		expect(contexts[1].hash()).to.equal(derivedContract2.hash());
 	});
+
+	it('should use a `meta.context` skeleton if none is given', () => {
+		const blueprint = new Blueprint({
+			'hw.device-type': 1,
+		});
+
+		const contract1 = new Contract({
+			type: 'hw.device-type',
+			name: 'Intel Edison',
+			slug: 'intel-edison',
+		});
+
+		const contract2 = new Contract({
+			type: 'hw.device-type',
+			name: 'Intel NUC',
+			slug: 'intel-nuc',
+		});
+
+		const container = new Contract({
+			type: 'meta.universe',
+		});
+
+		container.addChildren([contract1, contract2]);
+		const contexts = Array.from(blueprint.reproduce(container));
+
+		const derivedContract1 = new Contract({ type: 'meta.context' }).addChild(
+			contract1,
+		);
+		const derivedContract2 = new Contract({ type: 'meta.context' }).addChild(
+			contract2,
+		);
+
+		expect(contexts).to.have.length(2);
+		expect(contexts[0].hash()).to.equal(derivedContract1.hash());
+		expect(contexts[1].hash()).to.equal(derivedContract2.hash());
+	});
 });

@@ -21,6 +21,9 @@ export interface Asset {
 
 	/** Optional checksum algorithm (e.g., `"sha256"`) */
 	checksumType?: string;
+
+	/** Additional top-level fields, preserved for round-trip fidelity. */
+	[key: string]: unknown;
 }
 
 /// A matcher that references contracts by type and optional additional criteria.
@@ -43,9 +46,7 @@ export interface MatcherObject {
 }
 
 export type ContractRequirement =
-	| MatcherObject
-	| { or: MatcherObject[] }
-	| { not: MatcherObject[] };
+	MatcherObject | { or: MatcherObject[] } | { not: MatcherObject[] };
 
 export type ChildrenTree = Record<string, unknown>;
 

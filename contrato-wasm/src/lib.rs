@@ -353,7 +353,7 @@ impl WasmContract {
     #[wasm_bindgen(js_name = build)]
     pub fn build(source: JsValue) -> Result<Array, JsValue> {
         let raw: RawContract = serde_wasm_bindgen::from_value(source).map_err(wasm_err)?;
-        Ok(contracts_to_array(Contract::build(&raw)))
+        Ok(contracts_to_array(Contract::build(raw)))
     }
 
     /// Returns `true` when two contracts have the same deterministic

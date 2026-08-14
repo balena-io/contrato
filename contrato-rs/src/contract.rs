@@ -374,12 +374,10 @@ impl Contract {
     ///    `aliases` cleared.
     ///
     /// The alias contracts come before the base contract in the output.
-    pub fn build(source: &RawContract) -> Vec<Contract> {
+    pub fn build(source: RawContract) -> Vec<Contract> {
         let mut result = Vec::new();
-        for variant in variants::build(source) {
-            let aliases: Vec<Slug> = variant.body.aliases.clone();
-            let mut base = variant;
-            base.body.aliases.clear();
+        for mut base in variants::build(source) {
+            let aliases: Vec<Slug> = std::mem::take(&mut base.body.aliases);
 
             for alias in aliases {
                 let mut alias_contract = base.clone();
@@ -1800,7 +1798,7 @@ mod tests {
 
     #[test]
     fn build_single_contract_no_variants() {
-        let contracts = Contract::build(&raw(json!({
+        let contracts = Contract::build(raw(json!({
             "name": "Debian Wheezy",
             "slug": "debian",
             "version": "wheezy",
@@ -1813,7 +1811,7 @@ mod tests {
 
     #[test]
     fn build_expands_templates() {
-        let contracts = Contract::build(&raw(json!({
+        let contracts = Contract::build(raw(json!({
             "name": "Debian {{this.data.codename}}",
             "slug": "debian",
             "version": "wheezy",
@@ -1833,7 +1831,7 @@ mod tests {
 
     #[test]
     fn build_supports_slug_and_type_templates() {
-        let contracts = Contract::build(&raw(json!({
+        let contracts = Contract::build(raw(json!({
             "name": "Debian Wheezy",
             "slug": "{{this.data.slug}}",
             "version": "wheezy",
@@ -1847,7 +1845,7 @@ mod tests {
 
     #[test]
     fn build_expands_variants() {
-        let contracts = Contract::build(&raw(json!({
+        let contracts = Contract::build(raw(json!({
             "slug": "debian",
             "type": "sw.os",
             "variants": [
@@ -1870,7 +1868,7 @@ mod tests {
 
     #[test]
     fn build_keeps_children_declared_on_base_and_variant() {
-        let contracts = Contract::build(&raw(json!({
+        let contracts = Contract::build(raw(json!({
             "slug": "debian",
             "type": "sw.os",
             "children": [
@@ -1895,8 +1893,36 @@ mod tests {
     }
 
     #[test]
+    fn build_keeps_same_type_children_declared_on_base_and_variant() {
+        // Two capabilities of the same type at the same tree path. Merging the
+        // children trees structurally collapses them into one hybrid contract;
+        // both must survive the re-index instead.
+        let contracts = Contract::build(raw(json!({
+            "slug": "myapp",
+            "type": "sw.application",
+            "children": {
+                "sw": { "os": { "type": "sw.os", "slug": "debian" } }
+            },
+            "variants": [
+                {
+                    "children": {
+                        "sw": { "os": { "type": "sw.os", "slug": "fedora" } }
+                    }
+                }
+            ]
+        })));
+        assert_eq!(contracts.len(), 1);
+
+        let debian = matcher("sw.os", Some("debian"), None);
+        assert_eq!(contracts[0].find_children(&debian).len(), 1);
+
+        let fedora = matcher("sw.os", Some("fedora"), None);
+        assert_eq!(contracts[0].find_children(&fedora).len(), 1);
+    }
+
+    #[test]
     fn build_variants_with_templates() {
-        let contracts = Contract::build(&raw(json!({
+        let contracts = Contract::build(raw(json!({
             "name": "debian {{this.version}}",
             "slug": "debian",
             "type": "sw.os",
@@ -1912,7 +1938,7 @@ mod tests {
 
     #[test]
     fn build_expands_aliases() {
-        let contracts = Contract::build(&raw(json!({
+        let contracts = Contract::build(raw(json!({
             "slug": "debian",
             "type": "sw.os",
             "version": "jessie",
@@ -1930,7 +1956,7 @@ mod tests {
 
     #[test]
     fn build_variants_and_aliases() {
-        let contracts = Contract::build(&raw(json!({
+        let contracts = Contract::build(raw(json!({
             "name": "debian {{this.version}}",
             "slug": "debian",
             "type": "sw.os",

@@ -184,11 +184,36 @@ impl<'de> Deserialize<'de> for ChildrenTree {
 /// Extracts all contracts from a [`ChildrenTree`].
 ///
 /// Recursively walks the tree and collects every [`RawContract`] found at leaf
-/// positions into a flat vector.
+/// positions into a flat vector. Use [`into_all`] instead when the tree is
+/// discarded afterwards — it moves the leaves rather than cloning them.
 pub(crate) fn get_all(tree: &ChildrenTree) -> Vec<RawContract> {
     let mut out = Vec::new();
     collect_all(tree, &mut out);
     out
+}
+
+/// Extracts all contracts from a [`ChildrenTree`], consuming it.
+///
+/// The moving counterpart of [`get_all`]: leaf contracts are taken out of the
+/// tree instead of cloned.
+pub(crate) fn into_all(tree: ChildrenTree) -> Vec<RawContract> {
+    let mut out = Vec::new();
+    collect_into(tree, &mut out);
+    out
+}
+
+/// Recursive helper for [`into_all`], mirroring [`collect_all`] over an owned
+/// tree.
+fn collect_into(tree: ChildrenTree, out: &mut Vec<RawContract>) {
+    match tree {
+        ChildrenTree::Branch(map) => {
+            for child in map.into_values() {
+                collect_into(child, out);
+            }
+        }
+        ChildrenTree::Single(contract) => out.push(*contract),
+        ChildrenTree::Multiple(contracts) => out.extend(contracts),
+    }
 }
 
 /// Recursive helper that accumulates contracts into a single `Vec`, avoiding

@@ -3,65 +3,179 @@
 //! Contract variants are syntax sugar that allows expressing multiple different
 //! contracts sharing many properties as a single object, to avoid repetition.
 //! A contract with a `variants` array is expanded into N contracts, one per
-//! variant, where each variant is deep-merged with the base contract.
+//! variant, where each variant is merged with the base contract.
+
+use std::collections::HashMap;
 
 use serde_json::Value;
 
-use crate::types::RawContract;
+use crate::children_tree::{self, ChildrenTree};
+use crate::types::{Asset, PartialContract, RawContract};
 
 /// Expands a contract's variants into a flat list of contracts.
 ///
 /// If the contract has no `variants` (or an empty array), returns a
 /// single-element vec containing the contract with `variants` removed.
-/// Otherwise, each variant is recursively expanded and deep-merged with
-/// the base contract. During merge, arrays are concatenated (base first,
-/// then variant) and objects are recursively merged.
-///
-/// # Panics
-///
-/// Panics if the contract cannot be serialized to JSON or if any expanded
-/// variant cannot be deserialized back into a [`ContractObject`].
-pub(crate) fn build(contract: &RawContract) -> Vec<RawContract> {
-    let value = serde_json::to_value(contract).expect("ContractObject must serialize to JSON");
-    build_value(&value)
+/// Otherwise, each variant is recursively expanded and merged with the base
+/// contract. See [`merge_partial`] for the per-field merge rules.
+pub(crate) fn build(contract: RawContract) -> Vec<RawContract> {
+    let RawContract {
+        kind,
+        canonical_slug,
+        body,
+        extra,
+    } = contract;
+
+    let mut bodies = expand_partial(body);
+    let last = bodies.pop();
+
+    let mut result: Vec<RawContract> = bodies
         .into_iter()
-        .map(|v| serde_json::from_value(v).expect("expanded variant must deserialize"))
-        .collect()
+        .map(|body| RawContract {
+            kind: kind.clone(),
+            canonical_slug: canonical_slug.clone(),
+            body,
+            extra: extra.clone(),
+        })
+        .collect();
+
+    if let Some(body) = last {
+        result.push(RawContract {
+            kind,
+            canonical_slug,
+            body,
+            extra,
+        });
+    }
+    result
 }
 
-/// Recursive variant expansion operating on raw JSON values.
+/// Recursive variant expansion over [`PartialContract`].
 ///
-/// Extracts the `variants` array from the object, removes it from the base,
-/// then for each variant recursively expands it and deep-merges each result
-/// with the base.
-fn build_value(contract: &Value) -> Vec<Value> {
-    // Non-object values pass through unchanged. This handles the recursive case
-    // where a malformed variant entry is not an object.
-    let obj = match contract.as_object() {
-        Some(o) => o,
-        None => return vec![contract.clone()],
-    };
+/// A contract without variants expands to itself. Otherwise each variant is
+/// recursively expanded and every expansion is merged onto the contract, which
+/// acts as the base
+fn expand_partial(mut partial: PartialContract) -> Vec<PartialContract> {
+    if partial.variants.is_empty() {
+        return vec![partial];
+    }
 
-    let mut base = obj.clone();
-    let variants = base.remove("variants");
-    let base = Value::Object(base);
+    let variants = std::mem::take(&mut partial.variants);
+    let base = partial;
 
-    let variants = match variants.as_ref().and_then(Value::as_array) {
-        Some(v) if !v.is_empty() => v,
-        _ => return vec![base],
-    };
+    let mut templates: Vec<PartialContract> =
+        variants.into_iter().flat_map(expand_partial).collect();
+    let last = templates.pop();
 
-    variants
-        .iter()
-        .flat_map(|variation| {
-            build_value(variation)
-                .into_iter()
-                .map(|template| deep_merge(&base, &template))
-        })
-        .collect()
+    let mut expanded: Vec<PartialContract> = templates
+        .into_iter()
+        .map(|template| merge_partial(base.clone(), template))
+        .collect();
+
+    if let Some(template) = last {
+        expanded.push(merge_partial(base, template));
+    }
+    expanded
+}
+
+/// Merges a variant (`overlay`) onto a base contract body.
+///
+/// - `slug`, `version`, `name`, `description`: the overlay wins when set.
+/// - `aliases`, `requires`: concatenated, base first.
+/// - `data`: recursively [`deep_merge`]d when both sides are set, otherwise the
+///   overlay wins when set.
+/// - `assets`: merged key-wise; colliding keys are merged field-wise by
+///   [`merge_asset`].
+/// - `children`: flattened and concatenated by [`merge_children`].
+/// - `variants`: dropped — a merged contract is by definition already expanded.
+fn merge_partial(base: PartialContract, overlay: PartialContract) -> PartialContract {
+    PartialContract {
+        slug: overlay.slug.or(base.slug),
+        version: overlay.version.or(base.version),
+        name: overlay.name.or(base.name),
+        description: overlay.description.or(base.description),
+        aliases: concat(base.aliases, overlay.aliases),
+        data: match (base.data, overlay.data) {
+            (Some(b), Some(o)) => Some(deep_merge(&b, &o)),
+            (b, o) => o.or(b),
+        },
+        assets: merge_assets(base.assets, overlay.assets),
+        requires: concat(base.requires, overlay.requires),
+        variants: Vec::new(),
+        children: merge_children(base.children, overlay.children),
+    }
+}
+
+/// Appends the overlay's elements to the base's, reusing the base's allocation.
+fn concat<T>(mut base: Vec<T>, overlay: Vec<T>) -> Vec<T> {
+    base.extend(overlay);
+    base
+}
+
+/// Merges two asset maps key-wise, merging colliding entries field-wise.
+fn merge_assets(
+    mut base: HashMap<String, Asset>,
+    overlay: HashMap<String, Asset>,
+) -> HashMap<String, Asset> {
+    for (key, asset) in overlay {
+        let merged = match base.remove(&key) {
+            Some(existing) => merge_asset(existing, asset),
+            None => asset,
+        };
+        base.insert(key, merged);
+    }
+    base
+}
+
+/// Merges two assets field-wise.
+///
+/// `url` is required on both sides, so the overlay's always wins. The optional
+/// fields fall back to the base when the overlay leaves them unset, and the
+/// untyped `extra` fields are deep-merged like `data`.
+fn merge_asset(base: Asset, overlay: Asset) -> Asset {
+    let mut extra = base.extra;
+    for (key, val) in overlay.extra {
+        let merged = match extra.get(&key) {
+            Some(existing) => deep_merge(existing, &val),
+            None => val,
+        };
+        extra.insert(key, merged);
+    }
+
+    Asset {
+        url: overlay.url,
+        name: overlay.name.or(base.name),
+        checksum: overlay.checksum.or(base.checksum),
+        checksum_type: overlay.checksum_type.or(base.checksum_type),
+        extra,
+    }
+}
+
+/// Merges two children trees by flattening both sides and concatenating them,
+/// base children first.
+///
+/// Children declare the capabilities a contract provides to its context, so the
+/// merge must be a union: a structural tree merge would collapse two different
+/// capabilities sharing a type path into a single hybrid contract.
+fn merge_children(
+    base: Option<ChildrenTree>,
+    overlay: Option<ChildrenTree>,
+) -> Option<ChildrenTree> {
+    match (base, overlay) {
+        (None, None) => None,
+        (base, overlay) => Some(ChildrenTree::Multiple(
+            base.into_iter()
+                .chain(overlay)
+                .flat_map(children_tree::into_all)
+                .collect(),
+        )),
+    }
 }
 
 /// Deep-merges two JSON values with array concatenation semantics.
+///
+/// Only used for the untyped `data` field; every other field has a typed rule
+/// in [`merge_partial`].
 ///
 /// - **Objects**: keys from `overlay` are merged into `base` recursively.
 ///   Keys present only in `base` are preserved; keys present only in
@@ -104,7 +218,7 @@ mod tests {
         }))
         .unwrap();
 
-        let result = build(&contract);
+        let result = build(contract);
         assert_eq!(result.len(), 1);
 
         let json = serde_json::to_value(&result[0]).unwrap();
@@ -128,7 +242,7 @@ mod tests {
         }))
         .unwrap();
 
-        let result = build(&contract);
+        let result = build(contract);
         assert_eq!(result.len(), 1);
 
         let json = serde_json::to_value(&result[0]).unwrap();
@@ -162,7 +276,7 @@ mod tests {
         }))
         .unwrap();
 
-        let result = build(&contract);
+        let result = build(contract);
         assert_eq!(result.len(), 2);
 
         let jsons: Vec<Value> = result
@@ -220,7 +334,7 @@ mod tests {
         }))
         .unwrap();
 
-        let result = build(&contract);
+        let result = build(contract);
         assert_eq!(result.len(), 3);
 
         let jsons: Vec<Value> = result
@@ -279,7 +393,7 @@ mod tests {
         }))
         .unwrap();
 
-        let result = build(&contract);
+        let result = build(contract);
         assert_eq!(result.len(), 2);
 
         let jsons: Vec<Value> = result
@@ -327,7 +441,7 @@ mod tests {
         }))
         .unwrap();
 
-        let result = build(&contract);
+        let result = build(contract);
         assert_eq!(result.len(), 1);
 
         let json = serde_json::to_value(&result[0]).unwrap();
@@ -358,7 +472,7 @@ mod tests {
         }))
         .unwrap();
 
-        let result = build(&contract);
+        let result = build(contract);
         assert_eq!(result.len(), 1);
 
         let json = serde_json::to_value(&result[0]).unwrap();
@@ -389,7 +503,7 @@ mod tests {
         }))
         .unwrap();
 
-        let result = build(&contract);
+        let result = build(contract);
         assert_eq!(result.len(), 1);
 
         let json = serde_json::to_value(&result[0]).unwrap();
@@ -429,7 +543,7 @@ mod tests {
         }))
         .unwrap();
 
-        let result = build(&contract);
+        let result = build(contract);
         assert_eq!(result.len(), 1);
 
         let json = serde_json::to_value(&result[0]).unwrap();
@@ -444,6 +558,42 @@ mod tests {
                         "debug": true,
                         "retry": { "enabled": true, "count": 5, "backoff": "exponential" }
                     }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn build_preserves_unknown_asset_fields() {
+        // Contracts attach their own metadata to assets and reference it from
+        // templated fields, so unknown keys must survive expansion.
+        let contract: RawContract = serde_json::from_value(json!({
+            "slug": "fedora",
+            "type": "sw.os",
+            "assets": {
+                "test": {
+                    "main": "test-os",
+                    "commit": "a95300e",
+                    "url": "https://example.com/{{this.assets.test.commit}}/script.sh"
+                }
+            },
+            "variants": [
+                { "assets": { "test": { "commit": "b12f4c1", "url": "https://example.com/{{this.assets.test.commit}}/script.sh" } } }
+            ]
+        }))
+        .unwrap();
+
+        let result = build(contract);
+        assert_eq!(result.len(), 1);
+
+        let json = serde_json::to_value(&result[0]).unwrap();
+        assert_eq!(
+            json["assets"],
+            json!({
+                "test": {
+                    "main": "test-os",
+                    "commit": "b12f4c1",
+                    "url": "https://example.com/{{this.assets.test.commit}}/script.sh"
                 }
             })
         );
@@ -529,7 +679,7 @@ mod tests {
             extra: Map::new(),
         };
 
-        let result = build(&contract);
+        let result = build(contract);
         assert_eq!(result.len(), 2);
 
         let jsons: Vec<Value> = result
@@ -577,7 +727,7 @@ mod tests {
         }))
         .unwrap();
 
-        let result = build(&contract);
+        let result = build(contract);
         assert_eq!(result.len(), 1);
 
         let json = serde_json::to_value(&result[0]).unwrap();
@@ -585,5 +735,180 @@ mod tests {
         assert_eq!(json["type"], "sw.app");
         assert_eq!(json["name"], "My Service");
         assert_eq!(json["slug"], "myapp");
+    }
+
+    /// Expands a contract expected to yield exactly one result and returns its
+    /// children as `type/slug` strings, in order.
+    ///
+    /// The assertions are on the flattened set of children, not on tree shape:
+    /// the shape emitted by the merge is an intermediate that `Contract::new`
+    /// regenerates from its child index.
+    fn expand_child_ids(contract: Value) -> Vec<String> {
+        let contract: RawContract = serde_json::from_value(contract).unwrap();
+        let result = build(contract);
+        assert_eq!(result.len(), 1);
+
+        let children = result[0].body.children.as_ref().expect("children present");
+        children_tree::get_all(children)
+            .iter()
+            .map(|c| format!("{}/{}", c.kind, c.body.slug.as_ref().unwrap()))
+            .collect()
+    }
+
+    #[test]
+    fn build_concatenates_children_lists() {
+        assert_eq!(
+            expand_child_ids(json!({
+                "slug": "debian",
+                "type": "sw.os",
+                "children": [{ "type": "sw.feature", "slug": "secureboot" }],
+                "variants": [
+                    { "children": [{ "type": "arch.sw", "slug": "amd64" }] }
+                ]
+            })),
+            ["sw.feature/secureboot", "arch.sw/amd64"]
+        );
+    }
+
+    #[test]
+    fn build_merges_disjoint_children_trees() {
+        assert_eq!(
+            expand_child_ids(json!({
+                "slug": "debian",
+                "type": "sw.os",
+                "children": {
+                    "sw": { "feature": { "type": "sw.feature", "slug": "secureboot" } }
+                },
+                "variants": [
+                    {
+                        "children": {
+                            "arch": { "sw": { "type": "arch.sw", "slug": "amd64" } }
+                        }
+                    }
+                ]
+            })),
+            ["sw.feature/secureboot", "arch.sw/amd64"]
+        );
+    }
+
+    #[test]
+    fn build_keeps_children_of_same_type_with_different_slugs() {
+        // Regression guard: a structural tree merge collapses these two into a
+        // single hybrid contract, destroying the base's capability.
+        assert_eq!(
+            expand_child_ids(json!({
+                "slug": "myapp",
+                "type": "sw.application",
+                "children": {
+                    "sw": { "os": { "type": "sw.os", "slug": "debian", "version": "wheezy" } }
+                },
+                "variants": [
+                    {
+                        "children": {
+                            "sw": { "os": { "type": "sw.os", "slug": "fedora", "version": "38" } }
+                        }
+                    }
+                ]
+            })),
+            ["sw.os/debian", "sw.os/fedora"]
+        );
+    }
+
+    #[test]
+    fn build_merges_children_list_with_tree() {
+        assert_eq!(
+            expand_child_ids(json!({
+                "slug": "myapp",
+                "type": "sw.application",
+                "children": [
+                    { "type": "sw.feature", "slug": "secureboot" },
+                    { "type": "sw.feature", "slug": "tpm" }
+                ],
+                "variants": [
+                    {
+                        "children": {
+                            "arch": { "sw": { "type": "arch.sw", "slug": "amd64" } }
+                        }
+                    }
+                ]
+            })),
+            ["sw.feature/secureboot", "sw.feature/tpm", "arch.sw/amd64"]
+        );
+    }
+
+    #[test]
+    fn build_keeps_base_only_children() {
+        assert_eq!(
+            expand_child_ids(json!({
+                "slug": "debian",
+                "type": "sw.os",
+                "children": [{ "type": "sw.feature", "slug": "secureboot" }],
+                "variants": [{ "version": "wheezy" }]
+            })),
+            ["sw.feature/secureboot"]
+        );
+    }
+
+    #[test]
+    fn build_keeps_variant_only_children() {
+        assert_eq!(
+            expand_child_ids(json!({
+                "slug": "debian",
+                "type": "sw.os",
+                "variants": [
+                    { "children": [{ "type": "arch.sw", "slug": "amd64" }] }
+                ]
+            })),
+            ["arch.sw/amd64"]
+        );
+    }
+
+    #[test]
+    fn build_merges_colliding_assets_field_wise() {
+        let contract: RawContract = serde_json::from_value(json!({
+            "slug": "firmware",
+            "type": "sw.blob",
+            "assets": {
+                "binary": {
+                    "url": "https://example.com/base.bin",
+                    "name": "Base binary",
+                    "checksum": "abc123",
+                    "checksumType": "sha256"
+                },
+                "docs": { "url": "https://example.com/docs.pdf" }
+            },
+            "variants": [
+                {
+                    "assets": {
+                        "binary": {
+                            "url": "https://example.com/variant.bin",
+                            "checksum": "def456"
+                        },
+                        "extra": { "url": "https://example.com/extra.bin" }
+                    }
+                }
+            ]
+        }))
+        .unwrap();
+
+        let result = build(contract);
+        assert_eq!(result.len(), 1);
+
+        let json = serde_json::to_value(&result[0]).unwrap();
+        assert_eq!(
+            json["assets"],
+            json!({
+                "binary": {
+                    // `url` is required, so the overlay's always wins; the
+                    // optional fields the overlay leaves unset fall back.
+                    "url": "https://example.com/variant.bin",
+                    "name": "Base binary",
+                    "checksum": "def456",
+                    "checksumType": "sha256"
+                },
+                "docs": { "url": "https://example.com/docs.pdf" },
+                "extra": { "url": "https://example.com/extra.bin" }
+            })
+        );
     }
 }

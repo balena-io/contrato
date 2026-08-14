@@ -307,9 +307,9 @@ pub struct Asset {
 
 /// A matcher that references contracts by type and optional additional criteria.
 ///
-/// Used both as requirement targets (what a contract needs) and as capability
-/// declarations (what a contract provides). Any additional matching outside kind/slug/version
-/// criteria should be placed in `data`, not as top-level fields.
+/// Used as requirement targets: what a contract needs from its context. Any
+/// additional matching outside kind/slug/version criteria should be placed in
+/// `data`, not as top-level fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContractMatcher {
@@ -520,12 +520,6 @@ pub struct PartialContract {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requires: Vec<ContractRequirement>,
 
-    /// Capabilities this contract provides to other contracts.
-    /// At construction time these are converted into child contracts,
-    /// so this field is only used during deserialization.
-    #[serde(default, skip_serializing)]
-    pub(crate) provides: Vec<ContractCapability>,
-
     /// Nested variants (recursive expansion).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub variants: Vec<PartialContract>,
@@ -537,23 +531,6 @@ pub struct PartialContract {
     /// [`children_tree`](crate::children_tree) module.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub children: Option<ChildrenTree>,
-}
-
-/// A capability declaration specifying what a contract provides.
-///
-/// Combines a required contract type with a [`PartialContract`] for the
-/// remaining fields (slug, version, data, etc.). Only used during
-/// deserialization — at construction time these are converted into
-/// child contracts.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct ContractCapability {
-    /// The contract type of the provided capability.
-    #[serde(rename = "type")]
-    pub kind: ContractType,
-
-    /// Shared contract fields (slug, version, data, etc.).
-    #[serde(flatten)]
-    pub body: PartialContract,
 }
 
 /// The raw contract data as deserialized from JSON.
@@ -604,7 +581,6 @@ mod tests {
         assert_eq!(contract.body.data, None);
         assert!(contract.body.assets.is_empty());
         assert!(contract.body.requires.is_empty());
-        assert!(contract.body.provides.is_empty());
         assert_eq!(contract.body.children, None);
         assert!(contract.body.variants.is_empty());
         assert!(contract.extra.is_empty());
@@ -995,11 +971,11 @@ mod tests {
     }
 
     #[test]
-    fn deserialize_contract_with_provides() {
+    fn deserialize_contract_with_children_list() {
         let json = json!({
             "type": "meta.context",
             "slug": "test",
-            "provides": [
+            "children": [
                 {
                     "type": "sw.os",
                     "slug": "debian",
@@ -1014,35 +990,28 @@ mod tests {
         });
 
         let contract: RawContract = serde_json::from_value(json).unwrap();
-        assert_eq!(contract.body.provides.len(), 2);
-        assert_eq!(contract.body.provides[0].kind.as_str(), "sw.os");
-        assert_eq!(
-            contract.body.provides[0]
-                .body
-                .slug
-                .as_ref()
-                .unwrap()
-                .as_str(),
-            "debian"
-        );
-        assert_eq!(
-            contract.body.provides[0]
-                .body
-                .version
-                .as_ref()
-                .unwrap()
-                .to_string(),
-            "wheezy"
-        );
-        assert_eq!(contract.body.provides[1].kind.as_str(), "arch.sw");
+        let children = contract.body.children.as_ref().unwrap();
+        match children {
+            crate::children_tree::ChildrenTree::Multiple(contracts) => {
+                assert_eq!(contracts.len(), 2);
+                assert_eq!(contracts[0].kind.as_str(), "sw.os");
+                assert_eq!(contracts[0].body.slug.as_ref().unwrap().as_str(), "debian");
+                assert_eq!(
+                    contracts[0].body.version.as_ref().unwrap().to_string(),
+                    "wheezy"
+                );
+                assert_eq!(contracts[1].kind.as_str(), "arch.sw");
+            }
+            _ => panic!("expected Multiple"),
+        }
     }
 
     #[test]
-    fn provides_deserialized_but_not_serialized() {
+    fn round_trip_contract_with_children_list() {
         let input = json!({
             "type": "meta.context",
             "slug": "test",
-            "provides": [
+            "children": [
                 {
                     "type": "sw.os",
                     "slug": "debian",
@@ -1051,11 +1020,9 @@ mod tests {
             ]
         });
 
-        let contract: RawContract = serde_json::from_value(input).unwrap();
-        assert_eq!(contract.body.provides.len(), 1);
-
+        let contract: RawContract = serde_json::from_value(input.clone()).unwrap();
         let output = serde_json::to_value(&contract).unwrap();
-        assert!(output.get("provides").is_none());
+        assert_eq!(input, output);
     }
 
     #[test]
@@ -1507,9 +1474,6 @@ mod tests {
                     ]
                 }
             ],
-            "provides": [
-                { "type": "sw.runtime", "slug": "glibc", "version": "^2.19" }
-            ],
             "children": {
                 "sw": {
                     "package": {
@@ -1527,13 +1491,7 @@ mod tests {
         });
 
         let contract: RawContract = serde_json::from_value(input.clone()).unwrap();
-        // Verify provides was deserialized
-        assert_eq!(contract.body.provides.len(), 1);
-
         let output = serde_json::to_value(&contract).unwrap();
-        // provides is not serialized — it becomes children at construction time
-        let mut expected = input;
-        expected.as_object_mut().unwrap().remove("provides");
-        assert_eq!(expected, output);
+        assert_eq!(input, output);
     }
 }

@@ -769,7 +769,7 @@ describe('Contract satisfiesChildContract', () => {
 		).to.be.true;
 	});
 
-	it('should return true given two fulfilled requirements from a context declaring capabilities with `provides`', () => {
+	it('should return true given two fulfilled requirements from a context declaring capabilities as children', () => {
 		const container = new Contract({
 			type: 'foo',
 			slug: 'bar',
@@ -778,7 +778,7 @@ describe('Contract satisfiesChildContract', () => {
 		const contract1 = new Contract({
 			type: 'meta.context',
 			slug: 'test',
-			provides: [
+			children: [
 				{
 					type: 'sw.os',
 					slug: 'debian',
@@ -823,7 +823,7 @@ describe('Contract satisfiesChildContract', () => {
 		).to.be.true;
 	});
 
-	it('should return true given one fulfilled requirements from a context declaring capabilities with `provides` and one selected type', () => {
+	it('should return true given one fulfilled requirements from a context declaring capabilities as children and one selected type', () => {
 		const container = new Contract({
 			type: 'foo',
 			slug: 'bar',
@@ -832,7 +832,7 @@ describe('Contract satisfiesChildContract', () => {
 		const contract1 = new Contract({
 			type: 'meta.context',
 			slug: 'test',
-			provides: [
+			children: [
 				{
 					type: 'sw.os',
 					slug: 'debian',
@@ -873,7 +873,7 @@ describe('Contract satisfiesChildContract', () => {
 		).to.be.true;
 	});
 
-	it('should return false given only one fulfilled requirements from a context declaring capabilities with `provides`', () => {
+	it('should return false given only one fulfilled requirements from a context declaring capabilities as children', () => {
 		const container = new Contract({
 			type: 'foo',
 			slug: 'bar',
@@ -882,7 +882,7 @@ describe('Contract satisfiesChildContract', () => {
 		const contract1 = new Contract({
 			type: 'meta.context',
 			slug: 'test',
-			provides: [
+			children: [
 				{
 					type: 'sw.os',
 					slug: 'debian',

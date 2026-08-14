@@ -122,17 +122,6 @@ impl Contract {
             let _ = this.children.insert(Contract::new(source));
         }
 
-        // Convert `provides` capabilities into child contracts, removing the property from the raw
-        // body. This is kept for backwards compatibility with earlier versions of the contracts specification
-        for capability in std::mem::take(&mut this.raw.body.provides) {
-            let child_raw = RawContract {
-                kind: capability.kind,
-                body: capability.body,
-                ..RawContract::default()
-            };
-            let _ = this.children.insert(Contract::new(child_raw));
-        }
-
         this.interpolate();
         this
     }
@@ -1880,6 +1869,32 @@ mod tests {
     }
 
     #[test]
+    fn build_keeps_children_declared_on_base_and_variant() {
+        let contracts = Contract::build(&raw(json!({
+            "slug": "debian",
+            "type": "sw.os",
+            "children": [
+                { "type": "sw.feature", "slug": "secureboot" }
+            ],
+            "variants": [
+                {
+                    "version": "wheezy",
+                    "children": [
+                        { "type": "arch.sw", "slug": "amd64" }
+                    ]
+                }
+            ]
+        })));
+        assert_eq!(contracts.len(), 1);
+
+        let base = matcher("sw.feature", Some("secureboot"), None);
+        assert_eq!(contracts[0].find_children(&base).len(), 1);
+
+        let variant = matcher("arch.sw", Some("amd64"), None);
+        assert_eq!(contracts[0].find_children(&variant).len(), 1);
+    }
+
+    #[test]
     fn build_variants_with_templates() {
         let contracts = Contract::build(&raw(json!({
             "name": "debian {{this.version}}",
@@ -3268,15 +3283,15 @@ mod tests {
         assert!(parent.find_children(&m).is_empty());
     }
 
-    // provides → children conversion
+    // list-form children
 
     #[test]
-    fn provides_becomes_child_found_by_type() {
+    fn children_list_found_by_type() {
         let mut parent = container();
         let ctx = contract(json!({
             "type": "meta.context",
             "slug": "test",
-            "provides": [
+            "children": [
                 {
                     "type": "sw.os",
                     "slug": "debian",
@@ -3293,12 +3308,12 @@ mod tests {
     }
 
     #[test]
-    fn provides_wrong_type_not_found() {
+    fn children_list_wrong_type_not_found() {
         let mut parent = container();
         let ctx = contract(json!({
             "type": "meta.context",
             "slug": "test",
-            "provides": [
+            "children": [
                 {
                     "type": "sw.os",
                     "slug": "debian"
@@ -3312,12 +3327,12 @@ mod tests {
     }
 
     #[test]
-    fn provides_found_by_type_and_slug() {
+    fn children_list_found_by_type_and_slug() {
         let mut parent = container();
         let ctx = contract(json!({
             "type": "meta.context",
             "slug": "test",
-            "provides": [
+            "children": [
                 {
                     "type": "sw.os",
                     "slug": "debian",
@@ -3335,12 +3350,12 @@ mod tests {
     }
 
     #[test]
-    fn provides_found_by_version_range() {
+    fn children_list_found_by_version_range() {
         let mut parent = container();
         let ctx = contract(json!({
             "type": "meta.context",
             "slug": "test",
-            "provides": [
+            "children": [
                 {
                     "type": "sw.blob",
                     "slug": "nodejs",
@@ -3357,12 +3372,12 @@ mod tests {
     }
 
     #[test]
-    fn provides_version_range_miss() {
+    fn children_list_version_range_miss() {
         let mut parent = container();
         let ctx = contract(json!({
             "type": "meta.context",
             "slug": "test",
-            "provides": [
+            "children": [
                 {
                     "type": "sw.blob",
                     "slug": "nodejs",
@@ -3377,12 +3392,12 @@ mod tests {
     }
 
     #[test]
-    fn provides_multiple_same_type_become_separate_children() {
+    fn children_list_multiple_same_type_stay_separate() {
         let mut parent = container();
         let ctx = contract(json!({
             "type": "meta.context",
             "slug": "test",
-            "provides": [
+            "children": [
                 {
                     "type": "sw.blob",
                     "slug": "nodejs",
@@ -3403,11 +3418,11 @@ mod tests {
     }
 
     #[test]
-    fn provides_on_root_become_children() {
+    fn children_list_on_root_are_indexed() {
         let root = contract(json!({
             "type": "meta.context",
             "slug": "root",
-            "provides": [
+            "children": [
                 {
                     "type": "sw.os",
                     "slug": "debian"
@@ -3799,14 +3814,14 @@ mod tests {
     }
 
     #[test]
-    fn satisfies_child_contract_capabilities_via_provides() {
-        // A context contract with `provides` entries that become children
+    fn satisfies_child_contract_capabilities_via_children() {
+        // A context contract declaring its capabilities as children
         // must satisfy the child's requirements via `find_children`.
         let mut container = container();
         let ctx = contract(json!({
             "type": "meta.context",
             "slug": "test",
-            "provides": [
+            "children": [
                 {"type": "sw.os", "slug": "debian", "version": "wheezy"},
                 {"type": "arch.sw", "slug": "amd64", "version": "1"}
             ]
@@ -3833,7 +3848,7 @@ mod tests {
         let ctx = contract(json!({
             "type": "meta.context",
             "slug": "test",
-            "provides": [
+            "children": [
                 {"type": "sw.os", "slug": "debian", "version": "wheezy"}
             ]
         }));
@@ -3862,7 +3877,7 @@ mod tests {
         let ctx = contract(json!({
             "type": "meta.context",
             "slug": "test",
-            "provides": [
+            "children": [
                 {"type": "sw.os", "slug": "debian", "version": "wheezy"}
             ]
         }));

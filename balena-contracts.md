@@ -57,7 +57,7 @@ Assuming `x` in an integer:
 
 A contract is a specification for describing _things_. A thing can be pretty much anything,
 a software library, a feature, an API, etc. Relationships between things can be established
-via composition and referencing (`requires` and `provides`).
+via composition and referencing (`children` and `requires`).
 
 Example:
 ```json
@@ -135,9 +135,8 @@ The contract metadata specification
 | data | object | A free-form object for contract specific information. Notice that contracts are not allowed to define any extra top-level properties, so any information specific to a type must live inside data | Yes |
 | assets | object | The assets this contract requires. There are two types of assets: - Local (declared with a file path) - Remote (declared with a URL)  If the protocol prefix is not provided, `file://` is assumed. Slashes should be used as path separators (UNIX style). The url data property is mandatory. If name is not provided, the asset key can be used as a substitute. The checksum property is optional, but if present, checksumType must exist.  Example: ```yml assets:   bin:     name: qemu-arm-static     url: file://./assets/qemu-arm-static    checksum: 7bce65c956bbddbf83a8ce9121b505657e835df4a064823de51623858c25090f     checksumType: sha256 ``` | Yes |
 | requires | [ [ContractRequirement](#contractrequirement) ] | Enables each contract to specify its requirements on the environment in order to be valid. The requirements are specified as a contract reference or an operation (`or`,`not`) on requirements  Example: ```yml type: sw.application slug: balena-sound requires:   - or:     - type: hw.connector       slug: hdmiv1.5     - type: hw.connector       slug: usb3 ``` | No |
-| provides | [ [ContractMatcher](#contractmatcher) ] | Allows to specify what functionalities or capabilities from the environment an entity defined by the contract provides.  Differently from requirements, only a list of contract references is supported for now  Example: ```yml type: sw.application slug: balena-os-for-raspberrypi3 provides:     - type: sw.os       slug: balenaos ``` | No |
 | variants | [ [ContractMetadata](#contractmetadata) ] | Allows to specify contract alternatives for different sets of requirements.  It can be combined with templating to generate a large number of contracts from a short specification For an example, see: https://github.com/balena-io/contracts/blob/master/contracts/sw.stack/node/contract.json | No |
-| children | [ [Contract](#contract) ] | A contract can contain other contracts, which makes it a composite contract. This is accomplished by adding other contracts inside the `children` property | No |
+| children | [ [Contract](#contract) ] | A contract can contain other contracts, which makes it a composite contract. This is accomplished by adding other contracts inside the `children` property. This is also how a contract declares what functionalities or capabilities it makes available to its context.  Example: ```yml type: sw.application slug: balena-os-for-raspberrypi3 children:     - type: sw.os       slug: balenaos ``` | No |
 
 #### ContractRequirement
 

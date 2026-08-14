@@ -498,7 +498,6 @@ mod tests {
                 data: Some(json!({"lang": "rust"})),
                 assets: Default::default(),
                 requires: vec![],
-                provides: vec![],
                 children: None,
                 variants: vec![
                     PartialContract {
@@ -510,7 +509,6 @@ mod tests {
                         data: Some(json!({"arch": "amd64"})),
                         assets: Default::default(),
                         requires: vec![],
-                        provides: vec![],
                         children: None,
                         variants: vec![],
                     },
@@ -523,7 +521,6 @@ mod tests {
                         data: Some(json!({"arch": "arm64"})),
                         assets: Default::default(),
                         requires: vec![],
-                        provides: vec![],
                         children: None,
                         variants: vec![],
                     },

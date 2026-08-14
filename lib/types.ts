@@ -27,9 +27,9 @@ export interface Asset {
 
 /// A matcher that references contracts by type and optional additional criteria.
 ///
-/// Used both as requirement targets (what a contract needs) and as capability
-/// declarations (what a contract provides). Per the CUE spec, additional matching
-/// criteria should be placed in `data`, not as top-level fields.
+/// Used as requirement targets: what a contract needs from its context. Per the
+/// CUE spec, additional matching criteria should be placed in `data`, not as
+/// top-level fields.
 export interface MatcherObject {
 	/** The contract type to match against. */
 	type: string;
@@ -47,7 +47,12 @@ export interface MatcherObject {
 export type ContractRequirement =
 	MatcherObject | { or: MatcherObject[] } | { not: MatcherObject[] };
 
-export type ChildrenTree = Record<string, unknown>;
+/**
+ * Children contracts, either as a flat list or as the nested
+ * `{ type: { slug: contract } }` tree. Both forms are accepted as input;
+ * contracts always serialize back out as the nested tree.
+ */
+export type ChildrenTree = Record<string, unknown> | ContractObject[];
 
 interface PartialContract {
 	/** Unique identifier of the contract within its type. */
@@ -74,19 +79,14 @@ interface PartialContract {
 	/** Requirements that must be satisfied for this contract. */
 	requires?: ContractRequirement[];
 
-	/** Capabilities this contract provides */
-	provides?: ContractCapability[];
-
 	/** Nested variants, deep-merged with the base contract during expansion. */
 	variants?: PartialContract[];
 
-	/** Children contracts as a nested `{ type: { slug: contract } }` tree. */
+	/**
+	 * Children contracts. This is also how a contract declares the
+	 * capabilities it makes available to its context.
+	 */
 	children?: ChildrenTree;
-}
-
-export interface ContractCapability extends PartialContract {
-	/** The contract type, e.g. `sw.os` or `hw.device-type`. */
-	type: string;
 }
 
 export interface ContractObject extends PartialContract {

@@ -137,6 +137,114 @@ describe('Contract build', () => {
 		]);
 	});
 
+	it('should build contracts with nested variants and templates', () => {
+		const contracts = Contract.build({
+			slug: 'fedora',
+			type: 'sw.os',
+			version: '1',
+			data: {
+				libc: 'glibc',
+				latest: '37',
+				versionList: '`37 (latest)`, `38`',
+			},
+			name: 'Fedora {{this.version}}',
+			requires: [
+				{ type: 'sw.blob', slug: 'balena-idle' },
+				{ type: 'sw.blob', slug: 'balena-info' },
+				{ type: 'sw.blob', slug: 'balena-xbuild' },
+				{ type: 'sw.blob', slug: 'entry' },
+			],
+			assets: {
+				test: {
+					main: 'test-os',
+					name: 'test-os.sh',
+					commit: 'a95300eda2320833e537ca20d728a870bf02177d',
+					url: 'https://raw.githubusercontent.com/balena-io-library/base-images/{{this.assets.test.commit}}/scripts/assets/tests/{{this.assets.test.name}}',
+				},
+			},
+			variants: [
+				{
+					variants: [{ version: '37' }, { version: '38' }],
+					requires: [
+						{ type: 'sw.blob', slug: 'qemu' },
+						{ type: 'arch.sw', slug: 'aarch64' },
+					],
+				},
+				{
+					variants: [{ version: '37' }, { version: '38' }],
+					requires: [{ type: 'arch.sw', slug: 'amd64' }],
+				},
+			],
+		});
+
+		const data = {
+			libc: 'glibc',
+			latest: '37',
+			versionList: '`37 (latest)`, `38`',
+		};
+
+		const assets = {
+			test: {
+				main: 'test-os',
+				name: 'test-os.sh',
+				commit: 'a95300eda2320833e537ca20d728a870bf02177d',
+				url: 'https://raw.githubusercontent.com/balena-io-library/base-images/a95300eda2320833e537ca20d728a870bf02177d/scripts/assets/tests/test-os.sh',
+			},
+		};
+
+		const baseRequires = [
+			{ type: 'sw.blob', slug: 'balena-idle' },
+			{ type: 'sw.blob', slug: 'balena-info' },
+			{ type: 'sw.blob', slug: 'balena-xbuild' },
+			{ type: 'sw.blob', slug: 'entry' },
+		];
+
+		expect(contracts).to.deep.equal([
+			new Contract({
+				slug: 'fedora',
+				type: 'sw.os',
+				version: '37',
+				name: 'Fedora 37',
+				data,
+				requires: baseRequires.concat([
+					{ type: 'sw.blob', slug: 'qemu' },
+					{ type: 'arch.sw', slug: 'aarch64' },
+				]),
+				assets,
+			}),
+			new Contract({
+				slug: 'fedora',
+				type: 'sw.os',
+				version: '38',
+				name: 'Fedora 38',
+				data,
+				requires: baseRequires.concat([
+					{ type: 'sw.blob', slug: 'qemu' },
+					{ type: 'arch.sw', slug: 'aarch64' },
+				]),
+				assets,
+			}),
+			new Contract({
+				slug: 'fedora',
+				type: 'sw.os',
+				version: '37',
+				name: 'Fedora 37',
+				data,
+				requires: baseRequires.concat([{ type: 'arch.sw', slug: 'amd64' }]),
+				assets,
+			}),
+			new Contract({
+				slug: 'fedora',
+				type: 'sw.os',
+				version: '38',
+				name: 'Fedora 38',
+				data,
+				requires: baseRequires.concat([{ type: 'arch.sw', slug: 'amd64' }]),
+				assets,
+			}),
+		]);
+	});
+
 	it('should expand contract aliases', () => {
 		const contracts = Contract.build({
 			slug: 'debian',

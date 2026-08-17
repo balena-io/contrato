@@ -1,4 +1,28 @@
 - commits:
+    - subject: Allow extra fields in contract assets
+      hash: 5ff3b00a64336d20d6101b8c15c9b31627f18026
+      body: |
+        The work in PR #90 made the type too restrictive and incompatible with
+        contracts in balena-io/contracts
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Add test for nested variant expansion
+      hash: bbaedc587b145782530518c144fab22d36d4261f
+      body: |
+        Uses one of the examples in balena-io/contracts. Variant expansion
+        should be preserved when moving to rust
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+  version: 0.15.1
+  title: ""
+  date: 2026-08-17T16:26:42.975Z
+- commits:
     - subject: Test that raw contract extra properties are preserved
       hash: 2e2de07b0e19fd21521f6cdafa9d976182096352
       body: |

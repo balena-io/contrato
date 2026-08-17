@@ -5,6 +5,11 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## v0.0.6 - 2018-08-17
 
+## 0.15.1 - 2026-08-17
+
+* Allow extra fields in contract assets [Felipe Lalanne]
+* Add test for nested variant expansion [Felipe Lalanne]
+
 ## 0.15.0 - 2026-08-13
 
 * Test that raw contract extra properties are preserved [Felipe Lalanne]

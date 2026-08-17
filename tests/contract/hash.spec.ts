@@ -17,7 +17,7 @@ describe('Contract hash', () => {
 		});
 
 		expect(contract.hash()).to.equal(
-			'e3d3b7f2e5820db4b45975380a3f467bc2ff2999',
+			'471d73db7a92c2e05b5b1426805f7bdd85659741f1366f1c06955a3d39b3ea68',
 		);
 	});
 

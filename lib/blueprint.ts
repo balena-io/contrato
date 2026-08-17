@@ -42,7 +42,7 @@ export default class Blueprint extends Contract {
 	declare protected $raw: BlueprintObject;
 
 	/** The parsed blueprint layout. */
-	private $layout: ParsedBlueprintLayout;
+	private readonly $layout: ParsedBlueprintLayout;
 
 	/**
 	 * @summary A blueprint contract data structure
@@ -89,12 +89,10 @@ export default class Blueprint extends Contract {
 			layout,
 			(accumulator, value, type) => {
 				const selector: BlueprintSelector = {
-					// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-					cardinality: parse(value.cardinality || value),
+					cardinality: parse(value.cardinality ?? value),
 					// Array has its own `filter` function, which we need to ignore
 					filter: Array.isArray(value) ? undefined : value.filter,
-					// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-					type: value.type || type,
+					type: value.type ?? type,
 					version: value.version,
 				};
 
@@ -126,8 +124,8 @@ export default class Blueprint extends Contract {
 	 * This allows to reduce the memory usage when dealing with a large
 	 * universe of contracts.
 	 *
-	 * @param {Object} contract - contract
-	 * @returns {Iterable<Object>} - an iterable over the valid contexts
+	 * @param {Contract} contract - contract
+	 * @returns {Iterable<Contract>} - an iterable over the valid contexts
 	 *
 	 * @example
 	 * const contract = new Contract({ ... })
@@ -144,7 +142,9 @@ export default class Blueprint extends Contract {
 	 * }
 	 */
 	reproduce(contract: Contract): IterableIterator<Contract> {
-		const layout: ParsedBlueprintLayout = this.$layout;
+		const layout = this.$layout;
+		const skeleton = this.$raw.skeleton;
+
 		const combinations = reduce(
 			layout.finite.selectors,
 			(accumulator: Contract[][][], value) => {
@@ -166,11 +166,10 @@ export default class Blueprint extends Contract {
 			combinations,
 			(accumulator, element) => {
 				if (accumulator instanceof Contract) {
-					const prodContext = new Contract(this.$raw.skeleton);
+					const prodContext = new Contract(skeleton);
 
 					prodContext.addChildren(element.concat(accumulator.getChildren()));
 
-					// TODO: Make sure this is cached
 					if (
 						!prodContext.areChildrenSatisfied({
 							types: prodContext.getChildrenTypes(),
@@ -182,8 +181,7 @@ export default class Blueprint extends Contract {
 					return prodContext;
 				}
 
-				// If the accumulator is an array of contracts
-				const context = new Contract(this.$raw.skeleton);
+				const context = new Contract(skeleton);
 
 				return context.addChildren(accumulator.concat(element));
 			},

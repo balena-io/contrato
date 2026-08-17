@@ -6,7 +6,6 @@
 
 export const CONTEXT = 'meta.context';
 export const UNIVERSE = 'meta.universe';
-export const MATCHER = 'meta.matcher';
 export const BLUEPRINT = 'meta.blueprint';
 
 export interface Asset {

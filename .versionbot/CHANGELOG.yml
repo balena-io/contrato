@@ -1,4 +1,217 @@
 - commits:
+    - subject: Wire TypeScript to use WASM Contract, delete migrated TS modules
+      hash: 0d55c1ae7e61a63ca7b75d583b4b3ae0adc8d665
+      body: >
+        Replace lib/contract.ts with a thin wrapper delegating to the WASM
+
+        Contract binding. The contract defines a `raw` property so comparisons
+        continue to work
+
+        Blueprint is updated to use the new Contract interface.
+
+
+        Delete hash, template, variants, object-set, matcher-cache, and
+        children-tree TS modules.
+
+
+        Only updates tests that read the hash to use the new SHA256 hash when
+        comparing.
+      footer:
+        Change-type: minor
+        change-type: minor
+      author: Felipe Lalanne
+      nested: []
+    - subject: Add WASM bindings crate exposing Contract to JavaScript
+      hash: e1cb758a984a6cd6364931acd90fb93d1a1b5ff5
+      body: |
+        New contrato-wasm cdylib wrapping contrato-rs via wasm-bindgen.
+        Covers construction, accessors, children management, matcher search,
+        requirement validation, and requirement-index read accessors for
+        cross-reference resolution on the JS side. Matchers cross the
+        boundary as plain JS objects. Promotes Contract::interpolate to pub
+        and adds requirement_types/requirement_matchers_for_type accessors.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Add Universe newtype over Contract
+      hash: 074c8231ce99e2694ac597050571a04ca19b61d1
+      body: |
+        contrato-rs/src/universe.rs wraps Contract with type
+        meta.universe. Universe::new builds the inner contract from
+        RawContract::default() with the kind field overridden; Deref /
+        DerefMut<Target = Contract> expose every Contract method
+        transparently.
+
+        Derive Default on ContractType, PartialContract, and
+        RawContract; promote Contract::new to pub(crate) so sibling
+        modules can skip the serde round-trip.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Add Contract type with children, matcher search, and requirement
+        validation
+      hash: ebf31852e995d1ace638d33f1f83f684b2092a7e
+      body: |
+        Wraps RawContract with a lazy hash, a children index, a search
+        cache, and a requirements index. Construction loads children from
+        the nested tree and interpolates {{this.*}} templates.
+
+        ContractIndex maintains hash, type, and type+slug secondary
+        indexes; insert/remove return a #[must_use] Mutation so callers
+        invalidate affected search-cache entries.
+
+        Matcher trait with partial_match (deep subset over JSON) and
+        version_match over typed Version/VersionReq. Boolean short-circuit
+        variants back has_match without materializing Vecs.
+
+        Requirement satisfaction evaluates compiled Match/Or/Not against
+        reachable children and capabilities, threading split borrows on
+        children, provides, and search_cache through the recursion.
+
+        This also makes some changes to the version type relaxing the type
+        definition to allow contracts with partial versions like `1` and
+        `2.56`. When parsing those versions, the constructor will try to pad
+        zeros to see if the padded version is valid semver and use that for
+        comparison.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Add DottedPath type for validated dot-separated paths
+      hash: 5c3c7952226022aa6989dec05ab9f85b34d9cfcc
+      body: >
+        Introduce path.rs with DottedPath: validated on construction via
+        TryFrom,
+
+        provides segment iteration and JSON value resolution. Replace raw
+
+        split('.') usage in children_tree.rs (set_path, build) and template.rs
+
+        (resolve_path removed, replaced by DottedPath::resolve). Add
+
+        BuildTreeError enum wrapping PathConflictError and InvalidPath.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Add children tree module
+      hash: 799ee25b86a32677bcba0248621f44b7d976a177
+      body: >
+        Implement children_tree.rs with ChildrenTree enum
+        (Branch/Single/Multiple),
+
+        WithChildrenIndex trait, build/get_all functions, and custom serde.
+        Replace
+
+        Option<Value> with Option<ChildrenTree> on PartialContract.children for
+
+        strong typing.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Add matcher cache module
+      hash: 326fb0bb1e03529fd9e8cb6da8a879f8f81b7347
+      body: |
+        Two-level cache mapping (type, matcher_hash) to values with
+        per-type invalidation. Uses a Matcher trait to extract cache
+        keys from matcher objects.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Add generic ObjectSet module
+      hash: fb455c7b80417a6ccf449e7d564d0e4e23d902e6
+      body: >
+        Implement ObjectSet<T> backed by HashMap with Identifiable trait for
+
+        deriving default keys. Methods: insert, insert_with_key, len, is_empty,
+
+        contains_value, contains_key, values, intersection, FromIterator. 28
+        tests.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Add variant expansion module
+      hash: 3ab424e18e3b18601afe86fce078dc6b11be8bbb
+      body: |
+        Implement recursive variant expansion with deep merge semantics:
+        arrays concatenate, objects merge recursively, scalars are replaced
+        by overlay. Operates at the serde_json::Value level for correctness
+        with flattened serde types. 14 tests covering TS-ported cases,
+        edge cases, and a manually constructed contract.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Add template interpolation module
+      hash: 0376c74af3cca448bb31fa0c46f914b5c67e0e49
+      body: |
+        Implement {{this.property.path}} substitution for contract string
+        values with blacklist support, recursive traversal of objects and
+        arrays, and falsy-value fallback matching the TS behavior. Add TS
+        test for object-value stringification.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Add deterministic SHA-256 hashing module
+      hash: 5f606eb842c0dd9df2363c563e709647398ee834
+      body: |
+        Implement hash.rs with type-tagged canonical encoding for
+        serde_json::Value. Object keys are sorted recursively so property
+        order does not affect the hash. 13 tests covering order independence,
+        type discrimination, nested objects, and stability.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Add Rust workspace and contrato-rs crate with core types
+      hash: 1957b9138a9629d3eb9d2b407045a43091e30bdf
+      body: >
+        Set up Cargo workspace with contrato-rs library crate (edition 2024,
+
+        MSRV 1.89). Implement all core type definitions with serde
+
+        serialization:
+
+
+        - ContractType, Slug newtypes for type safety
+
+        - Version/VersionReq enums (semver with identifier fallback)
+
+        - ContractMatcher for requirement matching (with VersionReq ranges)
+
+        - ContractRequirement enum (Match/Or/Not) with custom serde
+
+        - PartialContract for variant definitions and shared metadata
+
+        - ContractCapability (type + partial) for provides declarations
+
+        - ContractObject (type + canonical_slug + partial + extra) for full
+        contracts
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+  version: 0.16.0
+  title: ""
+  date: 2026-08-24T22:50:22.527Z
+- commits:
     - subject: Allow extra fields in contract assets
       hash: 5ff3b00a64336d20d6101b8c15c9b31627f18026
       body: |

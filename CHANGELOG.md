@@ -5,6 +5,21 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## v0.0.6 - 2018-08-17
 
+## 0.16.0 - 2026-08-24
+
+* Wire TypeScript to use WASM Contract, delete migrated TS modules [Felipe Lalanne]
+* Add WASM bindings crate exposing Contract to JavaScript [Felipe Lalanne]
+* Add Universe newtype over Contract [Felipe Lalanne]
+* Add Contract type with children, matcher search, and requirement validation [Felipe Lalanne]
+* Add DottedPath type for validated dot-separated paths [Felipe Lalanne]
+* Add children tree module [Felipe Lalanne]
+* Add matcher cache module [Felipe Lalanne]
+* Add generic ObjectSet module [Felipe Lalanne]
+* Add variant expansion module [Felipe Lalanne]
+* Add template interpolation module [Felipe Lalanne]
+* Add deterministic SHA-256 hashing module [Felipe Lalanne]
+* Add Rust workspace and contrato-rs crate with core types [Felipe Lalanne]
+
 ## 0.15.1 - 2026-08-17
 
 * Allow extra fields in contract assets [Felipe Lalanne]

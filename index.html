@@ -103,19 +103,42 @@
 <p>Again, you can see some examples of partials at use on the <a href="https://github.com/balena-io/contracts/tree/master/contracts/sw.os%2Bhw.device-type/alpine%2Braspberrypi3">balena-io/contracts repository</a>.</p>
 <h3 id="limitations-of-contrato" class="tsd-anchor-link">Limitations of contrato<a href="#limitations-of-contrato" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <p>Contrato is quite efficient at most tasks it performs, however most of the operations require that the validating context is stored in memory, which puts a limit to the size of the universe. Speed considerations become particularly evident when reproducing a blueprint over a large universe, where the more selectors, the larger the number of combinations and the processing time.</p>
+<h2 id="architecture" class="tsd-anchor-link">Architecture<a href="#architecture" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<p>The core contract engine (construction, hashing, children management, matcher search, requirement validation) is implemented in Rust and compiled to WebAssembly via <code>wasm-bindgen</code>. The TypeScript layer is a thin wrapper that delegates to the WASM module and adds blueprint-specific logic (combinatorics, JSON Schema validation, Handlebars templating) that depends on JS-only libraries.</p>
+<pre><code><span class="hl-2">contrato</span><span class="hl-1">-</span><span class="hl-2">rs</span><span class="hl-1">/          </span><span class="hl-2">Pure</span><span class="hl-1"> </span><span class="hl-2">Rust</span><span class="hl-1"> </span><span class="hl-2">library</span><span class="hl-1"> </span><span class="hl-6">crate</span><span class="hl-1"> (</span><span class="hl-2">contrato</span><span class="hl-1">)</span><br/><span class="hl-2">contrato</span><span class="hl-1">-</span><span class="hl-2">wasm</span><span class="hl-1">/        </span><span class="hl-5">WASM</span><span class="hl-1"> </span><span class="hl-2">bindings</span><span class="hl-1"> </span><span class="hl-6">crate</span><span class="hl-1"> (</span><span class="hl-2">wasm</span><span class="hl-1">-</span><span class="hl-2">bindgen</span><span class="hl-1"> </span><span class="hl-2">cdylib</span><span class="hl-1">)</span><br/><span class="hl-2">lib</span><span class="hl-1">/                  </span><span class="hl-2">TypeScript</span><span class="hl-1"> </span><span class="hl-2">wrapper</span><span class="hl-1"> + </span><span class="hl-2">blueprint</span><span class="hl-1">/</span><span class="hl-2">template</span><span class="hl-1"> </span><span class="hl-2">logic</span>
+</code><button>Copy</button></pre>
+
+<p>See <a href="media/README.md"><code>contrato-rs/README.md</code></a> for documentation on the Rust crate API.</p>
+<h2 id="prerequisites" class="tsd-anchor-link">Prerequisites<a href="#prerequisites" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<ul>
+<li>Node.js &gt;= 20</li>
+<li>Rust toolchain (1.89+) with the <code>wasm32-unknown-unknown</code> target</li>
+<li><a href="https://rustwasm.github.io/wasm-pack/installer/">wasm-pack</a></li>
+</ul>
+<pre><code class="sh"><span class="hl-6">rustup</span><span class="hl-1"> </span><span class="hl-3">target</span><span class="hl-1"> </span><span class="hl-3">add</span><span class="hl-1"> </span><span class="hl-3">wasm32-unknown-unknown</span><br/><span class="hl-6">cargo</span><span class="hl-1"> </span><span class="hl-3">install</span><span class="hl-1"> </span><span class="hl-3">wasm-pack</span>
+</code><button type="button">Copy</button></pre>
+
+<h2 id="building" class="tsd-anchor-link">Building<a href="#building" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<pre><code class="sh"><span class="hl-6">npm</span><span class="hl-1"> </span><span class="hl-3">run</span><span class="hl-1"> </span><span class="hl-3">build</span><span class="hl-1">          </span><span class="hl-8"># builds WASM then TypeScript</span><br/><span class="hl-6">npm</span><span class="hl-1"> </span><span class="hl-3">run</span><span class="hl-1"> </span><span class="hl-3">build:wasm</span><span class="hl-1">     </span><span class="hl-8"># builds only the WASM module</span>
+</code><button type="button">Copy</button></pre>
+
 <h2 id="testing" class="tsd-anchor-link">Testing<a href="#testing" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
-<p>Run the <code>test</code> npm script:</p>
+<p>Run the full test suite (build + lint + tests):</p>
 <pre><code class="sh"><span class="hl-6">npm</span><span class="hl-1"> </span><span class="hl-3">test</span>
+</code><button type="button">Copy</button></pre>
+
+<p>Run only the Rust tests:</p>
+<pre><code class="sh"><span class="hl-6">cargo</span><span class="hl-1"> </span><span class="hl-3">test</span><span class="hl-1"> </span><span class="hl-4">--workspace</span>
 </code><button type="button">Copy</button></pre>
 
 <h2 id="contribute" class="tsd-anchor-link">Contribute<a href="#contribute" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
 <ul>
-<li>Issue Tracker: <a href="https://github.com/balena-io/contrato/issues">github.com/product-os/contrato/issues</a></li>
-<li>Source Code: <a href="https://github.com/balena-io/contrato">github.com/product-os/contrato</a></li>
+<li>Issue Tracker: <a href="https://github.com/balena-io/contrato/issues">github.com/balena-io/contrato/issues</a></li>
+<li>Source Code: <a href="https://github.com/balena-io/contrato">github.com/balena-io/contrato</a></li>
 </ul>
 <p>Before submitting a PR, please make sure that you include tests, and that the
 linter runs without any warning:</p>
-<pre><code class="sh"><span class="hl-6">npm</span><span class="hl-1"> </span><span class="hl-3">run</span><span class="hl-1"> </span><span class="hl-3">lint</span>
+<pre><code class="sh"><span class="hl-6">npm</span><span class="hl-1"> </span><span class="hl-3">run</span><span class="hl-1"> </span><span class="hl-3">lint</span><br/><span class="hl-6">cargo</span><span class="hl-1"> </span><span class="hl-3">clippy</span><span class="hl-1"> </span><span class="hl-4">--workspace</span><span class="hl-1"> </span><span class="hl-4">--</span><span class="hl-1"> </span><span class="hl-4">-D</span><span class="hl-1"> </span><span class="hl-3">warnings</span>
 </code><button type="button">Copy</button></pre>
 
 <h2 id="support" class="tsd-anchor-link">Support<a href="#support" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
@@ -157,6 +180,9 @@ issue</a> on GitHub.</p>
 <li><a href="#templates"><span>Templates</span></a></li>
 <li><a href="#partials"><span>Partials</span></a></li>
 <li><a href="#limitations-of-contrato"><span>Limitations of contrato</span></a></li></ul></li>
+<li><a href="#architecture"><span>Architecture</span></a></li>
+<li><a href="#prerequisites"><span>Prerequisites</span></a></li>
+<li><a href="#building"><span>Building</span></a></li>
 <li><a href="#testing"><span>Testing</span></a></li>
 <li><a href="#contribute"><span>Contribute</span></a></li>
 <li><a href="#support"><span>Support</span></a></li>

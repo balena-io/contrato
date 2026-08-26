@@ -125,20 +125,6 @@ info: {
 	//       slug: usb3
 	// ```
 	requires?: [...#ContractRequirement]
-	// Allows to specify what functionalities
-	// or capabilities from the environment an entity defined by the contract provides.
-	//
-	// Differently from requirements, only a list of contract references is supported for now
-	//
-	// Example:
-	// ```yml
-	// type: sw.application
-	// slug: balena-os-for-raspberrypi3
-	// provides:
-	//     - type: sw.os
-	//       slug: balenaos
-	// ```
-	provides?: [...#ContractMatcher]
 	// Allows to specify contract alternatives for different sets of requirements.
 	//
 	// It can be combined with templating to generate a large number of contracts
@@ -146,13 +132,25 @@ info: {
 	// For an example, see: https://github.com/balena-io/contracts/blob/master/contracts/sw.stack/node/contract.json
 	variants?: [...#ContractMetadata]
 	// A contract can contain other contracts, which makes it a composite contract.
-	// This is accomplished by adding other contracts inside the `children` property
+	// This is accomplished by adding other contracts inside the `children` property.
+	//
+	// This is also how a contract declares what functionalities or capabilities it
+	// makes available to its context.
+	//
+	// Example:
+	// ```yml
+	// type: sw.application
+	// slug: balena-os-for-raspberrypi3
+	// children:
+	//     - type: sw.os
+	//       slug: balenaos
+	// ```
 	children?: [...#Contract]
 }
 
 // A contract is a specification for describing _things_. A thing can be pretty much anything,
 // a software library, a feature, an API, etc. Relationships between things can be established
-// via composition and referencing (`requires` and `provides`).
+// via composition and referencing (`children` and `requires`).
 //
 // Example:
 // ```json

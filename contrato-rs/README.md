@@ -37,7 +37,7 @@ assert_eq!(contract.get_children_types(), vec!["sw.service"]);
 
 ### Searching for children
 
-Use `ContractMatcher` to find children by type, slug, version, or data fields. Results are cached internally by matcher hash.
+Use `ContractMatcher` to find children by type, slug, version, or data fields.
 
 ```rust
 use contrato::{Contract, ContractMatcher, ContractType, Slug, VersionReq};
@@ -156,7 +156,6 @@ assert_eq!(universe.get_children().len(), 1);
 ## Design
 
 - **Lazy hashing**: contracts compute their SHA-256 hash on first access and cache it. Mutations invalidate the cache. This avoids hashing ephemeral contracts that are discarded before the hash is ever read.
-- **Search caching**: `find_children` results are cached by `(target_type, matcher_hash)` and invalidated per-type when children are added or removed.
 - **Template interpolation**: string values containing `{{this.path}}` placeholders are resolved against the contract's own fields at construction time.
 
 ## License

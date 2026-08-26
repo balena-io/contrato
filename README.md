@@ -14,8 +14,8 @@ const osContract = new Contract({
 	children: [
 		{ type: 'sw.service', slug: 'balena-engine', version: '20.10.43' },
 		{ type: 'sw.service', slug: 'NetworkManager', version: '0.6.0' },
+		{ type: 'sw.feature', slug: 'secureboot' },
 	],
-	provides: [{ type: 'sw.feature', slug: 'secureboot' }],
 });
 
 const serviceContract = new Contract({
@@ -36,7 +36,7 @@ if (osContract.satisfiesChildContract(serviceContract)) {
 
 ## About contracts
 
-Contracts provide a standardized mechanism to describing _things_. A thing generally refers to something versionable, e.g. a software library, a feature, an API, etc. Relationships between things can be established via composition and referencing (`requires` and `provides`). Through this library, contracts can be validated, composed and combined.
+Contracts provide a standardized mechanism to describing _things_. A thing generally refers to something versionable, e.g. a software library, a feature, an API, etc. Relationships between things can be established via composition and referencing (`children` and `requires`). Through this library, contracts can be validated, composed and combined.
 
 ### Why build this?
 
@@ -98,6 +98,9 @@ Describe a complex _thing_ via a composite contract
 	]
 }
 ```
+
+Children are also how a contract declares the capabilities it makes available to
+its context: any child can be matched by another contract's `requires`.
 
 Describe a set of things via [templating](#contract-templating)
 

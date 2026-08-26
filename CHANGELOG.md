@@ -5,6 +5,12 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## v0.0.6 - 2018-08-17
 
+## 0.17.0 - 2026-08-26
+
+* Remove `provides` contract property [Felipe Lalanne]
+* Remove search cache from contract [Felipe Lalanne]
+* Treat `provides` as children, remove capability-specific code paths [Felipe Lalanne]
+
 ## 0.16.0 - 2026-08-24
 
 * Wire TypeScript to use WASM Contract, delete migrated TS modules [Felipe Lalanne]

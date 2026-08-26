@@ -1,4 +1,45 @@
 - commits:
+    - subject: Remove `provides` contract property
+      hash: 13e0ad81b86a4081e214554605745d130aed2a86
+      body: |
+        Capability providing is already possible via the `children`, requirement
+        satisfaction checks both which makes `provides` redundant.
+      footer:
+        Change-type: minor
+        change-type: minor
+      author: Felipe Lalanne
+      nested: []
+    - subject: Remove search cache from contract
+      hash: bc5b8726de5cb40cda927186357eae2c47cef93a
+      body: >
+        Simplifies contract implementation, and removes the `&mut self`
+
+        requirement for search methods.
+
+
+        Removes matcher_cache.rs as it's no longer needed by the new contract
+        implementation.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Treat `provides` as children, remove capability-specific code paths
+      hash: bba7c659773075332899f584314abc9e527b7522
+      body: |
+        Convert `provides` entries into child contracts at construction time,
+        eliminating the redundant capability-matching infrastructure. Remove
+        `find_children_with_capabilities` and its helpers from Rust, WASM,
+        and TypeScript.
+      footer:
+        Change-type: minor
+        change-type: minor
+      author: Felipe Lalanne
+      nested: []
+  version: 0.17.0
+  title: ""
+  date: 2026-08-26T20:30:39.429Z
+- commits:
     - subject: Wire TypeScript to use WASM Contract, delete migrated TS modules
       hash: 0d55c1ae7e61a63ca7b75d583b4b3ae0adc8d665
       body: >

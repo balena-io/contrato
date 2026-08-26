@@ -1,6 +1,6 @@
 {
   "name": "@balena/contrato",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "description": "The official contract implementation",
   "homepage": "https://github.com/balena-io/contrato",
   "main": "build/index.js",
@@ -72,6 +72,6 @@
     "npm": ">=10.0.0"
   },
   "versionist": {
-    "publishedAt": "2026-08-24T22:50:22.666Z"
+    "publishedAt": "2026-08-26T20:30:39.496Z"
   }
 }

@@ -181,29 +181,18 @@ impl<'de> Deserialize<'de> for ChildrenTree {
     }
 }
 
-/// Extracts all contracts from a [`ChildrenTree`].
-///
-/// Recursively walks the tree and collects every [`RawContract`] found at leaf
-/// positions into a flat vector. Use [`into_all`] instead when the tree is
-/// discarded afterwards — it moves the leaves rather than cloning them.
-pub(crate) fn get_all(tree: &ChildrenTree) -> Vec<RawContract> {
-    let mut out = Vec::new();
-    collect_all(tree, &mut out);
-    out
-}
-
 /// Extracts all contracts from a [`ChildrenTree`], consuming it.
 ///
-/// The moving counterpart of [`get_all`]: leaf contracts are taken out of the
-/// tree instead of cloned.
+/// Recursively walks the tree and moves every [`RawContract`] found at leaf
+/// positions into a flat vector.
 pub(crate) fn into_all(tree: ChildrenTree) -> Vec<RawContract> {
     let mut out = Vec::new();
     collect_into(tree, &mut out);
     out
 }
 
-/// Recursive helper for [`into_all`], mirroring [`collect_all`] over an owned
-/// tree.
+/// Recursive helper that accumulates contracts into a single `Vec`, avoiding
+/// intermediate allocations from `flat_map` + `collect` at each branch level.
 fn collect_into(tree: ChildrenTree, out: &mut Vec<RawContract>) {
     match tree {
         ChildrenTree::Branch(map) => {
@@ -213,20 +202,6 @@ fn collect_into(tree: ChildrenTree, out: &mut Vec<RawContract>) {
         }
         ChildrenTree::Single(contract) => out.push(*contract),
         ChildrenTree::Multiple(contracts) => out.extend(contracts),
-    }
-}
-
-/// Recursive helper that accumulates contracts into a single `Vec`, avoiding
-/// intermediate allocations from `flat_map` + `collect` at each branch level.
-fn collect_all(tree: &ChildrenTree, out: &mut Vec<RawContract>) {
-    match tree {
-        ChildrenTree::Branch(map) => {
-            for child in map.values() {
-                collect_all(child, out);
-            }
-        }
-        ChildrenTree::Single(contract) => out.push(contract.as_ref().clone()),
-        ChildrenTree::Multiple(contracts) => out.extend_from_slice(contracts),
     }
 }
 
@@ -546,38 +521,38 @@ mod tests {
     fn deserialize_empty_array() {
         let tree: ChildrenTree = serde_json::from_value(json!([])).unwrap();
         assert_eq!(tree, ChildrenTree::Multiple(vec![]));
-        assert!(get_all(&tree).is_empty());
+        assert!(into_all(tree).is_empty());
     }
 
     // -----------------------------------------------------------------------
-    // get_all tests
+    // into_all tests
     // -----------------------------------------------------------------------
 
     #[test]
-    fn get_all_empty_tree() {
+    fn into_all_empty_tree() {
         let tree = ChildrenTree::Branch(BTreeMap::new());
-        assert!(get_all(&tree).is_empty());
+        assert!(into_all(tree).is_empty());
     }
 
     #[test]
-    fn get_all_root_is_single() {
+    fn into_all_root_is_single() {
         let c = raw_contract("sw.os", "debian", Some("wheezy"));
         let tree = ChildrenTree::Single(Box::new(c.clone()));
-        let result = get_all(&tree);
+        let result = into_all(tree);
         assert_eq!(result, vec![c]);
     }
 
     #[test]
-    fn get_all_root_is_multiple() {
+    fn into_all_root_is_multiple() {
         let c1 = raw_contract("sw.os", "debian", Some("wheezy"));
         let c2 = raw_contract("sw.os", "debian", Some("jessie"));
         let tree = ChildrenTree::Multiple(vec![c1.clone(), c2.clone()]);
-        let result = get_all(&tree);
+        let result = into_all(tree);
         assert_eq!(result, vec![c1, c2]);
     }
 
     #[test]
-    fn get_all_single_contract() {
+    fn into_all_single_contract() {
         let tree: ChildrenTree = serde_json::from_value(json!({
             "sw": {
                 "os": {
@@ -589,13 +564,13 @@ mod tests {
         }))
         .unwrap();
 
-        let result = get_all(&tree);
+        let result = into_all(tree);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].body.slug.as_ref().unwrap().as_str(), "debian");
     }
 
     #[test]
-    fn get_all_multiple_types() {
+    fn into_all_multiple_types() {
         let tree: ChildrenTree = serde_json::from_value(json!({
             "sw": {
                 "os": { "type": "sw.os", "slug": "debian", "version": "wheezy" },
@@ -604,7 +579,7 @@ mod tests {
         }))
         .unwrap();
 
-        let result = get_all(&tree);
+        let result = into_all(tree);
         assert_eq!(result.len(), 2);
         let slugs: HashSet<&str> = result
             .iter()
@@ -615,7 +590,7 @@ mod tests {
     }
 
     #[test]
-    fn get_all_nested_by_slug() {
+    fn into_all_nested_by_slug() {
         let tree: ChildrenTree = serde_json::from_value(json!({
             "sw": {
                 "os": {
@@ -626,12 +601,12 @@ mod tests {
         }))
         .unwrap();
 
-        let result = get_all(&tree);
+        let result = into_all(tree);
         assert_eq!(result.len(), 2);
     }
 
     #[test]
-    fn get_all_array_of_same_slug() {
+    fn into_all_array_of_same_slug() {
         let tree: ChildrenTree = serde_json::from_value(json!({
             "sw": {
                 "os": {
@@ -644,7 +619,7 @@ mod tests {
         }))
         .unwrap();
 
-        let result = get_all(&tree);
+        let result = into_all(tree);
         assert_eq!(result.len(), 2);
         let versions: HashSet<String> = result
             .iter()
@@ -694,13 +669,14 @@ mod tests {
         };
 
         let result = build(&index).unwrap();
-        let extracted = get_all(&result);
-        assert_eq!(extracted.len(), 1);
-        assert_eq!(extracted[0], c1);
 
         // Verify full tree shape: sw -> os -> Single(contract)
         let json = serde_json::to_value(&result).unwrap();
         assert_eq!(json.pointer("/sw/os/slug").unwrap(), "debian");
+
+        let extracted = into_all(result);
+        assert_eq!(extracted.len(), 1);
+        assert_eq!(extracted[0], c1);
     }
 
     #[test]
@@ -736,7 +712,7 @@ mod tests {
         assert_eq!(json.pointer("/sw/os/slug").unwrap(), "debian");
         assert_eq!(json.pointer("/sw/blob/slug").unwrap(), "nodejs");
 
-        let extracted = get_all(&result);
+        let extracted = into_all(result);
         assert_eq!(extracted.len(), 2);
         assert!(extracted.contains(&c1));
         assert!(extracted.contains(&c2));
@@ -755,7 +731,7 @@ mod tests {
             contracts: HashMap::new(),
         };
         let result = build(&index).unwrap();
-        assert!(get_all(&result).is_empty());
+        assert!(into_all(result).is_empty());
     }
 
     #[test]
@@ -778,7 +754,7 @@ mod tests {
             contracts: HashMap::new(),
         };
         let result = build(&index).unwrap();
-        assert!(get_all(&result).is_empty());
+        assert!(into_all(result).is_empty());
     }
 
     #[test]
@@ -803,7 +779,7 @@ mod tests {
             ]),
         };
         let result = build(&index).unwrap();
-        assert!(get_all(&result).is_empty());
+        assert!(into_all(result).is_empty());
     }
 
     #[test]
@@ -830,15 +806,16 @@ mod tests {
         };
 
         let result = build(&index).unwrap();
-        let extracted = get_all(&result);
-        assert_eq!(extracted.len(), 2);
-        assert!(extracted.contains(&c1));
-        assert!(extracted.contains(&c2));
 
         // Verify tree shape: sw -> os -> {debian, fedora}
         let json = serde_json::to_value(&result).unwrap();
         assert!(json.pointer("/sw/os/debian").is_some());
         assert!(json.pointer("/sw/os/fedora").is_some());
+
+        let extracted = into_all(result);
+        assert_eq!(extracted.len(), 2);
+        assert!(extracted.contains(&c1));
+        assert!(extracted.contains(&c2));
     }
 
     #[test]
@@ -872,7 +849,7 @@ mod tests {
         assert!(arr.is_array());
         assert_eq!(arr.as_array().unwrap().len(), 2);
 
-        let extracted = get_all(&result);
+        let extracted = into_all(result);
         assert_eq!(extracted.len(), 2);
         assert!(extracted.contains(&c1));
         assert!(extracted.contains(&c2));
@@ -1060,11 +1037,11 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Round-trip: build → get_all
+    // Round-trip: build → into_all
     // -----------------------------------------------------------------------
 
     #[test]
-    fn round_trip_build_then_get_all() {
+    fn round_trip_build_then_into_all() {
         let c1 = raw_contract("sw.os", "debian", Some("wheezy"));
         let c2 = raw_contract("sw.blob", "nodejs", Some("4.8.0"));
         let h1 = "hash1".to_string();
@@ -1090,7 +1067,7 @@ mod tests {
         };
 
         let tree = build(&index).unwrap();
-        let extracted = get_all(&tree);
+        let extracted = into_all(tree);
         assert_eq!(extracted.len(), 2);
         assert!(extracted.contains(&c1));
         assert!(extracted.contains(&c2));
@@ -1120,7 +1097,7 @@ mod tests {
         };
 
         let tree = build(&index).unwrap();
-        let extracted = get_all(&tree);
+        let extracted = into_all(tree);
         assert_eq!(extracted.len(), 2);
         assert!(extracted.contains(&c1));
         assert!(extracted.contains(&c2));

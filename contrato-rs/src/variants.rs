@@ -748,8 +748,14 @@ mod tests {
         let result = build(contract);
         assert_eq!(result.len(), 1);
 
-        let children = result[0].body.children.as_ref().expect("children present");
-        children_tree::get_all(children)
+        let children = result
+            .into_iter()
+            .next()
+            .unwrap()
+            .body
+            .children
+            .expect("children present");
+        children_tree::into_all(children)
             .iter()
             .map(|c| format!("{}/{}", c.kind, c.body.slug.as_ref().unwrap()))
             .collect()

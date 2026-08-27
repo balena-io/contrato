@@ -110,19 +110,21 @@ impl Contract {
             requirements: RequirementsIndex::default(),
         };
 
-        let child_sources: Vec<RawContract> = this
-            .raw
-            .body
-            .children
-            .as_ref()
-            .map(children_tree::get_all)
-            .unwrap_or_default();
+        // Templates are compiled before the children are extracted so
+        // that `{{this.children.*}}` references still resolve against
+        // the incoming tree.
+        this.compile_templates();
 
-        for source in child_sources {
-            let _ = this.children.insert(Contract::new(source));
+        // The tree is moved out instead of cloned: `rebuild` below
+        // regenerates `raw.children` from the index, so the incoming
+        // tree is discarded either way.
+        if let Some(children) = this.raw.body.children.take() {
+            for source in children_tree::into_all(children) {
+                let _ = this.children.insert(Contract::new(source));
+            }
         }
 
-        this.interpolate();
+        this.rebuild();
         this
     }
 
@@ -143,6 +145,13 @@ impl Contract {
     /// fields during its own construction. [`Self::rebuild`] is called
     /// at the end, which invalidates the hash cell.
     pub fn interpolate(&mut self) {
+        self.compile_templates();
+        self.rebuild();
+    }
+
+    /// Compiles `{{this.*}}` templates in `raw` in place, leaving derived
+    /// state untouched.
+    fn compile_templates(&mut self) {
         let mut blacklist = HashSet::new();
         blacklist.insert("children".to_string());
 
@@ -151,8 +160,6 @@ impl Contract {
         let compiled = template::compile_contract(&raw_value, &blacklist, None);
         self.raw = serde_json::from_value(compiled)
             .expect("compiled contract must deserialize into RawContract");
-
-        self.rebuild();
     }
 
     /// Rebuilds derived state from the current children index and
@@ -1487,12 +1494,34 @@ mod tests {
 
         // Children are interpolated against their own fields; the child has
         // no `version`, so the template stays unresolved.
-        let tree = c.raw.body.children.as_ref().unwrap();
-        let extracted = children_tree::get_all(tree);
+        let tree = c.raw.body.children.expect("children present");
+        let extracted = children_tree::into_all(tree);
         assert_eq!(extracted.len(), 1);
         assert_eq!(
             extracted[0].body.slug.as_ref().unwrap().as_str(),
             "{{this.version}}-child"
+        );
+    }
+
+    #[test]
+    fn interpolate_resolves_this_children_references() {
+        // `Contract::new` moves the children tree out of `raw` to build its
+        // index; this locks in that the move happens *after* template
+        // compilation, so the parent can still reference its children.
+        let c = contract(json!({
+            "type": "sw.os",
+            "slug": "board-{{this.children.hw.device-type.slug}}",
+            "children": {
+                "hw": {
+                    "device-type": { "type": "hw.device-type", "slug": "raspberrypi4" }
+                }
+            }
+        }));
+
+        assert_eq!(
+            c.raw.body.slug.as_ref().unwrap().as_str(),
+            "board-raspberrypi4",
+            "parent template must resolve against the incoming children tree"
         );
     }
 

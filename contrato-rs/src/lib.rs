@@ -10,7 +10,6 @@ mod contract;
 mod hash;
 mod index;
 mod matcher;
-mod object_set;
 mod path;
 mod template;
 mod types;

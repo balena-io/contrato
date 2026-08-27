@@ -18,6 +18,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::OnceLock;
 
+use indexmap::IndexSet;
 use serde::de::{Deserialize, Deserializer};
 use serde::ser::{Serialize, Serializer};
 use serde_json::Value;
@@ -26,7 +27,6 @@ use crate::children_tree;
 use crate::hash::hash_object;
 use crate::index::ContractIndex;
 use crate::matcher::{partial_match, version_match};
-use crate::object_set::{Identifiable, ObjectSet};
 use crate::template;
 use crate::types::{ContractMatcher, ContractRequirement, RawContract, Slug, VersionReq};
 use crate::variants;
@@ -37,9 +37,10 @@ use crate::variants;
 /// [`ContractMatcher`] and [`ContractRequirement`] values — simple `Match`
 /// entries contribute their inner matcher directly, while `Or` / `Not`
 /// entries contribute every inner matcher plus the boolean requirement
-/// itself. The two `ObjectSet`s deduplicate their entries via
-/// [`Identifiable`], so duplicate `requires` entries collapse to a single
-/// stored matcher / requirement.
+/// itself. Both sets deduplicate structurally equal entries, so duplicate
+/// `requires` entries collapse to a single stored matcher / requirement.
+/// Iteration follows insertion order, so requirement checks report in the
+/// order the contract declared them.
 #[derive(Debug, Clone, Default)]
 struct RequirementsIndex {
     /// Per-type set of registered simple matchers.
@@ -48,17 +49,14 @@ struct RequirementsIndex {
     /// inner matcher of an `Or` / `Not` entry. Gives requirement-satisfaction
     /// checks a flat list of matchers per target type without re-walking
     /// the `compiled` set to unwrap boolean operations.
-    matchers: HashMap<String, ObjectSet<ContractMatcher>>,
-
-    /// Set of contract types referenced by any registered matcher.
-    types: HashSet<String>,
+    matchers: HashMap<String, IndexSet<ContractMatcher>>,
 
     /// Flat set of top-level compiled requirements.
     ///
     /// For simple `Match` entries this holds one requirement per `requires`
     /// entry. For `Or` / `Not` entries it holds one boolean-operation
     /// requirement whose inner matchers are also indexed in `matchers`.
-    compiled: ObjectSet<ContractRequirement>,
+    compiled: IndexSet<ContractRequirement>,
 }
 
 /// A contract: raw data plus derived hash, children index, and requirements.
@@ -76,7 +74,7 @@ pub struct Contract {
     /// Lazily computed deterministic hash of `raw`.
     ///
     /// Populated on first call to [`Self::hash`] (or any path that
-    /// reaches it — `PartialEq`, `std::hash::Hash`, `Identifiable::id`,
+    /// reaches it — `PartialEq`, `std::hash::Hash`,
     /// [`ContractIndex::insert`](crate::index::ContractIndex)). Any
     /// mutation that changes `raw` must invalidate this cell; in
     /// practice [`Self::rebuild`] does so for every mutator, so callers
@@ -182,7 +180,10 @@ impl Contract {
             )
         };
 
-        let mut requirements = RequirementsIndex::default();
+        let mut requirements = RequirementsIndex {
+            compiled: IndexSet::with_capacity(self.raw.body.requires.len()),
+            ..RequirementsIndex::default()
+        };
         for conjunct in &self.raw.body.requires {
             Self::register_requirement(&mut requirements, conjunct);
         }
@@ -198,7 +199,7 @@ impl Contract {
     /// Registers a single top-level requirement into the requirements index.
     ///
     /// For a `Match` entry the inner [`ContractMatcher`] is inserted into
-    /// `matchers[kind]` (deduplicated by [`Identifiable`]) and the whole
+    /// `matchers[kind]` (deduplicated by equality) and the whole
     /// requirement is inserted into `compiled`. For an `Or` / `Not` entry
     /// every inner matcher is inserted into `matchers[kind]` so the
     /// satisfaction check can iterate per-type matchers without re-walking
@@ -224,26 +225,20 @@ impl Contract {
         index.compiled.insert(req.clone());
     }
 
-    /// Inserts a single [`ContractMatcher`] into `matchers[kind]` and
-    /// updates the known-types set.
+    /// Inserts a single [`ContractMatcher`] into `matchers[kind]`.
     ///
     /// Shared by the `Match` and `Or` / `Not` arms of
     /// [`Self::register_requirement`] so both code paths agree on
-    /// deduplication semantics and on the known-types invariant.
-    ///
-    /// Allocates the type string exactly once: the clone goes into
-    /// the known-types set and the original is consumed by the
-    /// `matchers` `HashMap::entry` call. Inserting into `matchers`
-    /// first and then cloning for `types` would cost two clones
-    /// because `entry` takes ownership of the key.
+    /// deduplication semantics.
     fn register_matcher(index: &mut RequirementsIndex, matcher: &ContractMatcher) {
-        let ty = matcher.kind.as_str().to_string();
-        index.types.insert(ty.clone());
-        index
-            .matchers
-            .entry(ty)
-            .or_default()
-            .insert(matcher.clone());
+        let kind = matcher.kind.as_str();
+        if let Some(matchers) = index.matchers.get_mut(kind) {
+            matchers.insert(matcher.clone());
+        } else {
+            index
+                .matchers
+                .insert(kind.to_string(), IndexSet::from_iter([matcher.clone()]));
+        }
     }
 }
 
@@ -336,7 +331,7 @@ impl Contract {
     /// resolution or a filter pass before iterating the matcher
     /// buckets returned by [`Self::requirement_matchers_for_type`].
     pub fn requirement_types(&self) -> impl Iterator<Item = &str> {
-        self.requirements.types.iter().map(String::as_str)
+        self.requirements.matchers.keys().map(String::as_str)
     }
 
     /// Returns an iterator over the simple matchers registered under
@@ -352,11 +347,7 @@ impl Contract {
         &self,
         kind: &str,
     ) -> impl Iterator<Item = &ContractMatcher> {
-        self.requirements
-            .matchers
-            .get(kind)
-            .into_iter()
-            .flat_map(|set| set.values())
+        self.requirements.matchers.get(kind).into_iter().flatten()
     }
 
     /// Returns a reference to the underlying [`RawContract`].
@@ -773,7 +764,7 @@ impl Contract {
         contract: &Contract,
         types: Option<&[&str]>,
     ) -> bool {
-        for req in contract.requirements.compiled.values() {
+        for req in contract.requirements.compiled.iter() {
             if !Self::is_requirement_satisfied_in(children, req, types) {
                 return false;
             }
@@ -826,7 +817,7 @@ impl Contract {
         types: Option<&[&str]>,
         out: &mut Vec<ContractRequirement>,
     ) {
-        for req in contract.requirements.compiled.values() {
+        for req in contract.requirements.compiled.iter() {
             if !Self::is_requirement_satisfied_in(children, req, types) {
                 out.push(req.clone());
             }
@@ -887,10 +878,10 @@ impl Contract {
         for descendant in walk.values() {
             let evaluate_own = !matches!(
                 types,
-                Some(allowed) if Self::types_disjoint(allowed, &descendant.requirements.types)
+                Some(allowed) if Self::types_disjoint(allowed, &descendant.requirements)
             );
             if evaluate_own {
-                for req in descendant.requirements.compiled.values() {
+                for req in descendant.requirements.compiled.iter() {
                     if !Self::is_requirement_satisfied_in(root_children, req, types) {
                         return false;
                     }
@@ -959,12 +950,12 @@ impl Contract {
         for descendant in walk.values() {
             let disjoint = matches!(
                 types,
-                Some(allowed) if Self::types_disjoint(allowed, &descendant.requirements.types)
+                Some(allowed) if Self::types_disjoint(allowed, &descendant.requirements)
             );
             if disjoint {
-                out.extend(descendant.requirements.compiled.values().cloned());
+                out.extend(descendant.requirements.compiled.iter().cloned());
             } else {
-                for req in descendant.requirements.compiled.values() {
+                for req in descendant.requirements.compiled.iter() {
                     if !Self::is_requirement_satisfied_in(root_children, req, types) {
                         out.push(req.clone());
                     }
@@ -981,14 +972,10 @@ impl Contract {
 
     /// Returns `true` when `allowed` and `child_types` share no
     /// element.
-    ///
-    /// `allowed` is a caller-supplied slice (typically 1–3 entries —
-    /// linear scan is cheaper than a `HashSet`); `child_types` is the
-    /// owned-string set stored on the requirements index. Iterating
-    /// the slice and probing the `HashSet<String>` keeps the
-    /// allocation count at zero.
-    fn types_disjoint(allowed: &[&str], child_types: &HashSet<String>) -> bool {
-        !allowed.iter().any(|t| child_types.contains(*t))
+    fn types_disjoint(allowed: &[&str], requirements: &RequirementsIndex) -> bool {
+        !allowed
+            .iter()
+            .any(|t| requirements.matchers.contains_key(*t))
     }
 
     /// Evaluates a single compiled requirement against the root
@@ -1007,11 +994,6 @@ impl Contract {
     /// - [`Not`](ContractRequirement::Not): satisfied when no inner
     ///   matcher whose type is allowed by `types` has a match. An
     ///   empty `Not` is trivially satisfied.
-    ///
-    /// The `types` filter is consumed as a slice: linear
-    /// `slice.contains(&kind)` is cheaper than a `HashSet` probe for
-    /// typical filter sizes (1–3 elements) and avoids the per-call
-    /// `HashSet` allocation altogether.
     fn is_requirement_satisfied_in(
         children: &ContractIndex,
         req: &ContractRequirement,
@@ -1073,15 +1055,6 @@ impl<'de> Deserialize<'de> for Contract {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let raw = RawContract::deserialize(deserializer)?;
         Ok(Contract::new(raw))
-    }
-}
-
-impl Identifiable for Contract {
-    /// Returns the contract's hash as an owned `String`.
-    ///
-    /// Triggers lazy computation on first call via [`Contract::hash`].
-    fn id(&self) -> String {
-        self.hash().to_string()
     }
 }
 
@@ -1147,7 +1120,6 @@ mod tests {
         assert_eq!(c.get_slug(), Some("armv7hf"));
         assert_eq!(c.hash().len(), 64, "SHA-256 hex digest is 64 characters");
         assert_eq!(c.children.types().count(), 0);
-        assert!(c.requirements.types.is_empty());
         assert!(c.requirements.matchers.is_empty());
         assert!(c.requirements.compiled.is_empty());
     }
@@ -1638,7 +1610,6 @@ mod tests {
             "name": "armv7hf",
             "requires": []
         }));
-        assert!(c.requirements.types.is_empty());
         assert!(c.requirements.matchers.is_empty());
         assert!(c.requirements.compiled.is_empty());
     }
@@ -1653,8 +1624,6 @@ mod tests {
                 {"type": "hw.device-type", "slug": "raspberry-pi"}
             ]
         }));
-        assert_eq!(c.requirements.types.len(), 1);
-        assert!(c.requirements.types.contains("hw.device-type"));
         assert_eq!(c.requirements.matchers.len(), 1);
         assert_eq!(c.requirements.matchers["hw.device-type"].len(), 1);
         assert_eq!(c.requirements.compiled.len(), 1);
@@ -1663,7 +1632,7 @@ mod tests {
         // `ContractMatcher` that was deserialized from `requires`
         // — no Contract wrapping, no extra fields.
         let matcher = c.requirements.matchers["hw.device-type"]
-            .values()
+            .iter()
             .next()
             .unwrap();
         assert_eq!(matcher.kind.as_str(), "hw.device-type");
@@ -1673,7 +1642,7 @@ mod tests {
 
         // The compiled requirement for a simple `requires` entry is
         // the `Match` variant carrying the same matcher.
-        let compiled = c.requirements.compiled.values().next().unwrap();
+        let compiled = c.requirements.compiled.iter().next().unwrap();
         match compiled {
             ContractRequirement::Match(m) => {
                 assert_eq!(m.kind.as_str(), "hw.device-type");
@@ -1699,8 +1668,8 @@ mod tests {
             1,
             "matchers by type are deduplicated"
         );
-        // Compiled requirements deduplicate on the same Identifiable
-        // key (ContractRequirement::Match of an identical matcher).
+        // Compiled requirements deduplicate on equality
+        // (ContractRequirement::Match of an identical matcher).
         assert_eq!(c.requirements.compiled.len(), 1);
     }
 
@@ -1718,7 +1687,7 @@ mod tests {
                 }
             ]
         }));
-        assert!(c.requirements.types.contains("hw.device-type"));
+        assert!(c.requirements.matchers.contains_key("hw.device-type"));
         assert_eq!(
             c.requirements.matchers["hw.device-type"].len(),
             2,
@@ -1732,7 +1701,7 @@ mod tests {
 
         // The compiled requirement preserves the `Or` variant — no
         // conversion to a Contract wrapper with an `operation` tag.
-        let compiled = c.requirements.compiled.values().next().unwrap();
+        let compiled = c.requirements.compiled.iter().next().unwrap();
         match compiled {
             ContractRequirement::Or(items) => {
                 assert_eq!(items.len(), 2);
@@ -1756,10 +1725,10 @@ mod tests {
                 {"not": [{"type": "sw.os", "slug": "windows"}]}
             ]
         }));
-        assert!(c.requirements.types.contains("sw.os"));
+        assert!(c.requirements.matchers.contains_key("sw.os"));
         assert_eq!(c.requirements.compiled.len(), 1);
 
-        let compiled = c.requirements.compiled.values().next().unwrap();
+        let compiled = c.requirements.compiled.iter().next().unwrap();
         match compiled {
             ContractRequirement::Not(items) => {
                 assert_eq!(items.len(), 1);
@@ -2067,19 +2036,6 @@ mod tests {
             ]
         }));
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn identifiable_id_returns_hash_string() {
-        // Identifiable::id is a thin wrapper over Contract::hash.
-        let c = contract(json!({
-            "type": "arch.sw",
-            "slug": "armv7hf",
-            "name": "armv7hf"
-        }));
-        let id = Identifiable::id(&c);
-        assert_eq!(id.len(), 64, "SHA-256 hex digest is 64 characters");
-        assert_eq!(id, c.hash());
     }
 
     #[test]

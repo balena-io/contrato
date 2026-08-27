@@ -13,8 +13,6 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 
 use crate::children_tree::ChildrenTree;
-use crate::hash::hash_object;
-use crate::object_set::Identifiable;
 
 /// Type constant for universe contracts (collection of all available contracts).
 pub const UNIVERSE: &str = "meta.universe";
@@ -188,7 +186,7 @@ impl<'de> Deserialize<'de> for Version {
 
 /// Internal representation of a version requirement: either a valid semver
 /// range or a plain identifier used for exact equality matching.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum VersionReqInner {
     SemverRange(semver::VersionReq),
     Identifier(String),
@@ -199,7 +197,7 @@ enum VersionReqInner {
 /// Deserialization tries semver range first; if that fails, stores as an
 /// identifier. Matching semantics depend on the variant: semver ranges
 /// use `satisfies()`, identifiers use exact string equality.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct VersionReq(VersionReqInner);
 
 impl VersionReq {
@@ -310,7 +308,7 @@ pub struct Asset {
 /// Used as requirement targets: what a contract needs from its context. Any
 /// additional matching outside kind/slug/version criteria should be placed in
 /// `data`, not as top-level fields.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContractMatcher {
     /// The contract type to match against.
@@ -395,7 +393,7 @@ impl ContractMatcher {
 /// `Vec<ContractRequirement>`. Attempting to deserialize a nested
 /// `{"or": [{"or": [...]}]}` shape will fail with a serde error because
 /// the inner object has no `type` field.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ContractRequirement {
     /// A direct matcher requirement.
     Match(ContractMatcher),
@@ -455,31 +453,6 @@ fn deserialize_requirement_from_value(value: Value) -> Result<ContractRequiremen
 
     let matcher: ContractMatcher = serde_json::from_value(value).map_err(|e| e.to_string())?;
     Ok(ContractRequirement::Match(matcher))
-}
-
-/// Identity for [`ContractMatcher`] used by [`ObjectSet`](crate::object_set::ObjectSet).
-///
-/// The ID is a deterministic SHA-256 of the matcher's canonical JSON form, so
-/// two structurally-identical matchers deduplicate inside the per-type buckets
-/// of the requirements index.
-impl Identifiable for ContractMatcher {
-    fn id(&self) -> String {
-        hash_object(&serde_json::to_value(self).expect("ContractMatcher must serialize to JSON"))
-    }
-}
-
-/// Identity for [`ContractRequirement`] used by [`ObjectSet`](crate::object_set::ObjectSet).
-///
-/// The ID is a deterministic SHA-256 of the requirement's canonical JSON form.
-/// `Match`, `Or`, and `Not` variants serialize to distinct JSON shapes so they
-/// never collide; two requirements with the same variant and the same inner
-/// matchers share an ID and deduplicate inside the compiled requirements set.
-impl Identifiable for ContractRequirement {
-    fn id(&self) -> String {
-        hash_object(
-            &serde_json::to_value(self).expect("ContractRequirement must serialize to JSON"),
-        )
-    }
 }
 
 /// Contract metadata fields without a type identifier.
@@ -946,16 +919,132 @@ mod tests {
     }
 
     #[test]
-    fn contract_matcher_id_is_stable_and_structural() {
-        // Two structurally-identical matchers built independently
-        // must produce the same ID — that is the deduplication
-        // invariant the requirements index relies on. Two matchers
-        // that differ in any field must produce different IDs.
+    fn contract_matcher_equality_is_structural() {
+        // Two structurally-identical matchers built independently must
+        // compare equal — that is the deduplication invariant the
+        // requirements index relies on. Two matchers that differ in any
+        // field must not.
         let a = ContractMatcher::new("hw.device-type").with_slug("raspberry-pi");
         let b = ContractMatcher::new("hw.device-type").with_slug("raspberry-pi");
         let c = ContractMatcher::new("hw.device-type").with_slug("raspberry-pi2");
-        assert_eq!(a.id(), b.id());
-        assert_ne!(a.id(), c.id());
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn contract_matcher_equality_ignores_version_spelling() {
+        // Equivalent semver ranges written differently are the same
+        // requirement and must deduplicate, the way they did when
+        // identity came from the serialized (normalized) form.
+        let a = ContractMatcher::new("sw.os").with_version(">=1.0.0");
+        let b = ContractMatcher::new("sw.os").with_version(">= 1.0.0");
+        assert_eq!(a, b);
+
+        let c = ContractMatcher::new("sw.os").with_version(">=1.0.1");
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn contract_matcher_equality_ignores_data_property_order() {
+        let a =
+            ContractMatcher::new("hw.device-type").with_data(json!({"arch": "armv7hf", "n": 1}));
+        let b =
+            ContractMatcher::new("hw.device-type").with_data(json!({"n": 1, "arch": "armv7hf"}));
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn contract_matcher_equality_distinguishes_number_types() {
+        // An integer and a float are different JSON values, so matchers
+        // carrying them stay distinct.
+        let a = ContractMatcher::new("hw.device-type").with_data(json!({"n": 1}));
+        let b = ContractMatcher::new("hw.device-type").with_data(json!({"n": 1.0}));
+        assert_ne!(a, b);
+    }
+
+    /// Hashes a value with the default hasher, for `Hash`/`Eq` consistency
+    /// checks.
+    fn hash_of<T: std::hash::Hash>(value: &T) -> u64 {
+        use std::hash::{DefaultHasher, Hasher};
+        let mut hasher = DefaultHasher::new();
+        value.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    #[test]
+    fn equal_matchers_hash_equally() {
+        // The requirements index deduplicates matchers in a hash set, so
+        // `Hash` must agree with `Eq` on every field. `Hash` is derived and
+        // delegates to `serde_json`'s own impls; this pins the invariant in
+        // case anyone reintroduces a hand-written one.
+        let pairs = [
+            (
+                ContractMatcher::new("hw.device-type").with_slug("rpi"),
+                ContractMatcher::new("hw.device-type").with_slug("rpi"),
+            ),
+            (
+                ContractMatcher::new("sw.os").with_version(">=1.0.0"),
+                ContractMatcher::new("sw.os").with_version(">= 1.0.0"),
+            ),
+            (
+                ContractMatcher::new("sw.os").with_version("wheezy"),
+                ContractMatcher::new("sw.os").with_version("wheezy"),
+            ),
+            (
+                ContractMatcher::new("hw.dt").with_data(json!({"a": 1, "b": [1, 2]})),
+                ContractMatcher::new("hw.dt").with_data(json!({"b": [1, 2], "a": 1})),
+            ),
+            (
+                ContractMatcher::new("hw.dt").with_data(json!({"nested": {"x": null}})),
+                ContractMatcher::new("hw.dt").with_data(json!({"nested": {"x": null}})),
+            ),
+            (
+                ContractMatcher::new("hw.dt").with_data(json!(-1.5)),
+                ContractMatcher::new("hw.dt").with_data(json!(-1.5)),
+            ),
+            (
+                // `+0.0 == -0.0`, so they must hash alike. A hand-rolled
+                // walk over `f64::to_bits` gets this wrong; `serde_json`
+                // special-cases it.
+                ContractMatcher::new("hw.dt").with_data(json!({"n": 0.0})),
+                ContractMatcher::new("hw.dt").with_data(json!({"n": -0.0})),
+            ),
+        ];
+        for (a, b) in pairs {
+            assert_eq!(a, b, "matchers must be equal: {a:?} vs {b:?}");
+            assert_eq!(hash_of(&a), hash_of(&b), "equal matchers must hash equally");
+        }
+    }
+
+    #[test]
+    fn equal_requirements_hash_equally() {
+        let matcher = ContractMatcher::new("sw.os").with_slug("debian");
+        let variants = [
+            ContractRequirement::Match(matcher.clone()),
+            ContractRequirement::Or(vec![matcher.clone()]),
+            ContractRequirement::Not(vec![matcher.clone()]),
+        ];
+        // Distinct variants over the same matcher must not collide.
+        for (i, a) in variants.iter().enumerate() {
+            for b in &variants[i + 1..] {
+                assert_ne!(hash_of(a), hash_of(b), "{a:?} and {b:?} collided");
+            }
+        }
+    }
+
+    #[test]
+    fn contract_requirement_equality_distinguishes_variants() {
+        // `Match`, `Or` and `Not` over the same matcher are different
+        // requirements and must not collapse in the compiled set.
+        let matcher = ContractMatcher::new("sw.os").with_slug("debian");
+        let as_match = ContractRequirement::Match(matcher.clone());
+        let as_or = ContractRequirement::Or(vec![matcher.clone()]);
+        let as_not = ContractRequirement::Not(vec![matcher.clone()]);
+
+        assert_ne!(as_match, as_or);
+        assert_ne!(as_or, as_not);
+        assert_ne!(as_match, as_not);
+        assert_eq!(as_or, ContractRequirement::Or(vec![matcher]));
     }
 
     #[test]

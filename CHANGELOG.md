@@ -5,6 +5,11 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## v0.0.6 - 2018-08-17
 
+## 0.17.1 - 2026-08-31
+
+* Avoid cloning every child on contract interpolation [Felipe Lalanne]
+* Use local types for variant expansion [Felipe Lalanne]
+
 ## 0.17.0 - 2026-08-26
 
 * Remove `provides` contract property [Felipe Lalanne]

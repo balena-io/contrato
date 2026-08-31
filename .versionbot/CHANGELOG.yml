@@ -1,4 +1,37 @@
 - commits:
+    - subject: Avoid cloning every child on contract interpolation
+      hash: 716bc8ad333bb773f49136dd2927aae93781a029
+      body: |
+        Small efficiency improvement to reduce some clones during interpolation
+        splitting the compilation and re-build steps.
+
+        Since `get_all` is no longer needed, this removes it and updates the
+        tests to check the outcome of `into_all` instead
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Use local types for variant expansion
+      hash: 9b41d451b173c37be3e6a5abab73b10a41826ef7
+      body: |
+        Variant expansion converted the RawContract to JSON before expanding
+        variants and merging sub-properties. That implementation was a necessity
+        of the migration to Rust, where there was still a circular  dependency
+        between types. With the migration finished, this can now use the local
+        library types, avoiding the need for the conversion.
+
+        `Contract::build` and `variants::build` now consume the input reducing
+        the number of clones.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+  version: 0.17.1
+  title: ""
+  date: 2026-08-31T18:22:18.267Z
+- commits:
     - subject: Remove `provides` contract property
       hash: 13e0ad81b86a4081e214554605745d130aed2a86
       body: |

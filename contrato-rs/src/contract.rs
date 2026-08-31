@@ -110,19 +110,21 @@ impl Contract {
             requirements: RequirementsIndex::default(),
         };
 
-        let child_sources: Vec<RawContract> = this
-            .raw
-            .body
-            .children
-            .as_ref()
-            .map(children_tree::get_all)
-            .unwrap_or_default();
+        // Templates are compiled before the children are extracted so
+        // that `{{this.children.*}}` references still resolve against
+        // the incoming tree.
+        this.compile_templates();
 
-        for source in child_sources {
-            let _ = this.children.insert(Contract::new(source));
+        // The tree is moved out instead of cloned: `rebuild` below
+        // regenerates `raw.children` from the index, so the incoming
+        // tree is discarded either way.
+        if let Some(children) = this.raw.body.children.take() {
+            for source in children_tree::into_all(children) {
+                let _ = this.children.insert(Contract::new(source));
+            }
         }
 
-        this.interpolate();
+        this.rebuild();
         this
     }
 
@@ -143,6 +145,13 @@ impl Contract {
     /// fields during its own construction. [`Self::rebuild`] is called
     /// at the end, which invalidates the hash cell.
     pub fn interpolate(&mut self) {
+        self.compile_templates();
+        self.rebuild();
+    }
+
+    /// Compiles `{{this.*}}` templates in `raw` in place, leaving derived
+    /// state untouched.
+    fn compile_templates(&mut self) {
         let mut blacklist = HashSet::new();
         blacklist.insert("children".to_string());
 
@@ -151,8 +160,6 @@ impl Contract {
         let compiled = template::compile_contract(&raw_value, &blacklist, None);
         self.raw = serde_json::from_value(compiled)
             .expect("compiled contract must deserialize into RawContract");
-
-        self.rebuild();
     }
 
     /// Rebuilds derived state from the current children index and
@@ -374,12 +381,10 @@ impl Contract {
     ///    `aliases` cleared.
     ///
     /// The alias contracts come before the base contract in the output.
-    pub fn build(source: &RawContract) -> Vec<Contract> {
+    pub fn build(source: RawContract) -> Vec<Contract> {
         let mut result = Vec::new();
-        for variant in variants::build(source) {
-            let aliases: Vec<Slug> = variant.body.aliases.clone();
-            let mut base = variant;
-            base.body.aliases.clear();
+        for mut base in variants::build(source) {
+            let aliases: Vec<Slug> = std::mem::take(&mut base.body.aliases);
 
             for alias in aliases {
                 let mut alias_contract = base.clone();
@@ -1489,12 +1494,34 @@ mod tests {
 
         // Children are interpolated against their own fields; the child has
         // no `version`, so the template stays unresolved.
-        let tree = c.raw.body.children.as_ref().unwrap();
-        let extracted = children_tree::get_all(tree);
+        let tree = c.raw.body.children.expect("children present");
+        let extracted = children_tree::into_all(tree);
         assert_eq!(extracted.len(), 1);
         assert_eq!(
             extracted[0].body.slug.as_ref().unwrap().as_str(),
             "{{this.version}}-child"
+        );
+    }
+
+    #[test]
+    fn interpolate_resolves_this_children_references() {
+        // `Contract::new` moves the children tree out of `raw` to build its
+        // index; this locks in that the move happens *after* template
+        // compilation, so the parent can still reference its children.
+        let c = contract(json!({
+            "type": "sw.os",
+            "slug": "board-{{this.children.hw.device-type.slug}}",
+            "children": {
+                "hw": {
+                    "device-type": { "type": "hw.device-type", "slug": "raspberrypi4" }
+                }
+            }
+        }));
+
+        assert_eq!(
+            c.raw.body.slug.as_ref().unwrap().as_str(),
+            "board-raspberrypi4",
+            "parent template must resolve against the incoming children tree"
         );
     }
 
@@ -1800,7 +1827,7 @@ mod tests {
 
     #[test]
     fn build_single_contract_no_variants() {
-        let contracts = Contract::build(&raw(json!({
+        let contracts = Contract::build(raw(json!({
             "name": "Debian Wheezy",
             "slug": "debian",
             "version": "wheezy",
@@ -1813,7 +1840,7 @@ mod tests {
 
     #[test]
     fn build_expands_templates() {
-        let contracts = Contract::build(&raw(json!({
+        let contracts = Contract::build(raw(json!({
             "name": "Debian {{this.data.codename}}",
             "slug": "debian",
             "version": "wheezy",
@@ -1833,7 +1860,7 @@ mod tests {
 
     #[test]
     fn build_supports_slug_and_type_templates() {
-        let contracts = Contract::build(&raw(json!({
+        let contracts = Contract::build(raw(json!({
             "name": "Debian Wheezy",
             "slug": "{{this.data.slug}}",
             "version": "wheezy",
@@ -1847,7 +1874,7 @@ mod tests {
 
     #[test]
     fn build_expands_variants() {
-        let contracts = Contract::build(&raw(json!({
+        let contracts = Contract::build(raw(json!({
             "slug": "debian",
             "type": "sw.os",
             "variants": [
@@ -1870,7 +1897,7 @@ mod tests {
 
     #[test]
     fn build_keeps_children_declared_on_base_and_variant() {
-        let contracts = Contract::build(&raw(json!({
+        let contracts = Contract::build(raw(json!({
             "slug": "debian",
             "type": "sw.os",
             "children": [
@@ -1895,8 +1922,36 @@ mod tests {
     }
 
     #[test]
+    fn build_keeps_same_type_children_declared_on_base_and_variant() {
+        // Two capabilities of the same type at the same tree path. Merging the
+        // children trees structurally collapses them into one hybrid contract;
+        // both must survive the re-index instead.
+        let contracts = Contract::build(raw(json!({
+            "slug": "myapp",
+            "type": "sw.application",
+            "children": {
+                "sw": { "os": { "type": "sw.os", "slug": "debian" } }
+            },
+            "variants": [
+                {
+                    "children": {
+                        "sw": { "os": { "type": "sw.os", "slug": "fedora" } }
+                    }
+                }
+            ]
+        })));
+        assert_eq!(contracts.len(), 1);
+
+        let debian = matcher("sw.os", Some("debian"), None);
+        assert_eq!(contracts[0].find_children(&debian).len(), 1);
+
+        let fedora = matcher("sw.os", Some("fedora"), None);
+        assert_eq!(contracts[0].find_children(&fedora).len(), 1);
+    }
+
+    #[test]
     fn build_variants_with_templates() {
-        let contracts = Contract::build(&raw(json!({
+        let contracts = Contract::build(raw(json!({
             "name": "debian {{this.version}}",
             "slug": "debian",
             "type": "sw.os",
@@ -1912,7 +1967,7 @@ mod tests {
 
     #[test]
     fn build_expands_aliases() {
-        let contracts = Contract::build(&raw(json!({
+        let contracts = Contract::build(raw(json!({
             "slug": "debian",
             "type": "sw.os",
             "version": "jessie",
@@ -1930,7 +1985,7 @@ mod tests {
 
     #[test]
     fn build_variants_and_aliases() {
-        let contracts = Contract::build(&raw(json!({
+        let contracts = Contract::build(raw(json!({
             "name": "debian {{this.version}}",
             "slug": "debian",
             "type": "sw.os",

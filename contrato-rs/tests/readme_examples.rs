@@ -91,7 +91,7 @@ fn readme_variants() {
         ]
     }))
     .unwrap();
-    let contracts = contrato::Contract::build(&source);
+    let contracts = contrato::Contract::build(source);
     assert_eq!(contracts.len(), 2);
     assert_eq!(contracts[0].get_version(), Some("3.19".to_string()));
     assert_eq!(contracts[1].get_version(), Some("3.20".to_string()));

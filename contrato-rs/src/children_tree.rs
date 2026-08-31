@@ -859,14 +859,14 @@ mod tests {
     fn build_variants_same_slug_and_version() {
         let c1: RawContract = serde_json::from_value(json!({
             "type": "sw.os",
-            "slug": "Debian Wheezy",
+            "slug": "debian",
             "version": "wheezy",
             "requires": [{ "type": "arch.sw", "slug": "amd64" }]
         }))
         .unwrap();
         let c2: RawContract = serde_json::from_value(json!({
             "type": "sw.os",
-            "slug": "Debian Wheezy",
+            "slug": "debian",
             "version": "wheezy",
             "requires": [{ "type": "arch.sw", "slug": "armv7hf" }]
         }))

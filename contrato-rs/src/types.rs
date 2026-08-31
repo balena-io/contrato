@@ -13,14 +13,93 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 
 use crate::children_tree::ChildrenTree;
+use crate::template;
 
 /// Type constant for universe contracts (collection of all available contracts).
 pub const UNIVERSE: &str = "meta.universe";
 
-/// A contract type string (e.g., `sw.os`, `hw.device-type`).
+/// Error returned when a string is not a valid [`ContractType`] or [`Slug`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InvalidIdentifier {
+    /// The input was empty.
+    Empty,
+    /// The first character was not an ASCII letter.
+    Start(String),
+    /// A character outside the accepted set was found.
+    Character(String, char),
+    /// A dotted path segment was empty (trailing or consecutive dots).
+    EmptySegment(String),
+}
+
+impl fmt::Display for InvalidIdentifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            InvalidIdentifier::Empty => write!(f, "cannot be empty"),
+            InvalidIdentifier::Start(s) => write!(f, "'{s}' must start with a letter"),
+            InvalidIdentifier::Character(s, c) => {
+                write!(f, "'{s}' contains an invalid character '{c}'")
+            }
+            InvalidIdentifier::EmptySegment(s) => write!(f, "'{s}' contains an empty segment"),
+        }
+    }
+}
+
+impl std::error::Error for InvalidIdentifier {}
+
+/// Checks a string as an ASCII letter followed by ASCII letters, digits or one
+/// of `extra`.
+fn check_pattern(s: &str, extra: &[char]) -> Result<(), InvalidIdentifier> {
+    let mut chars = s.chars();
+    let Some(first) = chars.next() else {
+        return Err(InvalidIdentifier::Empty);
+    };
+    if !first.is_ascii_alphabetic() {
+        return Err(InvalidIdentifier::Start(s.to_owned()));
+    }
+    for c in chars {
+        if !c.is_ascii_alphanumeric() && !extra.contains(&c) {
+            return Err(InvalidIdentifier::Character(s.to_owned(), c));
+        }
+    }
+    Ok(())
+}
+
+/// Validates a contract type
 ///
-/// Type strings identify the category of a contract. They use dot-separated
-/// namespacing (e.g., `hw.device-type`, `arch.sw`).
+/// The type must have the format `^[a-zA-Z][a-zA-Z0-9.-]*$` and be a valid
+/// [`crate::path::DottedPath`], i.e. it should have no empty segments.
+///
+/// A value carrying a `{{...}}` template expression is deferred whole: its
+/// final form is only known once the contract is interpolated.
+fn validate_kind(s: &str) -> Result<(), InvalidIdentifier> {
+    if let Err(e) = check_pattern(s, &['-', '.']) {
+        if template::has_template(s) {
+            return Ok(());
+        }
+        return Err(e);
+    }
+    if s.ends_with('.') || s.contains("..") {
+        return Err(InvalidIdentifier::EmptySegment(s.to_owned()));
+    }
+    Ok(())
+}
+
+/// Validates a slug
+///
+/// The type must have the format `^[a-zA-Z][a-zA-Z0-9.-+]*$`
+///
+/// Template expressions are deferred as in [`validate_kind`].
+fn validate_slug(s: &str) -> Result<(), InvalidIdentifier> {
+    match check_pattern(s, &['-', '.', '+']) {
+        Err(_) if template::has_template(s) => Ok(()),
+        result => result,
+    }
+}
+
+/// A contract type/kind string (e.g., `sw.os`, `hw.device-type`).
+///
+/// Type strings identify the category of the *thing* the contract describes.
+/// They use dot-separated namespacing (e.g., `hw.device-type`, `arch.sw`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ContractType(String);
@@ -58,7 +137,7 @@ impl From<String> for ContractType {
 /// A contract slug identifier (e.g., `debian`, `raspberry-pi`).
 ///
 /// Slugs uniquely identify a contract within its type.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Slug(String);
 
@@ -90,6 +169,36 @@ impl From<String> for Slug {
     fn from(s: String) -> Self {
         Self::new(s)
     }
+}
+
+/// Deserializes and validates a contract type field.
+fn deserialize_kind<'de, D: Deserializer<'de>>(deserializer: D) -> Result<ContractType, D::Error> {
+    let kind = ContractType::deserialize(deserializer)?;
+    validate_kind(kind.as_str())
+        .map_err(|e| de::Error::custom(format!("invalid contract type: {e}")))?;
+    Ok(kind)
+}
+
+/// Deserializes and validates an optional slug field.
+fn deserialize_slug<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Slug>, D::Error> {
+    let slug = Option::<Slug>::deserialize(deserializer)?;
+    if let Some(slug) = &slug {
+        validate_slug(slug.as_str())
+            .map_err(|e| de::Error::custom(format!("invalid slug: {e}")))?;
+    }
+    Ok(slug)
+}
+
+/// Deserializes and validates a list of slugs (contract aliases).
+fn deserialize_slug_list<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<Slug>, D::Error> {
+    let slugs = Vec::<Slug>::deserialize(deserializer)?;
+    for slug in &slugs {
+        validate_slug(slug.as_str())
+            .map_err(|e| de::Error::custom(format!("invalid alias: {e}")))?;
+    }
+    Ok(slugs)
 }
 
 /// Internal representation of a version: either valid semver or a plain
@@ -462,7 +571,11 @@ fn deserialize_requirement_from_value(value: Value) -> Result<ContractRequiremen
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct PartialContract {
     /// Contract slug.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_slug"
+    )]
     pub slug: Option<Slug>,
 
     /// Semver-compliant version string.
@@ -478,7 +591,11 @@ pub struct PartialContract {
     pub description: Option<String>,
 
     /// Alternative slugs for this contract.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "deserialize_slug_list"
+    )]
     pub aliases: Vec<Slug>,
 
     /// Free-form data specific to the contract type.
@@ -514,11 +631,16 @@ pub struct PartialContract {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct RawContract {
     /// The contract type (e.g., `sw.os`, `hw.device-type`).
-    #[serde(rename = "type")]
+    #[serde(rename = "type", deserialize_with = "deserialize_kind")]
     pub kind: ContractType,
 
     /// Maps alias slugs back to the canonical slug.
-    #[serde(rename = "canonicalSlug", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "canonicalSlug",
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_slug"
+    )]
     pub canonical_slug: Option<Slug>,
 
     /// Shared contract fields (slug, version, name, data, requires, etc.).
@@ -534,6 +656,117 @@ pub struct RawContract {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// Deserializes a contract, returning the serde error message on failure.
+    fn parse(value: Value) -> Result<RawContract, String> {
+        serde_json::from_value::<RawContract>(value).map_err(|e| e.to_string())
+    }
+
+    #[test]
+    fn identifiers_are_plain_wrappers() {
+        // Construction never validates: the check belongs to the contract
+        // boundary, so hand-built values (matchers, tests) stay cheap.
+        assert_eq!(ContractType::new("sw os").as_str(), "sw os");
+        assert_eq!(Slug::new("1debian").as_str(), "1debian");
+        assert_eq!(ContractType::default().as_str(), "");
+    }
+
+    #[test]
+    fn contract_accepts_spec_pattern() {
+        for kind in ["sw.os", "hw.device-type", "arch.sw", "meta.universe", "s"] {
+            assert!(parse(json!({"type": kind})).is_ok(), "{kind} must be valid");
+        }
+        // A trailing dot is legal for a slug: slugs are not dotted paths.
+        for slug in [
+            "debian",
+            "raspberry-pi",
+            "raspberrypi4-64",
+            "node.js",
+            "debian.",
+            "odroid-u3+",
+            "d",
+        ] {
+            assert!(
+                parse(json!({"type": "sw.os", "slug": slug})).is_ok(),
+                "{slug} must be valid"
+            );
+        }
+    }
+
+    #[test]
+    fn contract_rejects_invalid_type() {
+        for kind in ["", "1sw.os", "sw_os", "sw os", "sw.os+arch"] {
+            let err = parse(json!({"type": kind})).unwrap_err();
+            assert!(err.contains("invalid contract type"), "{kind}: {err}");
+        }
+    }
+
+    #[test]
+    fn contract_rejects_type_that_is_not_a_dotted_path() {
+        // Allowed by the pattern alone, rejected because a contract type
+        // must also be a valid dotted path.
+        for kind in ["sw.os.", "sw..os"] {
+            let err = parse(json!({"type": kind})).unwrap_err();
+            assert!(err.contains("empty segment"), "{kind}: {err}");
+        }
+    }
+
+    #[test]
+    fn contract_rejects_invalid_slug_fields() {
+        let err = parse(json!({"type": "sw.os", "slug": "1debian"})).unwrap_err();
+        assert!(err.contains("invalid slug"), "{err}");
+
+        let err = parse(json!({"type": "sw.os", "canonicalSlug": "Debian Wheezy"})).unwrap_err();
+        assert!(err.contains("invalid slug"), "{err}");
+
+        let err = parse(json!({"type": "sw.os", "aliases": ["ok", "no_good"]})).unwrap_err();
+        assert!(err.contains("invalid alias"), "{err}");
+    }
+
+    #[test]
+    fn contract_validates_nested_documents() {
+        // Variants deserialize as `PartialContract` and children as nested
+        // `RawContract`s, so both carry the same check.
+        let err = parse(json!({
+            "type": "sw.os",
+            "variants": [{"slug": "nodejs_armv7hf"}]
+        }))
+        .unwrap_err();
+        assert!(err.contains("invalid slug"), "{err}");
+
+        let err = parse(json!({
+            "type": "sw.os",
+            "children": [{"type": "sw os", "slug": "child"}]
+        }))
+        .unwrap_err();
+        assert!(err.contains("invalid contract type"), "{err}");
+    }
+
+    #[test]
+    fn contract_defers_templated_identifiers() {
+        // The final value is only known after interpolation, so template
+        // expressions bypass the pattern check.
+        assert!(parse(json!({"type": "{{this.data.type}}"})).is_ok());
+        assert!(parse(json!({"type": "sw.{{this.data.kind}}"})).is_ok());
+        assert!(parse(json!({"type": "sw.os", "slug": "{{this.data.name}}"})).is_ok());
+        assert!(parse(json!({"type": "sw.os", "slug": "debian-{{this.version}}"})).is_ok());
+    }
+
+    #[test]
+    fn matchers_are_not_validated() {
+        // Matchers are queries, not documents: they hold whatever the caller
+        // asks for, so a typo matches nothing instead of failing to parse.
+        let m: ContractMatcher =
+            serde_json::from_value(json!({"type": "sw os", "slug": "foo_bar"})).unwrap();
+        assert_eq!(m.kind.as_str(), "sw os");
+        assert_eq!(m.slug.unwrap().as_str(), "foo_bar");
+
+        let contract = parse(json!({
+            "type": "sw.app",
+            "requires": [{"type": "sw os"}]
+        }));
+        assert!(contract.is_ok(), "requirements are matchers, not documents");
+    }
 
     #[test]
     fn deserialize_minimal_contract() {
@@ -1235,7 +1468,7 @@ mod tests {
     fn deserialize_contract_with_variants() {
         let json = json!({
             "type": "blob",
-            "slug": "nodejs_{{data.arch}}",
+            "slug": "nodejs-{{data.arch}}",
             "name": "Node.js",
             "data": { "libc": "musl-libc" },
             "variants": [
@@ -1264,7 +1497,7 @@ mod tests {
     fn round_trip_contract_with_variants() {
         let input = json!({
             "type": "blob",
-            "slug": "nodejs_{{data.arch}}",
+            "slug": "nodejs-{{data.arch}}",
             "name": "Node.js",
             "data": { "libc": "musl-libc" },
             "variants": [
@@ -1512,13 +1745,13 @@ mod tests {
 
     #[test]
     fn contract_type_display() {
-        let ct = ContractType::new("sw.os");
+        let ct = "sw.os";
         assert_eq!(format!("{ct}"), "sw.os");
     }
 
     #[test]
     fn slug_display() {
-        let s = Slug::new("debian");
+        let s = "debian";
         assert_eq!(format!("{s}"), "debian");
     }
 

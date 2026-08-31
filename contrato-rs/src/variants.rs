@@ -259,7 +259,7 @@ mod tests {
     #[test]
     fn build_contract_with_two_variants() {
         let contract: RawContract = serde_json::from_value(json!({
-            "slug": "nodejs_{{data.arch}}",
+            "slug": "nodejs-{{data.arch}}",
             "type": "blob",
             "name": "Node.js",
             "data": { "libc": "musl-libc" },
@@ -287,7 +287,7 @@ mod tests {
         assert_eq!(
             jsons[0],
             json!({
-                "slug": "nodejs_{{data.arch}}",
+                "slug": "nodejs-{{data.arch}}",
                 "type": "blob",
                 "name": "Node.js",
                 "requires": [{ "type": "arch.sw", "slug": "amd64" }],
@@ -298,7 +298,7 @@ mod tests {
         assert_eq!(
             jsons[1],
             json!({
-                "slug": "nodejs_{{data.arch}}",
+                "slug": "nodejs-{{data.arch}}",
                 "type": "blob",
                 "name": "Node.js",
                 "requires": [{ "type": "arch.sw", "slug": "i386" }],
@@ -310,7 +310,7 @@ mod tests {
     #[test]
     fn build_nested_variants() {
         let contract: RawContract = serde_json::from_value(json!({
-            "slug": "nodejs_{{data.arch}}",
+            "slug": "nodejs-{{data.arch}}",
             "type": "blob",
             "name": "Node.js",
             "data": { "libc": "musl-libc" },
@@ -345,7 +345,7 @@ mod tests {
         assert_eq!(
             jsons[0],
             json!({
-                "slug": "nodejs_{{data.arch}}",
+                "slug": "nodejs-{{data.arch}}",
                 "type": "blob",
                 "version": "6.3.0",
                 "name": "Node.js",
@@ -357,7 +357,7 @@ mod tests {
         assert_eq!(
             jsons[1],
             json!({
-                "slug": "nodejs_{{data.arch}}",
+                "slug": "nodejs-{{data.arch}}",
                 "type": "blob",
                 "version": "6.4.0",
                 "name": "Node.js",
@@ -369,7 +369,7 @@ mod tests {
         assert_eq!(
             jsons[2],
             json!({
-                "slug": "nodejs_{{data.arch}}",
+                "slug": "nodejs-{{data.arch}}",
                 "type": "blob",
                 "version": "6.3.0",
                 "name": "Node.js",

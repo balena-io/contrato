@@ -19,7 +19,7 @@ mod variants;
 pub use children_tree::ChildrenTree;
 pub use contract::Contract;
 pub use types::{
-    Asset, ContractMatcher, ContractRequirement, ContractType, PartialContract, RawContract, Slug,
-    UNIVERSE, Version, VersionReq,
+    Asset, ContractMatcher, ContractRequirement, ContractType, InvalidIdentifier, PartialContract,
+    RawContract, Slug, UNIVERSE, Version, VersionReq,
 };
 pub use universe::Universe;

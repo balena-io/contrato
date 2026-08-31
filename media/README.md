@@ -128,7 +128,7 @@ let source: RawContract = serde_json::from_value(serde_json::json!({
     ]
 })).unwrap();
 
-let contracts = Contract::build(&source);
+let contracts = Contract::build(source);
 assert_eq!(contracts.len(), 2);
 assert_eq!(contracts[0].get_version(), Some("3.19".to_string()));
 assert_eq!(contracts[1].get_version(), Some("3.20".to_string()));

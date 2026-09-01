@@ -5,6 +5,10 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## v0.0.6 - 2018-08-17
 
+## 0.17.2 - 2026-09-01
+
+* Remove ObjectSet [Felipe Lalanne]
+
 ## 0.17.1 - 2026-08-31
 
 * Avoid cloning every child on contract interpolation [Felipe Lalanne]

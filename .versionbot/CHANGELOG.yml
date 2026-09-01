@@ -1,4 +1,24 @@
 - commits:
+    - subject: Remove ObjectSet
+      hash: 76338261eddcdbb1c74119bfe2d5018398cfc3d5
+      body: >
+        ContractMatchers are now stored in an IndexSet, and use the Hash
+
+        implementation to compare. This results in a performance improvement
+
+        over using `hash_object` for identification and has the added benefit of
+        ensuring consistent
+
+        ordering compared to ObjectSet.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+  version: 0.17.2
+  title: ""
+  date: 2026-09-01T22:07:27.041Z
+- commits:
     - subject: Avoid cloning every child on contract interpolation
       hash: 716bc8ad333bb773f49136dd2927aae93781a029
       body: |

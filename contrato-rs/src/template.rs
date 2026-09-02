@@ -17,6 +17,11 @@ use crate::path::DottedPath;
 static TEMPLATE_REGEXP: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\{\{(.+?)\}\}").expect("template regex is valid"));
 
+/// Returns `true` if `s` carries a `{{...}}` template expression.
+pub(crate) fn has_template(s: &str) -> bool {
+    TEMPLATE_REGEXP.is_match(s)
+}
+
 /// Interpolates template expressions in a single string value.
 ///
 /// Replaces all `{{this.path.to.field}}` expressions with the resolved value

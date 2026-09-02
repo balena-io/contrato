@@ -14,11 +14,9 @@ use std::collections::BTreeSet;
 
 use indexmap::{IndexMap, IndexSet};
 
-use crate::children_tree::ChildrenIndex;
 use crate::contract::Contract;
 use crate::error::Error;
 use crate::path::DottedPath;
-use crate::types::RawContract;
 
 /// Checks that a child can be keyed in the children tree by its type
 /// and slug.
@@ -244,6 +242,17 @@ impl ContractIndex {
             .flat_map(|set| set.iter().map(String::as_str))
     }
 
+    /// Returns an iterator over the slugs (including aliases) registered
+    /// for `ty`.
+    ///
+    /// Yields nothing if no children of that type are registered.
+    pub(crate) fn slugs_by_type<'a>(&'a self, ty: &str) -> impl Iterator<Item = &'a str> {
+        self.by_type_slug
+            .get(ty)
+            .into_iter()
+            .flat_map(|m| m.keys().map(String::as_str))
+    }
+
     /// Returns an iterator over the known child types.
     pub(crate) fn types(&self) -> impl Iterator<Item = &str> {
         self.types.iter().map(String::as_str)
@@ -260,30 +269,6 @@ impl ContractIndex {
     /// therefore the order in which the children were inserted.
     pub(crate) fn values(&self) -> impl Iterator<Item = &Contract> {
         self.map.values()
-    }
-}
-
-impl ChildrenIndex for ContractIndex {
-    fn child_types(&self) -> impl Iterator<Item = &str> {
-        self.types.iter().map(String::as_str)
-    }
-
-    fn type_hashes(&self, ty: &str) -> Option<impl ExactSizeIterator<Item = &str>> {
-        self.by_type.get(ty).map(|s| s.iter().map(String::as_str))
-    }
-
-    fn type_slugs<'a>(
-        &'a self,
-        ty: &str,
-    ) -> impl Iterator<Item = (&'a str, impl Iterator<Item = &'a str> + 'a)> + 'a {
-        self.by_type_slug.get(ty).into_iter().flat_map(|m| {
-            m.iter()
-                .map(|(slug, hashes)| (slug.as_str(), hashes.iter().map(String::as_str)))
-        })
-    }
-
-    fn child_by_hash(&self, hash: &str) -> Option<&RawContract> {
-        self.map.get(hash).map(Contract::raw)
     }
 }
 

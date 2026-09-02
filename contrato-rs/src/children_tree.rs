@@ -24,6 +24,7 @@ use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 
+use crate::index::ContractIndex;
 use crate::types::RawContract;
 
 /// A strongly typed representation of the nested children tree.
@@ -137,53 +138,22 @@ fn collect_into(tree: ChildrenTree, out: &mut Vec<RawContract>) {
     }
 }
 
-/// Trait exposing the children index data needed by [`build`].
-///
-/// Decouples the tree-building logic from the concrete index implementations
-pub(crate) trait ChildrenIndex {
-    /// Return an iterator over the type strings of all contracts in the index.
-    /// Each type must be yielded exactly once; no specific ordering is
-    /// required, since the tree is keyed by [`BTreeMap`] at every level.
-    fn child_types(&self) -> impl Iterator<Item = &str>;
-
-    /// Returns an iterator over the unique contract hashes for the
-    /// given type. The iterator must yield unique values and its
-    /// `len()` must be O(1). Returns `None` if the type has no
-    /// children.
-    fn type_hashes(&self, ty: &str) -> Option<impl ExactSizeIterator<Item = &str>>;
-
-    /// Iterates over `(slug, hash_iterator)` pairs for the given type.
-    ///
-    /// Both the slug references and hash references borrow from `&self`.
-    fn type_slugs<'a>(
-        &'a self,
-        ty: &str,
-    ) -> impl Iterator<Item = (&'a str, impl Iterator<Item = &'a str> + 'a)> + 'a;
-
-    /// Looks up a child's [`RawContract`] by its hash.
-    fn child_by_hash(&self, hash: &str) -> Option<&RawContract>;
-}
-
-/// Builds a [`ChildrenTree`] from children index data.
+/// Builds a [`ChildrenTree`] from a children index.
 ///
 /// Reconstructs the nested tree format used in contract JSON serialization.
 /// Types are split on `.` to create nested path segments (e.g., `sw.os` becomes
 /// `{ "sw": { "os": ... } }`).
 ///
-/// # Arguments
-///
-/// * `source` - Any type implementing [`ChildrenIndex`]
-///
 /// # Returns
 ///
 /// A `ChildrenTree` representing the nested tree structure.
-pub(crate) fn build(source: &impl ChildrenIndex) -> ChildrenTree {
+pub(crate) fn build(index: &ContractIndex) -> ChildrenTree {
     let mut root = BTreeMap::new();
 
-    for kind in source.child_types() {
+    for kind in index.types() {
         // A type contributing no node must not leave empty branches
         // behind, so the node is built before the path is walked.
-        let Some(node) = type_node(source, kind) else {
+        let Some(node) = type_node(index, kind) else {
             continue;
         };
 
@@ -226,73 +196,40 @@ pub(crate) fn build(source: &impl ChildrenIndex) -> ChildrenTree {
 ///
 /// A lone child sits at the type's own key; siblings nest one level deeper,
 /// keyed by slug and by every alias.
-fn type_node(source: &impl ChildrenIndex, kind: &str) -> Option<ChildrenTree> {
-    let mut hashes = source.type_hashes(kind)?;
+fn type_node(index: &ContractIndex, kind: &str) -> Option<ChildrenTree> {
+    let mut hashes = index.hashes_by_type(kind);
+    let first = hashes.next()?;
 
-    if hashes.len() == 1 {
-        let contract = source.child_by_hash(hashes.next()?)?;
-        return Some(ChildrenTree::Single(Box::new(contract.clone())));
+    if hashes.next().is_none() {
+        let contract = index.get(first)?;
+        return Some(ChildrenTree::Single(Box::new(contract.raw().clone())));
     }
 
     let mut by_slug = BTreeMap::new();
-    for (slug, hashes) in source.type_slugs(kind) {
-        let contracts: Vec<RawContract> = hashes
-            .filter_map(|hash| source.child_by_hash(hash).cloned())
+    for slug in index.slugs_by_type(kind) {
+        let mut contracts: Vec<RawContract> = index
+            .hashes_by_type_slug(kind, slug)
+            .filter_map(|hash| index.get(hash))
+            .map(|contract| contract.raw().clone())
             .collect();
 
-        let node = match contracts.len() {
-            0 => continue,
-            1 => ChildrenTree::Single(Box::new(contracts.into_iter().next()?)),
-            _ => ChildrenTree::Multiple(contracts),
+        let node = if contracts.len() == 1 {
+            ChildrenTree::Single(Box::new(contracts.pop()?))
+        } else {
+            ChildrenTree::Multiple(contracts)
         };
         by_slug.insert(slug.to_string(), node);
     }
 
-    (!by_slug.is_empty()).then_some(ChildrenTree::Branch(by_slug))
+    Some(ChildrenTree::Branch(by_slug))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract::Contract;
     use serde_json::json;
-    use std::collections::{HashMap, HashSet};
-
-    // -----------------------------------------------------------------------
-    // Test implementation of WithChildrenIndex
-    // -----------------------------------------------------------------------
-
-    /// A simple test implementation of [`WithChildrenIndex`] backed by HashMaps.
-    struct TestIndex {
-        types: HashSet<String>,
-        by_type: HashMap<String, HashSet<String>>,
-        by_type_slug: HashMap<String, HashMap<String, HashSet<String>>>,
-        contracts: HashMap<String, RawContract>,
-    }
-
-    impl ChildrenIndex for TestIndex {
-        fn child_types(&self) -> impl Iterator<Item = &str> {
-            self.types.iter().map(String::as_str)
-        }
-
-        fn type_hashes(&self, ty: &str) -> Option<impl ExactSizeIterator<Item = &str>> {
-            self.by_type.get(ty).map(|s| s.iter().map(String::as_str))
-        }
-
-        fn type_slugs<'a>(
-            &'a self,
-            ty: &str,
-        ) -> impl Iterator<Item = (&'a str, impl Iterator<Item = &'a str> + 'a)> + 'a {
-            self.by_type_slug.get(ty).into_iter().flat_map(|slug_map| {
-                slug_map
-                    .iter()
-                    .map(|(slug, hashes)| (slug.as_str(), hashes.iter().map(String::as_str)))
-            })
-        }
-
-        fn child_by_hash(&self, hash: &str) -> Option<&RawContract> {
-            self.contracts.get(hash)
-        }
-    }
+    use std::collections::HashSet;
 
     /// Helper to create a minimal [`RawContract`].
     fn raw_contract(type_: &str, slug: &str, version: Option<&str>) -> RawContract {
@@ -303,14 +240,18 @@ mod tests {
         serde_json::from_value(val).unwrap()
     }
 
-    /// Helper to build an empty [`TestIndex`].
-    fn empty_index() -> TestIndex {
-        TestIndex {
-            types: HashSet::new(),
-            by_type: HashMap::new(),
-            by_type_slug: HashMap::new(),
-            contracts: HashMap::new(),
-        }
+    /// Builds a [`ContractIndex`] holding the given contracts.
+    fn index_of(contracts: &[RawContract]) -> ContractIndex {
+        let contracts = contracts
+            .iter()
+            .cloned()
+            .map(Contract::new)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        let mut index = ContractIndex::default();
+        index.insert_all(contracts).unwrap();
+        index
     }
 
     // -----------------------------------------------------------------------
@@ -518,40 +459,14 @@ mod tests {
 
     #[test]
     fn build_empty_index() {
-        let index = empty_index();
-        let result = build(&index);
-        assert_eq!(result, ChildrenTree::Branch(BTreeMap::new()));
-    }
-
-    #[test]
-    fn build_type_with_no_hashes() {
-        // child_types returns a type, but type_hashes returns None for it.
-        let index = TestIndex {
-            types: HashSet::from(["sw.os".to_string()]),
-            by_type: HashMap::new(), // no entry for sw.os
-            by_type_slug: HashMap::new(),
-            contracts: HashMap::new(),
-        };
-        let result = build(&index);
+        let result = build(&ContractIndex::default());
         assert_eq!(result, ChildrenTree::Branch(BTreeMap::new()));
     }
 
     #[test]
     fn build_single_child() {
         let c1 = raw_contract("sw.os", "debian", Some("wheezy"));
-        let h1 = "hash1".to_string();
-
-        let index = TestIndex {
-            types: HashSet::from(["sw.os".to_string()]),
-            by_type: HashMap::from([("sw.os".to_string(), HashSet::from([h1.clone()]))]),
-            by_type_slug: HashMap::from([(
-                "sw.os".to_string(),
-                HashMap::from([("debian".to_string(), HashSet::from([h1.clone()]))]),
-            )]),
-            contracts: HashMap::from([(h1, c1.clone())]),
-        };
-
-        let result = build(&index);
+        let result = build(&index_of(std::slice::from_ref(&c1)));
 
         // Verify full tree shape: sw -> os -> Single(contract)
         let json = serde_json::to_value(&result).unwrap();
@@ -566,29 +481,7 @@ mod tests {
     fn build_two_different_types() {
         let c1 = raw_contract("sw.os", "debian", Some("wheezy"));
         let c2 = raw_contract("sw.blob", "nodejs", Some("4.8.0"));
-        let h1 = "hash1".to_string();
-        let h2 = "hash2".to_string();
-
-        let index = TestIndex {
-            types: HashSet::from(["sw.os".to_string(), "sw.blob".to_string()]),
-            by_type: HashMap::from([
-                ("sw.os".to_string(), HashSet::from([h1.clone()])),
-                ("sw.blob".to_string(), HashSet::from([h2.clone()])),
-            ]),
-            by_type_slug: HashMap::from([
-                (
-                    "sw.os".to_string(),
-                    HashMap::from([("debian".to_string(), HashSet::from([h1.clone()]))]),
-                ),
-                (
-                    "sw.blob".to_string(),
-                    HashMap::from([("nodejs".to_string(), HashSet::from([h2.clone()]))]),
-                ),
-            ]),
-            contracts: HashMap::from([(h1, c1.clone()), (h2, c2.clone())]),
-        };
-
-        let result = build(&index);
+        let result = build(&index_of(&[c1.clone(), c2.clone()]));
 
         // Both types share the "sw" prefix, so they should be siblings.
         let json = serde_json::to_value(&result).unwrap();
@@ -607,26 +500,8 @@ mod tests {
     fn build_keeps_a_dotted_slug_as_a_single_key() {
         let c1 = raw_contract("sw.os", "node.js", None);
         let c2 = raw_contract("sw.os", "debian.", None);
-        let h1 = "hash1".to_string();
-        let h2 = "hash2".to_string();
+        let tree = build(&index_of(&[c1.clone(), c2.clone()]));
 
-        let index = TestIndex {
-            types: HashSet::from(["sw.os".to_string()]),
-            by_type: HashMap::from([(
-                "sw.os".to_string(),
-                HashSet::from([h1.clone(), h2.clone()]),
-            )]),
-            by_type_slug: HashMap::from([(
-                "sw.os".to_string(),
-                HashMap::from([
-                    ("node.js".to_string(), HashSet::from([h1.clone()])),
-                    ("debian.".to_string(), HashSet::from([h2.clone()])),
-                ]),
-            )]),
-            contracts: HashMap::from([(h1, c1.clone()), (h2, c2.clone())]),
-        };
-
-        let tree = build(&index);
         let json = serde_json::to_value(&tree).unwrap();
         assert_eq!(json.pointer("/sw/os/node.js/slug").unwrap(), "node.js");
         assert_eq!(json.pointer("/sw/os/debian./slug").unwrap(), "debian.");
@@ -638,93 +513,10 @@ mod tests {
     }
 
     #[test]
-    fn build_single_child_hash_missing_from_contracts() {
-        // Hash exists in by_type but not in contracts — silently skipped.
-        let index = TestIndex {
-            types: HashSet::from(["sw.os".to_string()]),
-            by_type: HashMap::from([("sw.os".to_string(), HashSet::from(["gone".to_string()]))]),
-            by_type_slug: HashMap::from([(
-                "sw.os".to_string(),
-                HashMap::from([("debian".to_string(), HashSet::from(["gone".to_string()]))]),
-            )]),
-            contracts: HashMap::new(),
-        };
-        let result = build(&index);
-        assert!(into_all(result).is_empty());
-    }
-
-    #[test]
-    fn build_multi_slug_all_hashes_missing() {
-        // Two hashes in by_type so it takes the multi-child path, but
-        // type_slugs yields hashes absent from contracts.
-        let index = TestIndex {
-            types: HashSet::from(["sw.os".to_string()]),
-            by_type: HashMap::from([(
-                "sw.os".to_string(),
-                HashSet::from(["gone1".to_string(), "gone2".to_string()]),
-            )]),
-            by_type_slug: HashMap::from([(
-                "sw.os".to_string(),
-                HashMap::from([(
-                    "debian".to_string(),
-                    HashSet::from(["gone1".to_string(), "gone2".to_string()]),
-                )]),
-            )]),
-            contracts: HashMap::new(),
-        };
-        let result = build(&index);
-        assert!(into_all(result).is_empty());
-    }
-
-    #[test]
-    fn build_multi_type_absent_from_slug_index() {
-        // type_hashes has 2 entries but type_slugs yields nothing.
-        let index = TestIndex {
-            types: HashSet::from(["sw.os".to_string()]),
-            by_type: HashMap::from([(
-                "sw.os".to_string(),
-                HashSet::from(["h1".to_string(), "h2".to_string()]),
-            )]),
-            by_type_slug: HashMap::new(),
-            contracts: HashMap::from([
-                (
-                    "h1".to_string(),
-                    raw_contract("sw.os", "debian", Some("wheezy")),
-                ),
-                (
-                    "h2".to_string(),
-                    raw_contract("sw.os", "fedora", Some("25")),
-                ),
-            ]),
-        };
-        let result = build(&index);
-        assert!(into_all(result).is_empty());
-    }
-
-    #[test]
     fn build_same_type_different_slugs() {
         let c1 = raw_contract("sw.os", "debian", Some("wheezy"));
         let c2 = raw_contract("sw.os", "fedora", Some("25"));
-        let h1 = "hash1".to_string();
-        let h2 = "hash2".to_string();
-
-        let index = TestIndex {
-            types: HashSet::from(["sw.os".to_string()]),
-            by_type: HashMap::from([(
-                "sw.os".to_string(),
-                HashSet::from([h1.clone(), h2.clone()]),
-            )]),
-            by_type_slug: HashMap::from([(
-                "sw.os".to_string(),
-                HashMap::from([
-                    ("debian".to_string(), HashSet::from([h1.clone()])),
-                    ("fedora".to_string(), HashSet::from([h2.clone()])),
-                ]),
-            )]),
-            contracts: HashMap::from([(h1, c1.clone()), (h2, c2.clone())]),
-        };
-
-        let result = build(&index);
+        let result = build(&index_of(&[c1.clone(), c2.clone()]));
 
         // Verify tree shape: sw -> os -> {debian, fedora}
         let json = serde_json::to_value(&result).unwrap();
@@ -741,26 +533,7 @@ mod tests {
     fn build_multiple_versions_same_slug() {
         let c1 = raw_contract("sw.os", "debian", Some("wheezy"));
         let c2 = raw_contract("sw.os", "debian", Some("jessie"));
-        let h1 = "hash1".to_string();
-        let h2 = "hash2".to_string();
-
-        let index = TestIndex {
-            types: HashSet::from(["sw.os".to_string()]),
-            by_type: HashMap::from([(
-                "sw.os".to_string(),
-                HashSet::from([h1.clone(), h2.clone()]),
-            )]),
-            by_type_slug: HashMap::from([(
-                "sw.os".to_string(),
-                HashMap::from([(
-                    "debian".to_string(),
-                    HashSet::from([h1.clone(), h2.clone()]),
-                )]),
-            )]),
-            contracts: HashMap::from([(h1, c1.clone()), (h2, c2.clone())]),
-        };
-
-        let result = build(&index);
+        let result = build(&index_of(&[c1.clone(), c2.clone()]));
 
         // Verify the debian node is Multiple
         let json = serde_json::to_value(&result).unwrap();
@@ -790,68 +563,49 @@ mod tests {
             "requires": [{ "type": "arch.sw", "slug": "armv7hf" }]
         }))
         .unwrap();
-        let h1 = "hash1".to_string();
-        let h2 = "hash2".to_string();
 
-        let index = TestIndex {
-            types: HashSet::from(["sw.os".to_string()]),
-            by_type: HashMap::from([(
-                "sw.os".to_string(),
-                HashSet::from([h1.clone(), h2.clone()]),
-            )]),
-            by_type_slug: HashMap::from([(
-                "sw.os".to_string(),
-                HashMap::from([(
-                    "debian".to_string(),
-                    HashSet::from([h1.clone(), h2.clone()]),
-                )]),
-            )]),
-            contracts: HashMap::from([(h1, c1.clone()), (h2, c2.clone())]),
-        };
-
-        let result = build(&index);
+        let result = build(&index_of(&[c1, c2]));
         let json = serde_json::to_value(&result).unwrap();
         let arr = json.pointer("/sw/os/debian").expect("should have debian");
         assert!(arr.is_array());
         assert_eq!(arr.as_array().unwrap().len(), 2);
     }
 
-    // -----------------------------------------------------------------------
-    // Overlapping types
-    // -----------------------------------------------------------------------
+    /// Aliases are keyed alongside the canonical slug, so a child reachable
+    /// under two names appears at both keys.
+    #[test]
+    fn build_keys_a_child_under_each_alias() {
+        let aliased: RawContract = serde_json::from_value(json!({
+            "type": "sw.os",
+            "slug": "debian",
+            "aliases": ["deb"]
+        }))
+        .unwrap();
+        let other = raw_contract("sw.os", "fedora", None);
+
+        let contracts = Contract::build(aliased).unwrap();
+        let mut index = ContractIndex::default();
+        index.insert_all(contracts).unwrap();
+        index
+            .insert_all(vec![Contract::new(other).unwrap()])
+            .unwrap();
+
+        let json = serde_json::to_value(build(&index)).unwrap();
+        assert_eq!(json.pointer("/sw/os/deb/slug").unwrap(), "deb");
+        assert_eq!(json.pointer("/sw/os/debian/slug").unwrap(), "debian");
+        assert_eq!(json.pointer("/sw/os/fedora/slug").unwrap(), "fedora");
+    }
 
     // -----------------------------------------------------------------------
-    // Round-trip: build → into_all
+    // Round-trip: build -> into_all
     // -----------------------------------------------------------------------
 
     #[test]
     fn round_trip_build_then_into_all() {
         let c1 = raw_contract("sw.os", "debian", Some("wheezy"));
         let c2 = raw_contract("sw.blob", "nodejs", Some("4.8.0"));
-        let h1 = "hash1".to_string();
-        let h2 = "hash2".to_string();
 
-        let index = TestIndex {
-            types: HashSet::from(["sw.os".to_string(), "sw.blob".to_string()]),
-            by_type: HashMap::from([
-                ("sw.os".to_string(), HashSet::from([h1.clone()])),
-                ("sw.blob".to_string(), HashSet::from([h2.clone()])),
-            ]),
-            by_type_slug: HashMap::from([
-                (
-                    "sw.os".to_string(),
-                    HashMap::from([("debian".to_string(), HashSet::from([h1.clone()]))]),
-                ),
-                (
-                    "sw.blob".to_string(),
-                    HashMap::from([("nodejs".to_string(), HashSet::from([h2.clone()]))]),
-                ),
-            ]),
-            contracts: HashMap::from([(h1, c1.clone()), (h2, c2.clone())]),
-        };
-
-        let tree = build(&index);
-        let extracted = into_all(tree);
+        let extracted = into_all(build(&index_of(&[c1.clone(), c2.clone()])));
         assert_eq!(extracted.len(), 2);
         assert!(extracted.contains(&c1));
         assert!(extracted.contains(&c2));
@@ -861,27 +615,8 @@ mod tests {
     fn round_trip_multi_version_slug() {
         let c1 = raw_contract("sw.os", "debian", Some("wheezy"));
         let c2 = raw_contract("sw.os", "debian", Some("jessie"));
-        let h1 = "hash1".to_string();
-        let h2 = "hash2".to_string();
 
-        let index = TestIndex {
-            types: HashSet::from(["sw.os".to_string()]),
-            by_type: HashMap::from([(
-                "sw.os".to_string(),
-                HashSet::from([h1.clone(), h2.clone()]),
-            )]),
-            by_type_slug: HashMap::from([(
-                "sw.os".to_string(),
-                HashMap::from([(
-                    "debian".to_string(),
-                    HashSet::from([h1.clone(), h2.clone()]),
-                )]),
-            )]),
-            contracts: HashMap::from([(h1, c1.clone()), (h2, c2.clone())]),
-        };
-
-        let tree = build(&index);
-        let extracted = into_all(tree);
+        let extracted = into_all(build(&index_of(&[c1.clone(), c2.clone()])));
         assert_eq!(extracted.len(), 2);
         assert!(extracted.contains(&c1));
         assert!(extracted.contains(&c2));

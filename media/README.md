@@ -40,7 +40,7 @@ assert_eq!(contract.get_children_types(), vec!["sw.service"]);
 Use `ContractMatcher` to find children by type, slug, version, or data fields.
 
 ```rust
-use contrato::{Contract, ContractMatcher, ContractType, Slug, VersionReq};
+use contrato::{Contract, ContractMatcher, VersionReq};
 
 let mut os: Contract = serde_json::from_value(serde_json::json!({
     "type": "sw.os",

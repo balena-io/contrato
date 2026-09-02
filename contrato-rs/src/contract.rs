@@ -412,9 +412,9 @@ impl Contract {
 
     /// Returns a reference to the underlying [`RawContract`].
     ///
-    /// Crate-internal accessor used by [`children_tree::build`] via the
-    /// [`crate::children_tree::ChildrenIndex`] trait implementation
-    /// on [`crate::index::ContractIndex`].
+    /// Crate-internal accessor used by [`children_tree::build`] when
+    /// rebuilding the serialized children tree from
+    /// [`crate::index::ContractIndex`].
     pub(crate) fn raw(&self) -> &RawContract {
         &self.raw
     }

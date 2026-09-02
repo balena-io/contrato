@@ -1,4 +1,27 @@
 - commits:
+    - subject: Validate type/slug on contract deserialization
+      hash: 0dc1e4d6689ea45aa7c861efd538c098b8597e45
+      body: >
+        Checks contract type/slug only include valid characters, alphanumeric
+
+        plus `-`, `.` for `type` and alphanumeric plus `-`, `.` and `+` for
+
+        slug (the inclusion of `+` is to accomodate the existing odroid-xu4
+        contract).
+
+
+        This only validates on contract deserialization, a `ContractMatcher` can
+
+        be created with any type/slug as it's really a query.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+  version: 0.17.3
+  title: ""
+  date: 2026-09-02T18:56:28.206Z
+- commits:
     - subject: Remove ObjectSet
       hash: 76338261eddcdbb1c74119bfe2d5018398cfc3d5
       body: >

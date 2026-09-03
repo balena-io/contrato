@@ -138,7 +138,7 @@ fn collect_into(tree: ChildrenTree, out: &mut Vec<RawContract>) {
     }
 }
 
-/// Builds a [`ChildrenTree`] from a children index.
+/// Builds a [`ChildrenTree`] from a contract index.
 ///
 /// Reconstructs the nested tree format used in contract JSON serialization.
 /// Types are split on `.` to create nested path segments (e.g., `sw.os` becomes
@@ -197,16 +197,19 @@ pub(crate) fn build(index: &ContractIndex) -> ChildrenTree {
 /// A lone child sits at the type's own key; siblings nest one level deeper,
 /// keyed by slug and by every alias.
 fn type_node(index: &ContractIndex, kind: &str) -> Option<ChildrenTree> {
+    // find all contracts for the given type
     let mut hashes = index.hashes_by_type(kind);
     let first = hashes.next()?;
 
     if hashes.next().is_none() {
+        // if there is only one contract, then no nesting is needed
         let contract = index.get(first)?;
         return Some(ChildrenTree::Single(Box::new(contract.raw().clone())));
     }
 
     let mut by_slug = BTreeMap::new();
     for slug in index.slugs_by_type(kind) {
+        // find all contracts for each slug indexed per type
         let mut contracts: Vec<RawContract> = index
             .hashes_by_type_slug(kind, slug)
             .filter_map(|hash| index.get(hash))
@@ -214,10 +217,14 @@ fn type_node(index: &ContractIndex, kind: &str) -> Option<ChildrenTree> {
             .collect();
 
         let node = if contracts.len() == 1 {
+            // if there is only one contract, put it immediately under the branch type
             ChildrenTree::Single(Box::new(contracts.pop()?))
         } else {
+            // otherwise put it under an array
             ChildrenTree::Multiple(contracts)
         };
+
+        // insert the new node under the slug
         by_slug.insert(slug.to_string(), node);
     }
 

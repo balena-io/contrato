@@ -1,10 +1,8 @@
 //! Contract index: fast lookup of child contracts by hash, type, and
 //! type+slug.
 //!
-//! The index assumes its children are fully hashed before insertion
-//! (construction via [`Contract::new`](crate::Contract) always hashes).
-//! Each secondary index — `by_type`, `by_type_slug`, and `types` — is
-//! kept in sync by [`insert_all`](ContractIndex::insert_all) and
+//! Each secondary index — `by_type` and `by_type_slug` — is kept in
+//! sync by [`insert_all`](ContractIndex::insert_all) and
 //! [`remove_by_hash`](ContractIndex::remove_by_hash).
 //!
 //! Insertion also rejects children that cannot be serialized into a tree: contracts with
@@ -45,7 +43,7 @@ fn validate_child(kind: &str, slug: Option<&str>) -> Result<(), Error> {
 /// Checks that no child type is a proper prefix of another, e.g. `sw.os`
 /// and `sw.os.kernel`.
 ///
-/// Such a pair cannot be keyed in the same tree: the shorter type needs a
+/// Such cannot be used as keys in the same tree: the shorter type needs a
 /// leaf exactly where the longer one needs a subtree.
 fn validate_types(types: &BTreeSet<&str>) -> Result<(), Error> {
     for kind in types.iter().copied() {
@@ -65,8 +63,8 @@ fn validate_types(types: &BTreeSet<&str>) -> Result<(), Error> {
 
 /// Index of contracts for fast lookup by hash, type, and type+slug.
 ///
-/// Secondary indexes (`by_type`, `by_type_slug`, `types`) are
-/// maintained in step with `map` by [`insert_all`](Self::insert_all) and
+/// Secondary indexes (`by_type`, `by_type_slug`) are maintained in
+/// step with `map` by [`insert_all`](Self::insert_all) and
 /// [`remove_by_hash`](Self::remove_by_hash), both of which report
 /// whether the caller should rebuild derived state.
 #[derive(Debug, Clone, Default)]
@@ -81,10 +79,6 @@ pub(crate) struct ContractIndex {
     /// Maps type → slug (including aliases) → set of child hashes, all
     /// preserving insertion order.
     by_type_slug: IndexMap<String, IndexMap<String, IndexSet<String>>>,
-
-    /// Set of contract types currently known to this index, in insertion
-    /// order.
-    types: IndexSet<String>,
 }
 
 impl ContractIndex {
@@ -134,11 +128,6 @@ impl ContractIndex {
         let child_hash = contract.hash().to_string();
         let ty = contract.get_type().to_string();
 
-        // Keep `types` in sync with `by_type` without a redundant
-        // membership probe on every index.
-        if !self.by_type.contains_key(&ty) {
-            self.types.insert(ty.clone());
-        }
         self.by_type
             .entry(ty.clone())
             .or_default()
@@ -159,8 +148,8 @@ impl ContractIndex {
     /// changed. A missing hash is a full no-op.
     ///
     /// When the last child of a given type is removed, the
-    /// corresponding entries in `by_type`, `by_type_slug`, and `types`
-    /// are cleaned up so the index does not retain empty shells. The
+    /// corresponding entries in `by_type` and `by_type_slug` are
+    /// cleaned up so the index does not retain empty shells. The
     /// slug cleanup walks the slugs of the *stored* contract, so it
     /// removes exactly the keys that were registered on insertion.
     #[must_use]
@@ -177,7 +166,6 @@ impl ContractIndex {
             hashes.shift_remove(hash);
             if hashes.is_empty() {
                 self.by_type.shift_remove(&ty);
-                self.types.shift_remove(&ty);
             }
         }
 
@@ -204,25 +192,19 @@ impl ContractIndex {
     }
 
     /// Returns `true` if the index knows at least one child of `ty`.
-    ///
-    /// Used as a fast-rejection check by matcher-based child search:
-    /// when a candidate parent has no children of the target type,
-    /// the walk over its secondary indexes is skipped entirely.
     pub(crate) fn has_type(&self, ty: &str) -> bool {
-        self.types.contains(ty)
+        self.by_type.contains_key(ty)
     }
 
     /// Returns an iterator over the child hashes indexed under
     /// `(ty, slug)`.
     ///
     /// Yields nothing if no children are registered for that pair.
-    /// The iterator borrows from the index; callers that need to
-    /// retain the hashes past further mutations must clone them.
     pub(crate) fn hashes_by_type_slug<'a>(
         &'a self,
         ty: &str,
         slug: &str,
-    ) -> impl Iterator<Item = &'a str> + 'a {
+    ) -> impl Iterator<Item = &'a str> {
         self.by_type_slug
             .get(ty)
             .and_then(|m| m.get(slug))
@@ -233,8 +215,6 @@ impl ContractIndex {
     /// Returns an iterator over the child hashes indexed under `ty`.
     ///
     /// Yields nothing if no children of that type are registered.
-    /// The iterator borrows from the index; callers that need to
-    /// retain the hashes past further mutations must clone them.
     pub(crate) fn hashes_by_type<'a>(&'a self, ty: &str) -> impl Iterator<Item = &'a str> + 'a {
         self.by_type
             .get(ty)
@@ -255,7 +235,7 @@ impl ContractIndex {
 
     /// Returns an iterator over the known child types.
     pub(crate) fn types(&self) -> impl Iterator<Item = &str> {
-        self.types.iter().map(String::as_str)
+        self.by_type.keys().map(String::as_str)
     }
 
     /// Looks up a child contract by its hash.
@@ -264,9 +244,6 @@ impl ContractIndex {
     }
 
     /// Returns an iterator over all direct children in the index.
-    ///
-    /// The iteration order follows the underlying [`IndexMap`] and is
-    /// therefore the order in which the children were inserted.
     pub(crate) fn values(&self) -> impl Iterator<Item = &Contract> {
         self.map.values()
     }

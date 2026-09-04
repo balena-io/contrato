@@ -52,4 +52,28 @@ describe('Contract interpolate', () => {
 			},
 		});
 	});
+
+	it('should throw and leave the contract untouched if the result is invalid', () => {
+		// `{{this.children.*}}` only resolves once the children are in place.
+		const contract = new Contract({
+			type: 'sw.os',
+			slug: '{{this.children.hw.device-type.name}}',
+		});
+
+		contract.addChild(
+			new Contract({
+				type: 'hw.device-type',
+				slug: 'raspberrypi4',
+				name: 'Raspberry Pi 4',
+			}),
+		);
+
+		const before = contract.raw();
+		const hash = contract.hash();
+
+		expect(() => contract.interpolate()).to.throw('invalid slug');
+
+		expect(contract.raw()).to.deep.equal(before);
+		expect(contract.hash()).to.equal(hash);
+	});
 });

@@ -128,7 +128,7 @@ let source: RawContract = serde_json::from_value(serde_json::json!({
     ]
 })).unwrap();
 
-let contracts = Contract::build(source);
+let contracts = Contract::build(source).unwrap();
 assert_eq!(contracts.len(), 2);
 assert_eq!(contracts[0].get_version(), Some("3.19".to_string()));
 assert_eq!(contracts[1].get_version(), Some("3.20".to_string()));
@@ -149,7 +149,7 @@ let os: Contract = serde_json::from_value(serde_json::json!({
     "version": "12"
 })).unwrap();
 
-universe.add_child(os);
+universe.add_child(os).unwrap();
 assert_eq!(universe.get_children().len(), 1);
 ```
 
@@ -157,6 +157,7 @@ assert_eq!(universe.get_children().len(), 1);
 
 - **Lazy hashing**: contracts compute their SHA-256 hash on first access and cache it. Mutations invalidate the cache. This avoids hashing ephemeral contracts that are discarded before the hash is ever read.
 - **Template interpolation**: string values containing `{{this.path}}` placeholders are resolved against the contract's own fields at construction time.
+- **Deferred validation**: a templated `type` or `slug` can only be checked once interpolated, and children can only be nested into a tree once they are all known. Both checks run at construction time, so `Contract::build`, `interpolate`, and the child mutators return a `Result<_, Error>`, and a failed mutation leaves the contract unchanged.
 
 ## License
 

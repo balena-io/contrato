@@ -7,6 +7,7 @@
 
 mod children_tree;
 mod contract;
+mod error;
 mod hash;
 mod index;
 mod matcher;
@@ -18,6 +19,7 @@ mod variants;
 
 pub use children_tree::ChildrenTree;
 pub use contract::Contract;
+pub use error::Error;
 pub use types::{
     Asset, ContractMatcher, ContractRequirement, ContractType, InvalidIdentifier, PartialContract,
     RawContract, Slug, UNIVERSE, Version, VersionReq,

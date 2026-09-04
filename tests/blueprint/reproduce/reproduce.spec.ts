@@ -126,4 +126,21 @@ describe('Blueprint reproduce', () => {
 		expect(contexts[0].hash()).to.equal(derivedContract1.hash());
 		expect(contexts[1].hash()).to.equal(derivedContract2.hash());
 	});
+
+	it('should throw while iterating if a context interpolates to an invalid slug', () => {
+		// The skeleton slug is only resolved once a context has its children,
+		// so an invalid result surfaces from the iterator, not the constructor.
+		const blueprint = new Blueprint(
+			{ 'sw.os': 1 },
+			{ type: 'meta.context', slug: '{{this.children.sw.os.version}}' },
+		);
+
+		const container = new Contract({ type: 'meta.universe' });
+		container.addChild(
+			new Contract({ type: 'sw.os', slug: 'debian', version: '2.0.0' }),
+		);
+
+		const contexts = blueprint.reproduce(container);
+		expect(() => Array.from(contexts)).to.throw('invalid slug');
+	});
 });

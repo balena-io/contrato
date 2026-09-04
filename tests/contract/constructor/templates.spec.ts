@@ -38,4 +38,38 @@ describe('Contract templates', () => {
 			slug: 'armv7hf',
 		});
 	});
+
+	it('should reject a type template that resolves to an invalid type', () => {
+		expect(
+			() =>
+				new Contract({
+					type: 'sw.{{this.data.kind}}',
+					slug: 'debian',
+					data: { kind: 'os arch' },
+				}),
+		).to.throw('invalid type');
+	});
+
+	it('should reject a slug template that resolves to an invalid slug', () => {
+		expect(
+			() =>
+				new Contract({
+					type: 'sw.os',
+					slug: '{{this.data.name}}',
+					data: { name: '1debian' },
+				}),
+		).to.throw('invalid slug');
+	});
+
+	it('should reject an alias template that resolves to an invalid alias', () => {
+		expect(
+			() =>
+				new Contract({
+					type: 'sw.os',
+					slug: 'debian',
+					aliases: ['{{this.data.alias}}'],
+					data: { alias: 'deb_ian' },
+				}),
+		).to.throw('invalid alias');
+	});
 });

@@ -19,10 +19,14 @@ pub struct Universe(Contract);
 impl Universe {
     /// Creates an empty universe.
     pub fn new() -> Self {
-        Self(Contract::new(RawContract {
-            kind: ContractType::new(UNIVERSE),
-            ..RawContract::default()
-        }))
+        Self(
+            Contract::new(RawContract {
+                kind: ContractType::new(UNIVERSE),
+                ..RawContract::default()
+            })
+            // No templates to interpolate, no children to nest.
+            .expect("the empty universe contract is valid"),
+        )
     }
 
     /// Consumes the universe and returns the inner [`Contract`].
@@ -83,7 +87,7 @@ mod tests {
     #[test]
     fn add_child_through_deref_mut() {
         let mut u = Universe::new();
-        u.add_child(child("sw.os", "debian"));
+        u.add_child(child("sw.os", "debian")).unwrap();
 
         let children = u.get_children();
         assert_eq!(children.len(), 1);
@@ -97,7 +101,8 @@ mod tests {
             child("sw.os", "debian"),
             child("sw.os", "fedora"),
             child("hw.device-type", "raspberry-pi"),
-        ]);
+        ])
+        .unwrap();
 
         assert_eq!(u.get_children().len(), 3);
         assert_eq!(u.get_children_by_type("sw.os").len(), 2);
@@ -107,7 +112,8 @@ mod tests {
     #[test]
     fn find_children_through_deref_mut() {
         let mut u = Universe::new();
-        u.add_children(vec![child("sw.os", "debian"), child("sw.os", "fedora")]);
+        u.add_children(vec![child("sw.os", "debian"), child("sw.os", "fedora")])
+            .unwrap();
 
         let matcher = ContractMatcher::new("sw.os").with_slug("debian");
         let found = u.find_children(&matcher);
@@ -119,7 +125,7 @@ mod tests {
     fn remove_child_through_deref_mut() {
         let mut u = Universe::new();
         let c = child("sw.os", "debian");
-        u.add_child(c.clone());
+        u.add_child(c.clone()).unwrap();
         assert_eq!(u.get_children().len(), 1);
 
         u.remove_child(&c);
@@ -136,7 +142,7 @@ mod tests {
     #[test]
     fn into_inner_preserves_contract() {
         let mut u = Universe::new();
-        u.add_child(child("sw.os", "debian"));
+        u.add_child(child("sw.os", "debian")).unwrap();
         let contract = u.into_inner();
         assert_eq!(contract.get_type(), UNIVERSE);
         assert_eq!(contract.get_children().len(), 1);

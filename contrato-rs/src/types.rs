@@ -71,7 +71,7 @@ fn check_pattern(s: &str, extra: &[char]) -> Result<(), InvalidIdentifier> {
 ///
 /// A value carrying a `{{...}}` template expression is deferred whole: its
 /// final form is only known once the contract is interpolated.
-fn validate_kind(s: &str) -> Result<(), InvalidIdentifier> {
+pub(crate) fn validate_kind(s: &str) -> Result<(), InvalidIdentifier> {
     if let Err(e) = check_pattern(s, &['-', '.']) {
         if template::has_template(s) {
             return Ok(());
@@ -89,7 +89,7 @@ fn validate_kind(s: &str) -> Result<(), InvalidIdentifier> {
 /// The type must have the format `^[a-zA-Z][a-zA-Z0-9.-+]*$`
 ///
 /// Template expressions are deferred as in [`validate_kind`].
-fn validate_slug(s: &str) -> Result<(), InvalidIdentifier> {
+pub(crate) fn validate_slug(s: &str) -> Result<(), InvalidIdentifier> {
     match check_pattern(s, &['-', '.', '+']) {
         Err(_) if template::has_template(s) => Ok(()),
         result => result,

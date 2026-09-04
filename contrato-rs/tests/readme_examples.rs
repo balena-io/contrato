@@ -91,7 +91,7 @@ fn readme_variants() {
         ]
     }))
     .unwrap();
-    let contracts = contrato::Contract::build(source);
+    let contracts = contrato::Contract::build(source).unwrap();
     assert_eq!(contracts.len(), 2);
     assert_eq!(contracts[0].get_version(), Some("3.19".to_string()));
     assert_eq!(contracts[1].get_version(), Some("3.20".to_string()));
@@ -106,6 +106,6 @@ fn readme_universe() {
         "version": "12"
     }))
     .unwrap();
-    universe.add_child(os);
+    universe.add_child(os).unwrap();
     assert_eq!(universe.get_children().len(), 1);
 }

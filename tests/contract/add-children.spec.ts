@@ -206,4 +206,36 @@ describe('Contract addChildren', () => {
 			},
 		});
 	});
+
+	it('should reject the whole batch if a child conflicts', () => {
+		const contract1 = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
+		const contract2 = new Contract(CONTRACTS['sw.blob'].nodejs['4.8.0'].object);
+
+		const container = new Contract({
+			type: 'foo',
+			slug: 'bar',
+		});
+
+		container.addChild(contract1);
+		const before = container.raw();
+		const hash = container.hash();
+
+		expect(() =>
+			container.addChildren([
+				contract2,
+				new Contract({ type: 'sw.os.kernel', slug: 'linux' }),
+			]),
+		).to.throw("'sw.os' is a prefix of 'sw.os.kernel'");
+
+		expect(container.getChildren()).to.deep.equal([contract1]);
+		expect(container.raw()).to.deep.equal(before);
+		expect(container.hash()).to.equal(hash);
+
+		// the batch is cloned on the way in, so the contracts stay usable
+		container.addChild(contract2);
+		expect(container.getChildren()).to.have.deep.members([
+			contract1,
+			contract2,
+		]);
+	});
 });

@@ -2905,6 +2905,194 @@ mod tests {
         assert_eq!(parent, reconstructed);
     }
 
+    // ── children tree conflicts ──────────────────────────────────────────
+
+    /// A child of type `sw` needs a leaf where a child of type `sw.os`
+    /// needs a branch.
+    #[test]
+    fn deserialize_rejects_children_with_overlapping_types() {
+        let err = serde_json::from_value::<Contract>(json!({
+            "type": "meta.universe",
+            "slug": "universe",
+            "children": [
+                { "type": "sw", "slug": "a" },
+                { "type": "sw.os", "slug": "b" }
+            ]
+        }))
+        .unwrap_err();
+
+        assert!(err.to_string().contains("overlapping child types"), "{err}");
+    }
+
+    #[test]
+    fn add_child_rejects_a_conflicting_type() {
+        let mut parent = container();
+        parent
+            .add_child(contract(json!({ "type": "sw", "slug": "a" })))
+            .unwrap();
+        let before = serde_json::to_value(&parent).unwrap();
+        let hash = parent.hash().to_string();
+
+        let err = parent
+            .add_child(contract(json!({ "type": "sw.os", "slug": "b" })))
+            .unwrap_err();
+
+        assert!(matches!(err, Error::OverlappingChildTypes { .. }), "{err}");
+        assert_eq!(parent.get_children().len(), 1);
+        assert_eq!(serde_json::to_value(&parent).unwrap(), before);
+        assert_eq!(parent.hash(), hash, "a rejected child must not rehash");
+    }
+
+    #[test]
+    fn add_children_rejects_a_conflicting_batch() {
+        let mut parent = container();
+        parent.add_child(sw_os("debian", "wheezy")).unwrap();
+        let before = serde_json::to_value(&parent).unwrap();
+
+        let err = parent
+            .add_children(vec![
+                sw_blob("nodejs", "4.8.0"),
+                contract(json!({ "type": "sw", "slug": "a" })),
+            ])
+            .unwrap_err();
+
+        assert!(matches!(err, Error::OverlappingChildTypes { .. }), "{err}");
+        assert_eq!(
+            parent.get_children().len(),
+            1,
+            "the whole batch must be rejected, not just the offending child"
+        );
+        assert_eq!(serde_json::to_value(&parent).unwrap(), before);
+    }
+
+    /// The type is rejected whether or not `sw.os` already has siblings.
+    #[test]
+    fn add_child_rejects_a_type_that_extends_another_childs_type() {
+        for existing in [
+            vec![sw_os("debian", "wheezy")],
+            vec![sw_os("debian", "wheezy"), sw_os("fedora", "25")],
+        ] {
+            let count = existing.len();
+            let mut parent = container();
+            parent.add_children(existing).unwrap();
+            let before = serde_json::to_value(&parent).unwrap();
+            let hash = parent.hash().to_string();
+
+            let err = parent
+                .add_child(contract(json!({ "type": "sw.os.kernel", "slug": "linux" })))
+                .unwrap_err();
+
+            assert!(
+                matches!(
+                    &err,
+                    Error::OverlappingChildTypes { outer, inner }
+                        if outer == "sw.os" && inner == "sw.os.kernel"
+                ),
+                "{count} existing children: {err}"
+            );
+            assert_eq!(parent.get_children().len(), count);
+            assert_eq!(serde_json::to_value(&parent).unwrap(), before);
+            assert_eq!(parent.hash(), hash, "a rejected child must not rehash");
+        }
+    }
+
+    /// The last child of a type moves from `type.slug` up to `type`.
+    #[test]
+    fn remove_child_collapses_a_type_to_a_leaf() {
+        let fedora = sw_os("fedora", "25");
+        let mut parent = container();
+        parent
+            .add_children(vec![sw_os("debian", "wheezy"), fedora.clone()])
+            .unwrap();
+
+        parent.remove_child(&fedora);
+
+        let mut expected = container();
+        expected.add_child(sw_os("debian", "wheezy")).unwrap();
+        assert_eq!(parent, expected);
+        assert_eq!(
+            serde_json::to_value(&parent).unwrap()["children"]["sw"]["os"]["slug"],
+            "debian",
+            "the sole remaining child moves up to the type path"
+        );
+    }
+
+    /// A child is rejected for having no slug whether or not it has
+    /// siblings of its type.
+    #[test]
+    fn every_child_needs_a_slug() {
+        for siblings in [
+            vec![json!({ "type": "sw.os" })],
+            vec![
+                json!({ "type": "sw.os" }),
+                json!({ "type": "sw.os", "slug": "debian" }),
+            ],
+        ] {
+            let count = siblings.len();
+            let err = serde_json::from_value::<Contract>(json!({
+                "type": "meta.universe",
+                "slug": "universe",
+                "children": siblings
+            }))
+            .unwrap_err();
+
+            assert!(
+                err.to_string().contains("slug missing for child of type"),
+                "{count} children: {err}"
+            );
+        }
+    }
+
+    /// Aliases are additional names for a slug, not a replacement.
+    #[test]
+    fn an_alias_does_not_substitute_for_a_childs_slug() {
+        let err = serde_json::from_value::<Contract>(json!({
+            "type": "meta.universe",
+            "slug": "universe",
+            "children": [{ "type": "sw.os", "aliases": ["deb"] }]
+        }))
+        .unwrap_err();
+
+        assert!(
+            err.to_string().contains("slug missing for child of type"),
+            "{err}"
+        );
+    }
+
+    /// Only children need a slug.
+    #[test]
+    fn a_slugless_contract_can_still_be_a_parent() {
+        let c = contract(json!({
+            "type": "meta.context",
+            "children": [{ "type": "sw.os", "slug": "debian" }]
+        }));
+
+        assert_eq!(c.get_slug(), None);
+        assert_eq!(c.get_children().len(), 1);
+    }
+
+    /// A rejected child leaves neither the index nor the serialized tree
+    /// holding it.
+    #[test]
+    fn conflicting_children_are_never_silently_dropped() {
+        let mut parent = container();
+        parent
+            .add_child(contract(json!({ "type": "sw.os", "slug": "b" })))
+            .unwrap();
+
+        // `sw` with slug `os` claims the key `sw.os` already holds.
+        let err = parent
+            .add_child(contract(json!({ "type": "sw", "slug": "os" })))
+            .unwrap_err();
+
+        assert!(matches!(err, Error::OverlappingChildTypes { .. }), "{err}");
+        assert_eq!(parent.get_children().len(), 1);
+        assert_eq!(
+            children_tree::into_all(parent.raw.body.children.clone().unwrap()).len(),
+            1
+        );
+    }
+
     // ── find_children ────────────────────────────────────────────────────
 
     /// Constructs a simple [`ContractMatcher`] from a type / slug /

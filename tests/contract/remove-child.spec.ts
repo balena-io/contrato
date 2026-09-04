@@ -62,6 +62,11 @@ it('should remove a slug object if it becomes empty after the removal', () => {
 	const expected = new Contract(SKELETON);
 	expected.addChildren([contract2]);
 	expect(container).to.deep.equal(expected);
+
+	// the sole remaining child collapses from `sw.os.<slug>` up to `sw.os`
+	expect(container.raw().children).to.deep.equal({
+		sw: { os: contract2.raw() },
+	});
 });
 
 it('should correctly handle number versions', () => {

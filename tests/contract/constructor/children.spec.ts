@@ -282,4 +282,62 @@ describe('Contract children', () => {
 		expect(contract.getChildByHash(arch.hash())).to.deep.equal(arch);
 		expect(contract.getChildByHash(distro.hash())).to.deep.equal(distro);
 	});
+
+	it('should reject overlapping types whatever the sibling count', () => {
+		for (const siblings of [
+			[{ type: 'sw.os', slug: 'debian' }],
+			[
+				{ type: 'sw.os', slug: 'debian' },
+				{ type: 'sw.os', slug: 'fedora' },
+			],
+		]) {
+			expect(
+				() =>
+					new Contract({
+						type: 'meta.universe',
+						slug: 'universe',
+						children: [...siblings, { type: 'sw.os.kernel', slug: 'linux' }],
+					}),
+			).to.throw("'sw.os' is a prefix of 'sw.os.kernel'");
+		}
+	});
+
+	it('should reject a slugless child whatever the sibling count', () => {
+		for (const children of [
+			[{ type: 'sw.os' }],
+			[{ type: 'sw.os' }, { type: 'sw.os', slug: 'debian' }],
+		]) {
+			expect(
+				() =>
+					new Contract({
+						type: 'meta.universe',
+						slug: 'universe',
+						children,
+					}),
+			).to.throw("slug missing for child of type 'sw.os'");
+		}
+	});
+
+	it('should reject a child with aliases but no slug', () => {
+		// Aliases are additional names for a slug, not a replacement.
+		expect(
+			() =>
+				new Contract({
+					type: 'meta.universe',
+					slug: 'universe',
+					children: [{ type: 'sw.os', aliases: ['deb'] }],
+				}),
+		).to.throw("slug missing for child of type 'sw.os'");
+	});
+
+	it('should take a slugless contract as a parent', () => {
+		// Only children need a slug.
+		const contract = new Contract({
+			type: 'meta.context',
+			children: [{ type: 'sw.os', slug: 'debian' }],
+		});
+
+		expect(contract.getSlug()).to.equal(undefined);
+		expect(contract.getChildren()).to.have.lengthOf(1);
+	});
 });

@@ -13,17 +13,21 @@
 //! contract. Children are managed through `add_child` / `remove_child` /
 //! `add_children`, which keep the derived state (children tree,
 //! requirements index, cached hash) in sync after every mutation.
+//!
+//! Construction and child mutation are fallible — see [`Error`] — and a
+//! mutation that fails leaves the contract as it was.
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::OnceLock;
 
 use indexmap::IndexSet;
-use serde::de::{Deserialize, Deserializer};
+use serde::de::{self, Deserialize, Deserializer};
 use serde::ser::{Serialize, Serializer};
 use serde_json::Value;
 
 use crate::children_tree;
+use crate::error::Error;
 use crate::hash::hash_object;
 use crate::index::ContractIndex;
 use crate::matcher::{partial_match, version_match};
@@ -75,7 +79,7 @@ pub struct Contract {
     ///
     /// Populated on first call to [`Self::hash`] (or any path that
     /// reaches it — `PartialEq`, `std::hash::Hash`,
-    /// [`ContractIndex::insert`](crate::index::ContractIndex)). Any
+    /// [`ContractIndex::insert_all`](crate::index::ContractIndex)). Any
     /// mutation that changes `raw` must invalidate this cell; in
     /// practice [`Self::rebuild`] does so for every mutator, so callers
     /// only need to call `rebuild` after touching `raw`.
@@ -100,7 +104,15 @@ impl Contract {
     /// combinatorial expansion relies on this: ephemeral parent
     /// contracts that are only used for satisfiability checks never pay
     /// the hashing cost.
-    pub(crate) fn new(raw: RawContract) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns one of [`Error::OverlappingChildTypes`],
+    /// [`Error::MissingChildSlug`] or [`Error::InvalidChildType`] when
+    /// the children cannot be nested into a tree. Children are
+    /// constructed recursively, so an error from any descendant
+    /// propagates here.
+    pub(crate) fn new(raw: RawContract) -> Result<Self, Error> {
         let mut this = Self {
             raw,
             hash: OnceLock::new(),
@@ -117,13 +129,15 @@ impl Contract {
         // regenerates `raw.children` from the index, so the incoming
         // tree is discarded either way.
         if let Some(children) = this.raw.body.children.take() {
-            for source in children_tree::into_all(children) {
-                let _ = this.children.insert(Contract::new(source));
-            }
+            let children: Vec<Contract> = children_tree::into_all(children)
+                .into_iter()
+                .map(Contract::new)
+                .collect::<Result<_, _>>()?;
+            this.children.insert_all(children)?;
         }
 
         this.rebuild();
-        this
+        Ok(this)
     }
 
     /// Compiles `{{this.*}}` templates in `raw`, then rebuilds derived
@@ -289,7 +303,7 @@ impl Contract {
     /// by: its own slug (if any) together with every alias.
     ///
     /// Prefers borrowed `&str` over allocated `String` so callers that
-    /// build indexes (e.g. [`crate::index::ContractIndex::insert`])
+    /// build indexes (e.g. [`crate::index::ContractIndex`])
     /// can avoid one allocation per insertion.
     pub fn get_all_slugs(&self) -> impl Iterator<Item = &str> {
         self.raw
@@ -372,7 +386,12 @@ impl Contract {
     ///    `aliases` cleared.
     ///
     /// The alias contracts come before the base contract in the output.
-    pub fn build(source: RawContract) -> Vec<Contract> {
+    ///
+    /// # Errors
+    ///
+    /// Returns the first error raised while constructing an expanded
+    /// contract (see [`Contract::new`])
+    pub fn build(source: RawContract) -> Result<Vec<Contract>, Error> {
         let mut result = Vec::new();
         for mut base in variants::build(source) {
             let aliases: Vec<Slug> = std::mem::take(&mut base.body.aliases);
@@ -381,11 +400,11 @@ impl Contract {
                 let mut alias_contract = base.clone();
                 alias_contract.canonical_slug = base.body.slug.clone();
                 alias_contract.body.slug = Some(alias);
-                result.push(Contract::new(alias_contract));
+                result.push(Contract::new(alias_contract)?);
             }
-            result.push(Contract::new(base));
+            result.push(Contract::new(base)?);
         }
-        result
+        Ok(result)
     }
 }
 
@@ -398,11 +417,16 @@ impl Contract {
     /// the parent's hash cache is invalidated so the next
     /// [`Self::hash`] call recomputes. Adding a child whose hash is
     /// already present in the index is a full no-op.
-    pub fn add_child(&mut self, contract: Contract) -> &mut Self {
-        if self.children.insert(contract) {
-            self.rebuild();
-        }
-        self
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::OverlappingChildTypes`] when the new child cannot
+    /// be nested alongside the existing ones, [`Error::MissingChildSlug`]
+    /// when the child has no slug to be keyed by, and [`Error::InvalidChildType`]
+    /// when the child type is not a valid path.
+    /// Nothing is inserted in any of those cases.
+    pub fn add_child(&mut self, contract: Contract) -> Result<&mut Self, Error> {
+        self.add_children([contract])
     }
 
     /// Removes a child contract from this contract.
@@ -414,7 +438,7 @@ impl Contract {
     /// index are rebuilt (which also invalidates the parent's hash
     /// cache).
     pub fn remove_child(&mut self, contract: &Contract) -> &mut Self {
-        if self.children.remove(contract) {
+        if self.children.remove_by_hash(contract.hash()) {
             self.rebuild();
         }
         self
@@ -430,15 +454,20 @@ impl Contract {
     /// batch turns out to be a duplicate (or the batch is empty),
     /// no `rebuild` is performed and the parent's hash cache is
     /// left intact.
-    pub fn add_children(&mut self, contracts: impl IntoIterator<Item = Contract>) -> &mut Self {
-        let mut changed = false;
-        for contract in contracts {
-            changed |= self.children.insert(contract);
-        }
-        if changed {
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Self::add_child`]. The batch is
+    /// validated before the first insertion, so the call is
+    /// all-or-nothing.
+    pub fn add_children(
+        &mut self,
+        contracts: impl IntoIterator<Item = Contract>,
+    ) -> Result<&mut Self, Error> {
+        if self.children.insert_all(contracts.into_iter().collect())? {
             self.rebuild();
         }
-        self
+        Ok(self)
     }
 
     /// Looks up a direct child contract by its hash.
@@ -1054,7 +1083,7 @@ impl<'de> Deserialize<'de> for Contract {
     /// interpolate, rebuild).
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let raw = RawContract::deserialize(deserializer)?;
-        Ok(Contract::new(raw))
+        Contract::new(raw).map_err(de::Error::custom)
     }
 }
 
@@ -1103,7 +1132,7 @@ mod tests {
 
     /// Constructs a [`Contract`] directly from a JSON literal.
     fn contract(value: Value) -> Contract {
-        Contract::new(raw(value))
+        Contract::new(raw(value)).expect("valid contract")
     }
 
     // ── Construction ─────────────────────────────────────────────────────
@@ -1155,7 +1184,8 @@ mod tests {
         c.add_child(contract(json!({
             "type": "arch.sw",
             "slug": "armv7hf"
-        })));
+        })))
+        .unwrap();
         // add_child -> rebuild -> invalidate_hash; the next hash() call
         // should produce a different digest.
         assert_ne!(c.hash(), initial);
@@ -1182,10 +1212,12 @@ mod tests {
         // Clone carries the already-computed hash forward.
         assert_eq!(clone.hash(), original_hash);
 
-        clone.add_child(contract(json!({
-            "type": "arch.sw",
-            "slug": "armv7hf"
-        })));
+        clone
+            .add_child(contract(json!({
+                "type": "arch.sw",
+                "slug": "armv7hf"
+            })))
+            .unwrap();
 
         // Original is untouched.
         assert_eq!(original.hash(), original_hash);
@@ -1801,7 +1833,8 @@ mod tests {
             "slug": "debian",
             "version": "wheezy",
             "type": "sw.os"
-        })));
+        })))
+        .unwrap();
         assert_eq!(contracts.len(), 1);
         assert_eq!(contracts[0].get_slug(), Some("debian"));
         assert_eq!(contracts[0].get_version().as_deref(), Some("wheezy"));
@@ -1818,7 +1851,8 @@ mod tests {
                 "codename": "Wheezy",
                 "url": "https://example.org/{{this.type}}/{{this.slug}}/{{this.version}}.tar.gz"
             }
-        })));
+        })))
+        .unwrap();
         assert_eq!(contracts.len(), 1);
         assert_eq!(contracts[0].raw.body.name.as_deref(), Some("Debian Wheezy"));
         assert_eq!(
@@ -1835,7 +1869,8 @@ mod tests {
             "version": "wheezy",
             "type": "{{this.data.type}}",
             "data": {"slug": "debian", "type": "sw.os"}
-        })));
+        })))
+        .unwrap();
         assert_eq!(contracts.len(), 1);
         assert_eq!(contracts[0].get_slug(), Some("debian"));
         assert_eq!(contracts[0].get_type(), "sw.os");
@@ -1851,7 +1886,8 @@ mod tests {
                 {"version": "jessie"},
                 {"version": "sid"}
             ]
-        })));
+        })))
+        .unwrap();
         assert_eq!(contracts.len(), 3);
         let versions: Vec<_> = contracts.iter().map(|c| c.get_version()).collect();
         assert_eq!(
@@ -1880,7 +1916,8 @@ mod tests {
                     ]
                 }
             ]
-        })));
+        })))
+        .unwrap();
         assert_eq!(contracts.len(), 1);
 
         let base = matcher("sw.feature", Some("secureboot"), None);
@@ -1908,7 +1945,8 @@ mod tests {
                     }
                 }
             ]
-        })));
+        })))
+        .unwrap();
         assert_eq!(contracts.len(), 1);
 
         let debian = matcher("sw.os", Some("debian"), None);
@@ -1928,7 +1966,8 @@ mod tests {
                 {"version": "wheezy"},
                 {"version": "jessie"}
             ]
-        })));
+        })))
+        .unwrap();
         assert_eq!(contracts.len(), 2);
         assert_eq!(contracts[0].raw.body.name.as_deref(), Some("debian wheezy"));
         assert_eq!(contracts[1].raw.body.name.as_deref(), Some("debian jessie"));
@@ -1941,7 +1980,8 @@ mod tests {
             "type": "sw.os",
             "version": "jessie",
             "aliases": ["foo", "bar"]
-        })));
+        })))
+        .unwrap();
         assert_eq!(contracts.len(), 3);
         // Aliases come first, base contract last.
         assert_eq!(contracts[0].get_slug(), Some("foo"));
@@ -1963,7 +2003,8 @@ mod tests {
                 {"version": "jessie"}
             ],
             "aliases": ["foo", "bar"]
-        })));
+        })))
+        .unwrap();
         assert_eq!(contracts.len(), 6);
 
         let slugs: Vec<_> = contracts
@@ -2191,7 +2232,7 @@ mod tests {
         let child = sw_os("debian", "wheezy");
         let child_hash = child.hash().to_string();
 
-        parent.add_child(child);
+        parent.add_child(child).unwrap();
 
         assert_eq!(parent.children.values().count(), 1);
         assert!(parent.children.get(&child_hash).is_some());
@@ -2202,8 +2243,8 @@ mod tests {
     #[test]
     fn add_child_two_different_types() {
         let mut parent = container();
-        parent.add_child(sw_os("debian", "wheezy"));
-        parent.add_child(sw_blob("nodejs", "4.8.0"));
+        parent.add_child(sw_os("debian", "wheezy")).unwrap();
+        parent.add_child(sw_blob("nodejs", "4.8.0")).unwrap();
 
         assert_eq!(parent.children.values().count(), 2);
         let types: HashSet<&str> = parent.children.types().collect();
@@ -2214,9 +2255,9 @@ mod tests {
     fn add_child_dedupes_on_hash() {
         let mut parent = container();
         let child = sw_os("debian", "wheezy");
-        parent.add_child(child.clone());
+        parent.add_child(child.clone()).unwrap();
         let first_hash = parent.hash().to_string();
-        parent.add_child(child);
+        parent.add_child(child).unwrap();
 
         assert_eq!(parent.children.values().count(), 1);
         assert_eq!(parent.hash(), first_hash);
@@ -2225,8 +2266,8 @@ mod tests {
     #[test]
     fn add_child_same_type_different_slug() {
         let mut parent = container();
-        parent.add_child(sw_os("debian", "wheezy"));
-        parent.add_child(sw_os("fedora", "25"));
+        parent.add_child(sw_os("debian", "wheezy")).unwrap();
+        parent.add_child(sw_os("fedora", "25")).unwrap();
 
         assert_eq!(parent.children.values().count(), 2);
         let types: HashSet<&str> = parent.children.types().collect();
@@ -2236,8 +2277,8 @@ mod tests {
     #[test]
     fn add_child_same_slug_different_versions() {
         let mut parent = container();
-        parent.add_child(sw_os("debian", "wheezy"));
-        parent.add_child(sw_os("debian", "jessie"));
+        parent.add_child(sw_os("debian", "wheezy")).unwrap();
+        parent.add_child(sw_os("debian", "jessie")).unwrap();
 
         assert_eq!(parent.children.values().count(), 2);
     }
@@ -2246,14 +2287,14 @@ mod tests {
     fn add_child_rehashes_parent_by_default() {
         let mut parent = container();
         let original = parent.hash().to_string();
-        parent.add_child(sw_os("debian", "wheezy"));
+        parent.add_child(sw_os("debian", "wheezy")).unwrap();
         assert_ne!(parent.hash(), original);
     }
 
     #[test]
     fn add_child_serializes_single_child_tree() {
         let mut parent = container();
-        parent.add_child(sw_os("debian", "wheezy"));
+        parent.add_child(sw_os("debian", "wheezy")).unwrap();
         let tree = serde_json::to_value(&parent).unwrap();
         assert_eq!(
             tree["children"],
@@ -2275,7 +2316,9 @@ mod tests {
     #[test]
     fn add_children_adds_multiple() {
         let mut parent = container();
-        parent.add_children(vec![sw_os("debian", "wheezy"), sw_os("debian", "jessie")]);
+        parent
+            .add_children(vec![sw_os("debian", "wheezy"), sw_os("debian", "jessie")])
+            .unwrap();
         assert_eq!(parent.children.values().count(), 2);
     }
 
@@ -2283,15 +2326,17 @@ mod tests {
     fn add_children_dedupes_duplicates_in_batch() {
         let mut parent = container();
         let child = sw_os("debian", "wheezy");
-        parent.add_children(vec![child.clone(), child.clone(), child]);
+        parent
+            .add_children(vec![child.clone(), child.clone(), child])
+            .unwrap();
         assert_eq!(parent.children.values().count(), 1);
     }
 
     #[test]
-    fn add_children_empty_batch_is_noop_but_still_rebuilds() {
+    fn add_children_empty_batch_is_noop() {
         let mut parent = container();
         let original = parent.hash().to_string();
-        parent.add_children(Vec::<Contract>::new());
+        parent.add_children(Vec::<Contract>::new()).unwrap();
         assert_eq!(parent.hash(), original);
         assert!(parent.children.is_empty());
     }
@@ -2302,49 +2347,56 @@ mod tests {
         // parents given the same same-slug children in a different order
         // serialize to different `raw.children` and are not equal.
         let mut a = container();
-        a.add_children(vec![sw_os("debian", "wheezy"), sw_os("debian", "jessie")]);
+        a.add_children(vec![sw_os("debian", "wheezy"), sw_os("debian", "jessie")])
+            .unwrap();
         let mut b = container();
-        b.add_children(vec![sw_os("debian", "jessie"), sw_os("debian", "wheezy")]);
+        b.add_children(vec![sw_os("debian", "jessie"), sw_os("debian", "wheezy")])
+            .unwrap();
         assert_ne!(a, b, "children_tree::build preserves insertion order");
 
         // The same insertion order yields equal contracts.
         let mut c = container();
-        c.add_children(vec![sw_os("debian", "wheezy"), sw_os("debian", "jessie")]);
+        c.add_children(vec![sw_os("debian", "wheezy"), sw_os("debian", "jessie")])
+            .unwrap();
         assert_eq!(a, c);
     }
 
     #[test]
     fn add_child_duplicate_leaves_hash_cell_empty() {
-        // `ContractIndex::insert` returns false on duplicates, and
+        // `ContractIndex::insert_all` returns false for an all-duplicate batch, and
         // `add_child` uses the return value to skip `rebuild` — so a
         // duplicate insertion must not invalidate the already-computed
         // hash. We prove it by observing the cached hash stays stable
         // across a duplicate add.
         let mut parent = container();
-        parent.add_child(sw_os("debian", "wheezy"));
+        parent.add_child(sw_os("debian", "wheezy")).unwrap();
         let before = parent.hash().to_string();
-        parent.add_child(sw_os("debian", "wheezy"));
+        parent.add_child(sw_os("debian", "wheezy")).unwrap();
         assert_eq!(parent.hash(), before);
     }
 
     #[test]
     fn add_children_all_duplicates_skips_rebuild() {
         let mut parent = container();
-        parent.add_child(sw_os("debian", "wheezy"));
+        parent.add_child(sw_os("debian", "wheezy")).unwrap();
         let before = parent.hash().to_string();
-        parent.add_children(vec![sw_os("debian", "wheezy"), sw_os("debian", "wheezy")]);
+        parent
+            .add_children(vec![sw_os("debian", "wheezy"), sw_os("debian", "wheezy")])
+            .unwrap();
         assert_eq!(parent.hash(), before);
     }
 
     #[test]
     fn add_children_mixed_batch_rebuilds_once() {
         let mut parent = container();
-        parent.add_child(sw_os("debian", "wheezy"));
+        parent.add_child(sw_os("debian", "wheezy")).unwrap();
         let before = parent.hash().to_string();
         // One duplicate, one new contract — rebuild should still run
         // exactly once at the end (observable only by the hash
         // changing to reflect the new child).
-        parent.add_children(vec![sw_os("debian", "wheezy"), sw_os("fedora", "25")]);
+        parent
+            .add_children(vec![sw_os("debian", "wheezy"), sw_os("fedora", "25")])
+            .unwrap();
         assert_ne!(parent.hash(), before);
         assert_eq!(parent.children.values().count(), 2);
     }
@@ -2357,11 +2409,13 @@ mod tests {
         let c1 = sw_os("debian", "wheezy");
         let c2 = sw_os("debian", "jessie");
         let c3 = sw_os("fedora", "25");
-        parent.add_children(vec![c1.clone(), c2.clone(), c3.clone()]);
+        parent
+            .add_children(vec![c1.clone(), c2.clone(), c3.clone()])
+            .unwrap();
         parent.remove_child(&c2);
 
         let mut expected = container();
-        expected.add_children(vec![c1, c3]);
+        expected.add_children(vec![c1, c3]).unwrap();
         assert_eq!(parent, expected);
     }
 
@@ -2369,7 +2423,7 @@ mod tests {
     fn remove_child_ignores_unknown_contract() {
         let mut parent = container();
         let c1 = sw_os("debian", "wheezy");
-        parent.add_child(c1.clone());
+        parent.add_child(c1.clone()).unwrap();
         let before = parent.hash().to_string();
         parent.remove_child(&sw_blob("nodejs", "4.8.0"));
         assert_eq!(parent.hash(), before);
@@ -2383,11 +2437,13 @@ mod tests {
         let mut parent = container();
         let wheezy = sw_os("debian", "wheezy");
         let fedora = sw_os("fedora", "25");
-        parent.add_children(vec![wheezy.clone(), fedora.clone()]);
+        parent
+            .add_children(vec![wheezy.clone(), fedora.clone()])
+            .unwrap();
         parent.remove_child(&wheezy);
 
         let mut expected = container();
-        expected.add_child(fedora);
+        expected.add_child(fedora).unwrap();
         assert_eq!(parent, expected);
     }
 
@@ -2396,11 +2452,11 @@ mod tests {
         let mut parent = container();
         let os = sw_os("debian", "wheezy");
         let blob = sw_blob("nodejs", "4.8.0");
-        parent.add_children(vec![os.clone(), blob.clone()]);
+        parent.add_children(vec![os.clone(), blob.clone()]).unwrap();
         parent.remove_child(&os);
 
         let mut expected = container();
-        expected.add_child(blob);
+        expected.add_child(blob).unwrap();
         assert_eq!(parent, expected);
 
         let remaining_types: HashSet<&str> = parent.children.types().collect();
@@ -2417,11 +2473,13 @@ mod tests {
             "aliases": ["rpi", "raspberry-pi"]
         }));
         let blob = sw_blob("nodejs", "4.8.0");
-        parent.add_children(vec![rpi.clone(), blob.clone()]);
+        parent
+            .add_children(vec![rpi.clone(), blob.clone()])
+            .unwrap();
         parent.remove_child(&rpi);
 
         let mut expected = container();
-        expected.add_child(blob);
+        expected.add_child(blob).unwrap();
         assert_eq!(parent, expected);
     }
 
@@ -2440,11 +2498,11 @@ mod tests {
             "name": "Raspberry Pi",
             "aliases": ["rpi", "raspberry-pi"]
         }));
-        parent.add_children(vec![nuc.clone(), rpi.clone()]);
+        parent.add_children(vec![nuc.clone(), rpi.clone()]).unwrap();
         parent.remove_child(&rpi);
 
         let mut expected = container();
-        expected.add_child(nuc);
+        expected.add_child(nuc).unwrap();
         assert_eq!(parent, expected);
     }
 
@@ -2453,7 +2511,7 @@ mod tests {
         let mut parent = container();
         let c1 = sw_os("debian", "wheezy");
         let c2 = sw_os("debian", "jessie");
-        parent.add_children(vec![c1.clone(), c2]);
+        parent.add_children(vec![c1.clone(), c2]).unwrap();
         let before = parent.hash().to_string();
         parent.remove_child(&c1);
         assert_ne!(parent.hash(), before);
@@ -2463,7 +2521,7 @@ mod tests {
     fn remove_child_last_child_clears_children_tree() {
         let mut parent = container();
         let c = sw_os("debian", "wheezy");
-        parent.add_child(c.clone());
+        parent.add_child(c.clone()).unwrap();
         parent.remove_child(&c);
         assert!(parent.raw.body.children.is_none());
         assert!(parent.children.is_empty());
@@ -2476,7 +2534,7 @@ mod tests {
         let mut parent = container();
         let child = sw_os("debian", "wheezy");
         let child_hash = child.hash().to_string();
-        parent.add_child(child.clone());
+        parent.add_child(child.clone()).unwrap();
 
         let found = parent.get_child_by_hash(&child_hash).unwrap();
         assert_eq!(found, &child);
@@ -2495,10 +2553,10 @@ mod tests {
         let mut grandchild_parent = sw_os("debian", "wheezy");
         let grandchild = sw_blob("nodejs", "4.8.0");
         let grandchild_hash = grandchild.hash().to_string();
-        grandchild_parent.add_child(grandchild);
+        grandchild_parent.add_child(grandchild).unwrap();
 
         let mut root = container();
-        root.add_child(grandchild_parent);
+        root.add_child(grandchild_parent).unwrap();
 
         assert!(root.get_child_by_hash(&grandchild_hash).is_none());
     }
@@ -2515,7 +2573,7 @@ mod tests {
     fn get_children_single_child() {
         let mut parent = container();
         let child = sw_os("debian", "wheezy");
-        parent.add_child(child.clone());
+        parent.add_child(child.clone()).unwrap();
         let result = parent.get_children();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], &child);
@@ -2526,7 +2584,7 @@ mod tests {
         let mut parent = container();
         let a = sw_os("debian", "wheezy");
         let b = sw_os("fedora", "25");
-        parent.add_children(vec![a.clone(), b.clone()]);
+        parent.add_children(vec![a.clone(), b.clone()]).unwrap();
         let children = parent.get_children();
         assert_eq!(children.len(), 2);
         assert_eq!(hash_set(&children), hash_set(&[&a, &b]));
@@ -2537,7 +2595,7 @@ mod tests {
         let mut parent = container();
         let a = sw_os("debian", "wheezy");
         let b = sw_os("debian", "jessie");
-        parent.add_children(vec![a.clone(), b.clone()]);
+        parent.add_children(vec![a.clone(), b.clone()]).unwrap();
         let children = parent.get_children();
         assert_eq!(children.len(), 2);
         assert_eq!(hash_set(&children), hash_set(&[&a, &b]));
@@ -2548,7 +2606,7 @@ mod tests {
         let mut parent = container();
         let os = sw_os("debian", "wheezy");
         let blob = sw_blob("nodejs", "4.8.0");
-        parent.add_children(vec![os.clone(), blob]);
+        parent.add_children(vec![os.clone(), blob]).unwrap();
         let result = parent.get_children_filtered(&["sw.os"]);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], &os);
@@ -2564,7 +2622,9 @@ mod tests {
             "slug": "raspberrypi",
             "name": "Raspberry Pi"
         }));
-        parent.add_children(vec![os.clone(), blob.clone(), dt]);
+        parent
+            .add_children(vec![os.clone(), blob.clone(), dt])
+            .unwrap();
         let result = parent.get_children_filtered(&["sw.os", "sw.blob"]);
         assert_eq!(result.len(), 2);
         assert_eq!(hash_set(&result), hash_set(&[&os, &blob]));
@@ -2575,7 +2635,7 @@ mod tests {
         let mut parent = container();
         let os = sw_os("debian", "wheezy");
         let blob = sw_blob("nodejs", "4.8.0");
-        parent.add_children(vec![os.clone(), blob]);
+        parent.add_children(vec![os.clone(), blob]).unwrap();
         let result = parent.get_children_filtered(&["sw.os", "hello"]);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], &os);
@@ -2584,7 +2644,9 @@ mod tests {
     #[test]
     fn get_children_filtered_empty_when_no_match() {
         let mut parent = container();
-        parent.add_children(vec![sw_os("debian", "wheezy"), sw_blob("nodejs", "4.8.0")]);
+        parent
+            .add_children(vec![sw_os("debian", "wheezy"), sw_blob("nodejs", "4.8.0")])
+            .unwrap();
         assert!(parent.get_children_filtered(&["hello", "world"]).is_empty());
     }
 
@@ -2598,7 +2660,9 @@ mod tests {
             "name": "Raspberry Pi",
             "aliases": ["rpi", "raspberry-pi"]
         }));
-        parent.add_children(vec![blob.clone(), rpi.clone()]);
+        parent
+            .add_children(vec![blob.clone(), rpi.clone()])
+            .unwrap();
         let result = parent.get_children();
         assert_eq!(result.len(), 2);
         assert_eq!(hash_set(&result), hash_set(&[&blob, &rpi]));
@@ -2608,10 +2672,10 @@ mod tests {
     fn get_children_recurses_into_nested() {
         let mut inner = sw_os("debian", "wheezy");
         let grand = sw_blob("nodejs", "4.8.0");
-        inner.add_child(grand.clone());
+        inner.add_child(grand.clone()).unwrap();
 
         let mut parent = container();
-        parent.add_child(inner.clone());
+        parent.add_child(inner.clone()).unwrap();
 
         let result = parent.get_children();
         assert_eq!(result.len(), 2);
@@ -2624,17 +2688,17 @@ mod tests {
     fn get_children_recurses_two_levels() {
         let mut lvl2 = sw_os("debian", "wheezy");
         let grand = sw_blob("nodejs", "4.8.0");
-        lvl2.add_child(grand.clone());
+        lvl2.add_child(grand.clone()).unwrap();
 
         let mut lvl1 = contract(json!({
             "type": "hw.device-type",
             "slug": "artik10",
             "name": "Artik 10"
         }));
-        lvl1.add_child(lvl2.clone());
+        lvl1.add_child(lvl2.clone()).unwrap();
 
         let mut root = container();
-        root.add_child(lvl1.clone());
+        root.add_child(lvl1.clone()).unwrap();
 
         let result = root.get_children();
         assert_eq!(result.len(), 3);
@@ -2648,10 +2712,10 @@ mod tests {
     fn get_children_filter_returns_nested_matches() {
         let mut inner = sw_os("debian", "wheezy");
         let grand = sw_blob("nodejs", "4.8.0");
-        inner.add_child(grand.clone());
+        inner.add_child(grand.clone()).unwrap();
 
         let mut parent = container();
-        parent.add_child(inner);
+        parent.add_child(inner).unwrap();
 
         let result = parent.get_children_filtered(&["sw.blob"]);
         assert_eq!(result.len(), 1);
@@ -2668,7 +2732,9 @@ mod tests {
         let b = sw_os("debian", "jessie");
         let c = sw_os("fedora", "25");
         let d = sw_blob("nodejs", "4.8.0");
-        parent.add_children(vec![a.clone(), b.clone(), c.clone(), d]);
+        parent
+            .add_children(vec![a.clone(), b.clone(), c.clone(), d])
+            .unwrap();
         let result = parent.get_children_by_type("sw.os");
         assert_eq!(result.len(), 3);
         assert_eq!(hash_set(&result), hash_set(&[&a, &b, &c]));
@@ -2677,11 +2743,13 @@ mod tests {
     #[test]
     fn get_children_by_type_stable_across_calls() {
         let mut parent = container();
-        parent.add_children(vec![
-            sw_os("debian", "wheezy"),
-            sw_os("debian", "jessie"),
-            sw_blob("nodejs", "4.8.0"),
-        ]);
+        parent
+            .add_children(vec![
+                sw_os("debian", "wheezy"),
+                sw_os("debian", "jessie"),
+                sw_blob("nodejs", "4.8.0"),
+            ])
+            .unwrap();
         let r1 = parent.get_children_by_type("sw.os");
         let r2 = parent.get_children_by_type("sw.os");
         assert_eq!(r1.len(), r2.len());
@@ -2691,7 +2759,9 @@ mod tests {
     #[test]
     fn get_children_by_type_empty_for_unknown_type() {
         let mut parent = container();
-        parent.add_children(vec![sw_os("debian", "wheezy")]);
+        parent
+            .add_children(vec![sw_os("debian", "wheezy")])
+            .unwrap();
         assert!(parent.get_children_by_type("arch.sw").is_empty());
     }
 
@@ -2704,7 +2774,9 @@ mod tests {
             "name": "Raspberry Pi",
             "aliases": ["rpi", "raspberry-pi"]
         }));
-        parent.add_children(vec![sw_blob("nodejs", "4.8.0"), rpi.clone()]);
+        parent
+            .add_children(vec![sw_blob("nodejs", "4.8.0"), rpi.clone()])
+            .unwrap();
         let result = parent.get_children_by_type("hw.device-type");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], &rpi);
@@ -2727,21 +2799,25 @@ mod tests {
     #[test]
     fn get_children_types_single_type_for_one_child() {
         let mut parent = container();
-        parent.add_child(sw_os("debian", "wheezy"));
+        parent.add_child(sw_os("debian", "wheezy")).unwrap();
         assert_eq!(children_type_set(&parent), HashSet::from(["sw.os".into()]));
     }
 
     #[test]
     fn get_children_types_dedupes_same_type() {
         let mut parent = container();
-        parent.add_children(vec![sw_os("debian", "wheezy"), sw_os("debian", "jessie")]);
+        parent
+            .add_children(vec![sw_os("debian", "wheezy"), sw_os("debian", "jessie")])
+            .unwrap();
         assert_eq!(children_type_set(&parent), HashSet::from(["sw.os".into()]));
     }
 
     #[test]
     fn get_children_types_union_of_all() {
         let mut parent = container();
-        parent.add_children(vec![sw_os("debian", "wheezy"), sw_blob("nodejs", "4.8.0")]);
+        parent
+            .add_children(vec![sw_os("debian", "wheezy"), sw_blob("nodejs", "4.8.0")])
+            .unwrap();
         assert_eq!(
             children_type_set(&parent),
             HashSet::from(["sw.os".into(), "sw.blob".into()])
@@ -2751,8 +2827,12 @@ mod tests {
     #[test]
     fn get_children_types_updates_when_adding() {
         let mut parent = container();
-        parent.add_children(vec![sw_os("debian", "wheezy")]);
-        parent.add_children(vec![sw_blob("nodejs", "4.8.0")]);
+        parent
+            .add_children(vec![sw_os("debian", "wheezy")])
+            .unwrap();
+        parent
+            .add_children(vec![sw_blob("nodejs", "4.8.0")])
+            .unwrap();
         assert_eq!(
             children_type_set(&parent),
             HashSet::from(["sw.os".into(), "sw.blob".into()])
@@ -2762,10 +2842,10 @@ mod tests {
     #[test]
     fn get_children_types_recurses_into_nested_children() {
         let mut inner = sw_os("debian", "wheezy");
-        inner.add_child(sw_blob("nodejs", "4.8.0"));
+        inner.add_child(sw_blob("nodejs", "4.8.0")).unwrap();
 
         let mut parent = container();
-        parent.add_child(inner);
+        parent.add_child(inner).unwrap();
 
         assert_eq!(
             children_type_set(&parent),
@@ -2776,17 +2856,17 @@ mod tests {
     #[test]
     fn get_children_types_recurses_two_levels() {
         let mut lvl2 = sw_os("debian", "wheezy");
-        lvl2.add_child(sw_blob("nodejs", "4.8.0"));
+        lvl2.add_child(sw_blob("nodejs", "4.8.0")).unwrap();
 
         let mut lvl1 = contract(json!({
             "type": "hw.device-type",
             "slug": "artik10",
             "name": "Artik 10"
         }));
-        lvl1.add_child(lvl2);
+        lvl1.add_child(lvl2).unwrap();
 
         let mut root = container();
-        root.add_child(lvl1);
+        root.add_child(lvl1).unwrap();
 
         assert_eq!(
             children_type_set(&root),
@@ -2799,11 +2879,13 @@ mod tests {
         // Sanity check: the public API returns a Vec whose length equals
         // its HashSet cardinality (i.e. no duplicates).
         let mut parent = container();
-        parent.add_children(vec![
-            sw_os("debian", "wheezy"),
-            sw_os("debian", "jessie"),
-            sw_blob("nodejs", "4.8.0"),
-        ]);
+        parent
+            .add_children(vec![
+                sw_os("debian", "wheezy"),
+                sw_os("debian", "jessie"),
+                sw_blob("nodejs", "4.8.0"),
+            ])
+            .unwrap();
         let vec = parent.get_children_types();
         let set: HashSet<&str> = vec.iter().map(String::as_str).collect();
         assert_eq!(vec.len(), set.len(), "vec must be deduplicated");
@@ -2815,7 +2897,9 @@ mod tests {
     #[test]
     fn round_trip_with_multi_child_same_slug_tree() {
         let mut parent = container();
-        parent.add_children(vec![sw_os("debian", "wheezy"), sw_os("debian", "jessie")]);
+        parent
+            .add_children(vec![sw_os("debian", "wheezy"), sw_os("debian", "jessie")])
+            .unwrap();
         let json = serde_json::to_value(&parent).unwrap();
         let reconstructed: Contract = serde_json::from_value(json).unwrap();
         assert_eq!(parent, reconstructed);
@@ -2851,11 +2935,13 @@ mod tests {
     #[test]
     fn find_children_nothing_for_unknown_type() {
         let mut parent = container();
-        parent.add_children(vec![
-            sw_os("debian", "wheezy"),
-            sw_os("debian", "jessie"),
-            sw_blob("nodejs", "4.8.0"),
-        ]);
+        parent
+            .add_children(vec![
+                sw_os("debian", "wheezy"),
+                sw_os("debian", "jessie"),
+                sw_blob("nodejs", "4.8.0"),
+            ])
+            .unwrap();
         let m = matcher("non-existent-type", None, None);
         assert!(parent.find_children(&m).is_empty());
     }
@@ -2863,11 +2949,13 @@ mod tests {
     #[test]
     fn find_children_nothing_for_unknown_type_with_slug() {
         let mut parent = container();
-        parent.add_children(vec![
-            sw_os("debian", "wheezy"),
-            sw_os("debian", "jessie"),
-            sw_blob("nodejs", "4.8.0"),
-        ]);
+        parent
+            .add_children(vec![
+                sw_os("debian", "wheezy"),
+                sw_os("debian", "jessie"),
+                sw_blob("nodejs", "4.8.0"),
+            ])
+            .unwrap();
         let m = matcher("non-existent-type", Some("debian"), None);
         assert!(parent.find_children(&m).is_empty());
     }
@@ -2879,7 +2967,9 @@ mod tests {
         let b = sw_os("debian", "jessie");
         let c = sw_os("fedora", "25");
         let d = sw_blob("nodejs", "4.8.0");
-        parent.add_children(vec![a.clone(), b, c.clone(), d]);
+        parent
+            .add_children(vec![a.clone(), b, c.clone(), d])
+            .unwrap();
 
         let m = matcher("sw.os", Some("fedora"), None);
         let result = parent.find_children(&m);
@@ -2906,7 +2996,7 @@ mod tests {
             "version": "jessie",
             "data": { "arch": "aarch64" }
         }));
-        parent.add_children(vec![armv7.clone(), aarch64]);
+        parent.add_children(vec![armv7.clone(), aarch64]).unwrap();
 
         let m = matcher_with_data("sw.os", json!({ "arch": "armv7hf" }));
         let result = parent.find_children(&m);
@@ -2921,7 +3011,9 @@ mod tests {
         let b = sw_os("debian", "jessie");
         let c = sw_os("fedora", "25");
         let d = sw_blob("nodejs", "4.8.0");
-        parent.add_children(vec![a.clone(), b.clone(), c.clone(), d]);
+        parent
+            .add_children(vec![a.clone(), b.clone(), c.clone(), d])
+            .unwrap();
 
         let m = matcher("sw.os", None, None);
         let result = parent.find_children(&m);
@@ -2948,7 +3040,7 @@ mod tests {
             "name": "Raspberry Pi",
             "aliases": ["rpi", "raspberry-pi"]
         }));
-        parent.add_children(vec![rpi2, rpi.clone()]);
+        parent.add_children(vec![rpi2, rpi.clone()]).unwrap();
 
         let m = matcher("hw.device-type", Some("rpi"), None);
         let result = parent.find_children(&m);
@@ -2960,10 +3052,12 @@ mod tests {
     fn find_children_nested_by_type_and_slug() {
         let mut wheezy = sw_os("debian", "wheezy");
         let nodejs = sw_blob("nodejs", "4.8.0");
-        wheezy.add_child(nodejs.clone());
+        wheezy.add_child(nodejs.clone()).unwrap();
 
         let mut parent = container();
-        parent.add_children(vec![wheezy, sw_os("debian", "jessie")]);
+        parent
+            .add_children(vec![wheezy, sw_os("debian", "jessie")])
+            .unwrap();
 
         let m = matcher("sw.blob", Some("nodejs"), None);
         let result = parent.find_children(&m);
@@ -2979,14 +3073,14 @@ mod tests {
         // 3.14.0 blob.
         let mut wheezy = sw_os("debian", "wheezy");
         let nodejs_new = sw_blob("nodejs", "4.8.0");
-        wheezy.add_child(nodejs_new.clone());
+        wheezy.add_child(nodejs_new.clone()).unwrap();
 
         let mut jessie = sw_os("debian", "jessie");
         let nodejs_old = sw_blob("nodejs", "3.14.0");
-        jessie.add_child(nodejs_old.clone());
+        jessie.add_child(nodejs_old.clone()).unwrap();
 
         let mut parent = container();
-        parent.add_children(vec![wheezy, jessie]);
+        parent.add_children(vec![wheezy, jessie]).unwrap();
 
         let m = matcher("sw.blob", None, Some(">=4.0.0"));
         let result = parent.find_children(&m);
@@ -3005,10 +3099,12 @@ mod tests {
     fn find_children_nested_fails_on_wrong_slug() {
         let mut wheezy = sw_os("debian", "wheezy");
         let nodejs = sw_blob("nodejs", "4.8.0");
-        wheezy.add_child(nodejs);
+        wheezy.add_child(nodejs).unwrap();
 
         let mut parent = container();
-        parent.add_children(vec![wheezy, sw_os("debian", "jessie")]);
+        parent
+            .add_children(vec![wheezy, sw_os("debian", "jessie")])
+            .unwrap();
 
         let m = matcher("sw.blob", Some("other"), None);
         assert!(parent.find_children(&m).is_empty());
@@ -3018,10 +3114,12 @@ mod tests {
     fn find_children_nested_fails_on_wrong_type() {
         let mut wheezy = sw_os("debian", "wheezy");
         let nodejs = sw_blob("nodejs", "4.8.0");
-        wheezy.add_child(nodejs);
+        wheezy.add_child(nodejs).unwrap();
 
         let mut parent = container();
-        parent.add_children(vec![wheezy, sw_os("debian", "jessie")]);
+        parent
+            .add_children(vec![wheezy, sw_os("debian", "jessie")])
+            .unwrap();
 
         let m = matcher("sw.os", Some("nodejs"), None);
         assert!(parent.find_children(&m).is_empty());
@@ -3036,16 +3134,16 @@ mod tests {
         // emitted.
         let mut lvl2 = sw_os("debian", "wheezy");
         let leaf = sw_blob("nodejs", "4.8.0");
-        lvl2.add_child(leaf.clone());
+        lvl2.add_child(leaf.clone()).unwrap();
         let mut lvl1 = contract(json!({
             "type": "hw.device-type",
             "slug": "artik10",
             "name": "Artik 10"
         }));
-        lvl1.add_child(lvl2);
+        lvl1.add_child(lvl2).unwrap();
 
         let mut root = container();
-        root.add_child(lvl1);
+        root.add_child(lvl1).unwrap();
 
         let m = matcher("sw.blob", None, None);
         let result = root.find_children(&m);
@@ -3071,7 +3169,7 @@ mod tests {
             "name": "Pine A64",
             "data": { "arch": "aarch64" }
         }));
-        parent.add_children(vec![armv7.clone(), aarch64]);
+        parent.add_children(vec![armv7.clone(), aarch64]).unwrap();
 
         let m = matcher_with_data("hw.device-type", json!({ "arch": "armv7hf" }));
         let result = parent.find_children(&m);
@@ -3095,7 +3193,9 @@ mod tests {
             "type": "hw.device-type",
             "slug": "nodata"
         }));
-        parent.add_children(vec![with_data.clone(), without_data]);
+        parent
+            .add_children(vec![with_data.clone(), without_data])
+            .unwrap();
 
         let m = matcher_with_data("hw.device-type", json!({ "arch": "armv7hf" }));
         let result = parent.find_children(&m);
@@ -3112,7 +3212,7 @@ mod tests {
         let mut parent = container();
         let a = sw_os("debian", "wheezy");
         let b = sw_os("fedora", "25");
-        parent.add_children(vec![a.clone(), b]);
+        parent.add_children(vec![a.clone(), b]).unwrap();
 
         let m = matcher("sw.os", Some("debian"), None);
 
@@ -3138,7 +3238,9 @@ mod tests {
         // Searching for something that does not exist must still
         // return an empty Vec on every call.
         let mut parent = container();
-        parent.add_children(vec![sw_os("debian", "wheezy"), sw_os("fedora", "25")]);
+        parent
+            .add_children(vec![sw_os("debian", "wheezy"), sw_os("fedora", "25")])
+            .unwrap();
         let m = matcher("sw.os", Some("alpine"), None);
         assert!(parent.find_children(&m).is_empty());
         assert!(parent.find_children(&m).is_empty());
@@ -3150,7 +3252,7 @@ mod tests {
         // next search must include it.
         let mut parent = container();
         let a = sw_os("debian", "wheezy");
-        parent.add_child(a.clone());
+        parent.add_child(a.clone()).unwrap();
 
         let m = matcher("sw.os", None, None);
         let first: HashSet<String> = parent
@@ -3161,7 +3263,7 @@ mod tests {
         assert_eq!(first.len(), 1);
 
         let b = sw_os("debian", "jessie");
-        parent.add_child(b.clone());
+        parent.add_child(b.clone()).unwrap();
 
         let second: HashSet<String> = parent
             .find_children(&m)
@@ -3180,7 +3282,7 @@ mod tests {
         let mut parent = container();
         let a = sw_os("debian", "wheezy");
         let b = sw_os("debian", "jessie");
-        parent.add_children(vec![a.clone(), b.clone()]);
+        parent.add_children(vec![a.clone(), b.clone()]).unwrap();
 
         let m = matcher("sw.os", None, None);
         let first: HashSet<String> = parent
@@ -3208,7 +3310,7 @@ mod tests {
         // no-op; subsequent searches return the same result.
         let mut parent = container();
         let a = sw_os("debian", "wheezy");
-        parent.add_child(a.clone());
+        parent.add_child(a.clone()).unwrap();
 
         let m = matcher("sw.os", None, None);
         let _ = parent.find_children(&m);
@@ -3232,7 +3334,7 @@ mod tests {
         let mut parent = container();
         let os = sw_os("debian", "wheezy");
         let blob = sw_blob("nodejs", "4.8.0");
-        parent.add_children(vec![os.clone(), blob.clone()]);
+        parent.add_children(vec![os.clone(), blob.clone()]).unwrap();
 
         let m_os = matcher("sw.os", None, None);
         let m_blob = matcher("sw.blob", None, None);
@@ -3240,7 +3342,7 @@ mod tests {
         let _ = parent.find_children(&m_os);
         let _ = parent.find_children(&m_blob);
 
-        parent.add_child(sw_os("debian", "jessie"));
+        parent.add_child(sw_os("debian", "jessie")).unwrap();
         let blob_result = parent.find_children(&m_blob);
         assert_eq!(blob_result.len(), 1);
         assert_eq!(blob_result[0].hash(), blob.hash());
@@ -3254,7 +3356,8 @@ mod tests {
         // grandchildren in the next search.
         let mut root = container();
         let blob1 = sw_blob("nodejs", "4.8.0");
-        root.add_children(vec![sw_os("debian", "wheezy"), blob1.clone()]);
+        root.add_children(vec![sw_os("debian", "wheezy"), blob1.clone()])
+            .unwrap();
 
         let m = matcher("sw.blob", None, None);
         let first: HashSet<String> = root
@@ -3268,8 +3371,8 @@ mod tests {
         // A new sw.os sibling that carries its own sw.blob grandchild.
         let mut jessie = sw_os("debian", "jessie");
         let blob2 = sw_blob("nodejs", "5.0.0");
-        jessie.add_child(blob2.clone());
-        root.add_child(jessie);
+        jessie.add_child(blob2.clone()).unwrap();
+        root.add_child(jessie).unwrap();
 
         let second: HashSet<String> = root
             .find_children(&m)
@@ -3287,7 +3390,9 @@ mod tests {
         // `(type, slug)` lookup yields an empty iterator and the
         // search walks no candidates.
         let mut parent = container();
-        parent.add_children(vec![sw_os("debian", "wheezy"), sw_os("debian", "jessie")]);
+        parent
+            .add_children(vec![sw_os("debian", "wheezy"), sw_os("debian", "jessie")])
+            .unwrap();
 
         let m = matcher("sw.os", Some("alpine"), None);
         assert!(parent.find_children(&m).is_empty());
@@ -3310,7 +3415,7 @@ mod tests {
                 }
             ]
         }));
-        parent.add_child(ctx);
+        parent.add_child(ctx).unwrap();
 
         let m = matcher("sw.os", None, None);
         let result = parent.find_children(&m);
@@ -3331,7 +3436,7 @@ mod tests {
                 }
             ]
         }));
-        parent.add_child(ctx);
+        parent.add_child(ctx).unwrap();
 
         let m = matcher("sw.blob", None, None);
         assert!(parent.find_children(&m).is_empty());
@@ -3351,7 +3456,7 @@ mod tests {
                 }
             ]
         }));
-        parent.add_child(ctx);
+        parent.add_child(ctx).unwrap();
 
         let m = matcher("sw.os", Some("debian"), None);
         let result = parent.find_children(&m);
@@ -3374,7 +3479,7 @@ mod tests {
                 }
             ]
         }));
-        parent.add_child(ctx);
+        parent.add_child(ctx).unwrap();
 
         let m = matcher("sw.blob", None, Some(">=4.0.0"));
         let result = parent.find_children(&m);
@@ -3396,7 +3501,7 @@ mod tests {
                 }
             ]
         }));
-        parent.add_child(ctx);
+        parent.add_child(ctx).unwrap();
 
         let m = matcher("sw.blob", None, Some(">=4.0.0"));
         assert!(parent.find_children(&m).is_empty());
@@ -3421,7 +3526,7 @@ mod tests {
                 }
             ]
         }));
-        parent.add_child(ctx);
+        parent.add_child(ctx).unwrap();
 
         let m = matcher("sw.blob", None, None);
         let result = parent.find_children(&m);
@@ -3500,7 +3605,9 @@ mod tests {
     #[test]
     fn satisfies_child_contract_with_no_child_requirements_returns_true() {
         let mut container = container();
-        container.add_children(vec![sw_os("debian", "wheezy"), sw_os("debian", "jessie")]);
+        container
+            .add_children(vec![sw_os("debian", "wheezy"), sw_os("debian", "jessie")])
+            .unwrap();
         let child = contract(json!({
             "type": "test",
             "slug": "foo",
@@ -3513,7 +3620,9 @@ mod tests {
     #[test]
     fn satisfies_child_contract_one_fulfilled_requirement_returns_true() {
         let mut container = container();
-        container.add_children(vec![sw_os("debian", "wheezy"), sw_os("debian", "jessie")]);
+        container
+            .add_children(vec![sw_os("debian", "wheezy"), sw_os("debian", "jessie")])
+            .unwrap();
         let child = stack_with_requires(json!([
             {"slug": "debian", "version": "wheezy", "type": "sw.os"}
         ]));
@@ -3523,11 +3632,13 @@ mod tests {
     #[test]
     fn satisfies_child_contract_two_fulfilled_requirements_returns_true() {
         let mut container = container();
-        container.add_children(vec![
-            sw_os("debian", "wheezy"),
-            sw_os("debian", "jessie"),
-            hw_device("artik10"),
-        ]);
+        container
+            .add_children(vec![
+                sw_os("debian", "wheezy"),
+                sw_os("debian", "jessie"),
+                hw_device("artik10"),
+            ])
+            .unwrap();
         let child = stack_with_requires(json!([
             {"slug": "debian", "version": "wheezy", "type": "sw.os"},
             {"slug": "artik10", "type": "hw.device-type"}
@@ -3538,11 +3649,13 @@ mod tests {
     #[test]
     fn satisfies_child_contract_one_unfulfilled_requirement_returns_false() {
         let mut container = container();
-        container.add_children(vec![
-            sw_os("debian", "wheezy"),
-            sw_os("debian", "jessie"),
-            hw_device("artik10"),
-        ]);
+        container
+            .add_children(vec![
+                sw_os("debian", "wheezy"),
+                sw_os("debian", "jessie"),
+                hw_device("artik10"),
+            ])
+            .unwrap();
         let child = stack_with_requires(json!([
             {"slug": "void", "type": "sw.os"}
         ]));
@@ -3552,11 +3665,13 @@ mod tests {
     #[test]
     fn satisfies_child_contract_one_of_two_unfulfilled_returns_false() {
         let mut container = container();
-        container.add_children(vec![
-            sw_os("debian", "wheezy"),
-            sw_os("debian", "jessie"),
-            hw_device("artik10"),
-        ]);
+        container
+            .add_children(vec![
+                sw_os("debian", "wheezy"),
+                sw_os("debian", "jessie"),
+                hw_device("artik10"),
+            ])
+            .unwrap();
         let child = stack_with_requires(json!([
             {"slug": "void", "type": "sw.os"},
             {"slug": "artik10", "type": "hw.device-type"}
@@ -3567,11 +3682,13 @@ mod tests {
     #[test]
     fn satisfies_child_contract_empty_disjunction_is_satisfied() {
         let mut container = container();
-        container.add_children(vec![
-            sw_os("debian", "wheezy"),
-            sw_os("debian", "jessie"),
-            hw_device("artik10"),
-        ]);
+        container
+            .add_children(vec![
+                sw_os("debian", "wheezy"),
+                sw_os("debian", "jessie"),
+                hw_device("artik10"),
+            ])
+            .unwrap();
         let child = stack_with_requires(json!([ { "or": [] } ]));
         assert!(container.satisfies_child_contract(&child, None));
     }
@@ -3581,7 +3698,9 @@ mod tests {
         // `not` is violated if ANY negated disjunct has a match, so a
         // partial hit (fedora missing, debian present) still fails.
         let mut container = container();
-        container.add_children(vec![sw_os("debian", "wheezy")]);
+        container
+            .add_children(vec![sw_os("debian", "wheezy")])
+            .unwrap();
         let child = stack_with_requires(json!([
             {
                 "not": [
@@ -3596,7 +3715,9 @@ mod tests {
     #[test]
     fn satisfies_child_contract_unfulfilled_not_operator_returns_false() {
         let mut container = container();
-        container.add_children(vec![sw_os("debian", "wheezy")]);
+        container
+            .add_children(vec![sw_os("debian", "wheezy")])
+            .unwrap();
         let child = stack_with_requires(json!([
             {"not": [{"slug": "debian", "type": "sw.os"}]}
         ]));
@@ -3606,7 +3727,9 @@ mod tests {
     #[test]
     fn satisfies_child_contract_fulfilled_not_operator_returns_true() {
         let mut container = container();
-        container.add_children(vec![sw_os("debian", "wheezy")]);
+        container
+            .add_children(vec![sw_os("debian", "wheezy")])
+            .unwrap();
         let child = stack_with_requires(json!([
             {"not": [{"slug": "foo-bar", "type": "sw.os"}]}
         ]));
@@ -3616,7 +3739,9 @@ mod tests {
     #[test]
     fn satisfies_child_contract_empty_not_operator_is_satisfied() {
         let mut container = container();
-        container.add_children(vec![sw_os("debian", "wheezy")]);
+        container
+            .add_children(vec![sw_os("debian", "wheezy")])
+            .unwrap();
         let child = stack_with_requires(json!([ {"not": []} ]));
         assert!(container.satisfies_child_contract(&child, None));
     }
@@ -3624,11 +3749,13 @@ mod tests {
     #[test]
     fn satisfies_child_contract_two_unfulfilled_returns_false() {
         let mut container = container();
-        container.add_children(vec![
-            sw_os("debian", "wheezy"),
-            sw_os("debian", "jessie"),
-            hw_device("artik10"),
-        ]);
+        container
+            .add_children(vec![
+                sw_os("debian", "wheezy"),
+                sw_os("debian", "jessie"),
+                hw_device("artik10"),
+            ])
+            .unwrap();
         let child = stack_with_requires(json!([
             {"slug": "void", "type": "sw.os"},
             {"slug": "raspberry-pi", "type": "hw.device-type"}
@@ -3639,11 +3766,13 @@ mod tests {
     #[test]
     fn satisfies_child_contract_one_fulfilled_disjunction_returns_true() {
         let mut container = container();
-        container.add_children(vec![
-            sw_os("debian", "wheezy"),
-            sw_os("debian", "jessie"),
-            hw_device("artik10"),
-        ]);
+        container
+            .add_children(vec![
+                sw_os("debian", "wheezy"),
+                sw_os("debian", "jessie"),
+                hw_device("artik10"),
+            ])
+            .unwrap();
         let child = stack_with_requires(json!([
             {"or": [{"slug": "debian", "type": "sw.os"}]}
         ]));
@@ -3653,11 +3782,13 @@ mod tests {
     #[test]
     fn satisfies_child_contract_mixed_disjunction_returns_true() {
         let mut container = container();
-        container.add_children(vec![
-            sw_os("debian", "wheezy"),
-            sw_os("debian", "jessie"),
-            hw_device("artik10"),
-        ]);
+        container
+            .add_children(vec![
+                sw_os("debian", "wheezy"),
+                sw_os("debian", "jessie"),
+                hw_device("artik10"),
+            ])
+            .unwrap();
         let child = stack_with_requires(json!([
             {
                 "or": [
@@ -3672,11 +3803,13 @@ mod tests {
     #[test]
     fn satisfies_child_contract_one_unfulfilled_disjunction_returns_false() {
         let mut container = container();
-        container.add_children(vec![
-            sw_os("debian", "wheezy"),
-            sw_os("debian", "jessie"),
-            hw_device("artik10"),
-        ]);
+        container
+            .add_children(vec![
+                sw_os("debian", "wheezy"),
+                sw_os("debian", "jessie"),
+                hw_device("artik10"),
+            ])
+            .unwrap();
         let child = stack_with_requires(json!([
             {"or": [{"slug": "void", "type": "sw.os"}]}
         ]));
@@ -3686,11 +3819,13 @@ mod tests {
     #[test]
     fn satisfies_child_contract_empty_disjunction_and_unfulfilled_returns_false() {
         let mut container = container();
-        container.add_children(vec![
-            sw_os("debian", "wheezy"),
-            sw_os("debian", "jessie"),
-            hw_device("artik10"),
-        ]);
+        container
+            .add_children(vec![
+                sw_os("debian", "wheezy"),
+                sw_os("debian", "jessie"),
+                hw_device("artik10"),
+            ])
+            .unwrap();
         let child = stack_with_requires(json!([
             {"or": []},
             {"slug": "void", "type": "sw.os"}
@@ -3701,11 +3836,13 @@ mod tests {
     #[test]
     fn satisfies_child_contract_fulfilled_disjunction_and_unfulfilled_returns_false() {
         let mut container = container();
-        container.add_children(vec![
-            sw_os("debian", "wheezy"),
-            sw_os("debian", "jessie"),
-            hw_device("artik10"),
-        ]);
+        container
+            .add_children(vec![
+                sw_os("debian", "wheezy"),
+                sw_os("debian", "jessie"),
+                hw_device("artik10"),
+            ])
+            .unwrap();
         let child = stack_with_requires(json!([
             {
                 "or": [
@@ -3721,11 +3858,13 @@ mod tests {
     #[test]
     fn satisfies_child_contract_types_filter_limits_evaluation() {
         let mut container = container();
-        container.add_children(vec![
-            sw_os("debian", "wheezy"),
-            sw_os("debian", "jessie"),
-            hw_device("artik10"),
-        ]);
+        container
+            .add_children(vec![
+                sw_os("debian", "wheezy"),
+                sw_os("debian", "jessie"),
+                hw_device("artik10"),
+            ])
+            .unwrap();
         // Requires `test` type that doesn't exist; only `sw.os` is
         // evaluated so the `test` requirement is skipped.
         let child = stack_with_requires(json!([
@@ -3739,11 +3878,13 @@ mod tests {
     #[test]
     fn satisfies_child_contract_types_filter_allows_multiple_types() {
         let mut container = container();
-        container.add_children(vec![
-            sw_os("debian", "wheezy"),
-            sw_os("debian", "jessie"),
-            hw_device("artik10"),
-        ]);
+        container
+            .add_children(vec![
+                sw_os("debian", "wheezy"),
+                sw_os("debian", "jessie"),
+                hw_device("artik10"),
+            ])
+            .unwrap();
         let child = stack_with_requires(json!([
             {"slug": "debian", "type": "sw.os"},
             {
@@ -3761,11 +3902,13 @@ mod tests {
     #[test]
     fn satisfies_child_contract_types_filter_with_unfulfilled_requirement_returns_false() {
         let mut container = container();
-        container.add_children(vec![
-            sw_os("debian", "wheezy"),
-            sw_os("debian", "jessie"),
-            hw_device("artik10"),
-        ]);
+        container
+            .add_children(vec![
+                sw_os("debian", "wheezy"),
+                sw_os("debian", "jessie"),
+                hw_device("artik10"),
+            ])
+            .unwrap();
         let child = stack_with_requires(json!([
             {"slug": "void", "type": "sw.os"}
         ]));
@@ -3778,7 +3921,7 @@ mod tests {
         // Every disjunct targets a type not in the allowed set, so
         // the filtered disjunction is empty and trivially satisfied.
         let mut container = container();
-        container.add_children(vec![hw_device("artik10")]);
+        container.add_children(vec![hw_device("artik10")]).unwrap();
         let child = contract(json!({
             "type": "sw.os",
             "slug": "debian",
@@ -3810,7 +3953,7 @@ mod tests {
                 "arch.sw": {"type": "arch.sw", "slug": "amd64", "version": "1"}
             }
         }));
-        container.add_child(composite);
+        container.add_child(composite).unwrap();
 
         let child = stack_with_requires(json!([
             {"slug": "debian", "type": "sw.os"},
@@ -3837,7 +3980,7 @@ mod tests {
                 {"type": "arch.sw", "slug": "amd64", "version": "1"}
             ]
         }));
-        container.add_child(ctx);
+        container.add_child(ctx).unwrap();
 
         let child = stack_with_requires(json!([
             {"slug": "debian", "type": "sw.os"},
@@ -3863,7 +4006,7 @@ mod tests {
                 {"type": "sw.os", "slug": "debian", "version": "wheezy"}
             ]
         }));
-        container.add_child(ctx);
+        container.add_child(ctx).unwrap();
 
         let child = stack_with_requires(json!([
             {"slug": "debian", "type": "sw.os"},
@@ -3892,7 +4035,7 @@ mod tests {
                 {"type": "sw.os", "slug": "debian", "version": "wheezy"}
             ]
         }));
-        container.add_child(ctx);
+        container.add_child(ctx).unwrap();
 
         let child = stack_with_requires(json!([
             {"slug": "debian", "type": "sw.os"},
@@ -3923,7 +4066,7 @@ mod tests {
                 "arch.sw": {"type": "arch.sw", "slug": "amd64", "version": "1"}
             }
         }));
-        container.add_child(composite);
+        container.add_child(composite).unwrap();
 
         let child = stack_with_requires(json!([
             {"slug": "fedora", "type": "sw.os"},
@@ -3950,7 +4093,7 @@ mod tests {
                 "arch.sw": {"type": "arch.sw", "slug": "amd64", "version": "1"}
             }
         }));
-        container.add_child(composite);
+        container.add_child(composite).unwrap();
 
         let child = stack_with_requires(json!([
             {"slug": "fedora", "type": "sw.os"},
@@ -3976,7 +4119,7 @@ mod tests {
             "type": "arch.sw",
             "slug": "amd64"
         }));
-        container.add_child(arch);
+        container.add_child(arch).unwrap();
 
         let composite = contract(json!({
             "type": "meta.composite",
@@ -4000,7 +4143,7 @@ mod tests {
             "type": "arch.sw",
             "slug": "amd64"
         }));
-        container.add_child(arch);
+        container.add_child(arch).unwrap();
 
         let composite = contract(json!({
             "type": "meta.composite",
@@ -4022,76 +4165,82 @@ mod tests {
     #[test]
     fn are_children_satisfied_returns_true_for_satisfied_context() {
         let mut container = container();
-        container.add_children(vec![
-            contract(json!({
-                "type": "sw.os",
-                "name": "Debian",
-                "slug": "debian",
-                "requires": [
-                    {
-                        "or": [
-                            {"type": "hw.device-type", "slug": "artik10"},
-                            {"type": "hw.device-type", "slug": "raspberry-pi"}
-                        ]
-                    }
-                ]
-            })),
-            contract(json!({
-                "type": "hw.device-type",
-                "slug": "artik10",
-                "name": "Samsung Artik 10",
-                "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
-            })),
-            contract(json!({
-                "type": "arch.sw",
-                "slug": "armv7hf",
-                "name": "armv7hf"
-            })),
-        ]);
+        container
+            .add_children(vec![
+                contract(json!({
+                    "type": "sw.os",
+                    "name": "Debian",
+                    "slug": "debian",
+                    "requires": [
+                        {
+                            "or": [
+                                {"type": "hw.device-type", "slug": "artik10"},
+                                {"type": "hw.device-type", "slug": "raspberry-pi"}
+                            ]
+                        }
+                    ]
+                })),
+                contract(json!({
+                    "type": "hw.device-type",
+                    "slug": "artik10",
+                    "name": "Samsung Artik 10",
+                    "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
+                })),
+                contract(json!({
+                    "type": "arch.sw",
+                    "slug": "armv7hf",
+                    "name": "armv7hf"
+                })),
+            ])
+            .unwrap();
         assert!(container.are_children_satisfied(None));
     }
 
     #[test]
     fn are_children_satisfied_returns_false_for_unsatisfied_context() {
         let mut container = container();
-        container.add_children(vec![
-            contract(json!({
-                "type": "sw.os",
-                "name": "Debian",
-                "slug": "debian",
-                "requires": [
-                    {
-                        "or": [
-                            {"type": "hw.device-type", "slug": "artik10"},
-                            {"type": "hw.device-type", "slug": "raspberry-pi"}
-                        ]
-                    }
-                ]
-            })),
-            contract(json!({
-                "type": "hw.device-type",
-                "slug": "artik10",
-                "name": "Samsung Artik 10",
-                "requires": [{"type": "arch.sw", "slug": "amd64"}]
-            })),
-            contract(json!({
-                "type": "arch.sw",
-                "slug": "armv7hf",
-                "name": "armv7hf"
-            })),
-        ]);
+        container
+            .add_children(vec![
+                contract(json!({
+                    "type": "sw.os",
+                    "name": "Debian",
+                    "slug": "debian",
+                    "requires": [
+                        {
+                            "or": [
+                                {"type": "hw.device-type", "slug": "artik10"},
+                                {"type": "hw.device-type", "slug": "raspberry-pi"}
+                            ]
+                        }
+                    ]
+                })),
+                contract(json!({
+                    "type": "hw.device-type",
+                    "slug": "artik10",
+                    "name": "Samsung Artik 10",
+                    "requires": [{"type": "arch.sw", "slug": "amd64"}]
+                })),
+                contract(json!({
+                    "type": "arch.sw",
+                    "slug": "armv7hf",
+                    "name": "armv7hf"
+                })),
+            ])
+            .unwrap();
         assert!(!container.are_children_satisfied(None));
     }
 
     #[test]
     fn are_children_satisfied_returns_false_for_missing_requirement() {
         let mut container = container();
-        container.add_children(vec![contract(json!({
-            "type": "sw.os",
-            "name": "Debian",
-            "slug": "debian",
-            "requires": [{"type": "hw.device-type", "slug": "artik10"}]
-        }))]);
+        container
+            .add_children(vec![contract(json!({
+                "type": "sw.os",
+                "name": "Debian",
+                "slug": "debian",
+                "requires": [{"type": "hw.device-type", "slug": "artik10"}]
+            }))])
+            .unwrap();
         assert!(!container.are_children_satisfied(None));
     }
 
@@ -4102,12 +4251,14 @@ mod tests {
         // disjoint with the filter, so the child is skipped and the
         // overall check is trivially satisfied.
         let mut container = container();
-        container.add_children(vec![contract(json!({
-            "type": "sw.os",
-            "name": "Debian",
-            "slug": "debian",
-            "requires": [{"type": "hw.device-type", "slug": "artik10"}]
-        }))]);
+        container
+            .add_children(vec![contract(json!({
+                "type": "sw.os",
+                "name": "Debian",
+                "slug": "debian",
+                "requires": [{"type": "hw.device-type", "slug": "artik10"}]
+            }))])
+            .unwrap();
         let allowed: &[&str] = &["arch.sw"];
         assert!(container.are_children_satisfied(Some(allowed)));
     }
@@ -4115,32 +4266,34 @@ mod tests {
     #[test]
     fn are_children_satisfied_types_filter_satisfied_subset() {
         let mut container = container();
-        container.add_children(vec![
-            contract(json!({
-                "type": "sw.os",
-                "name": "Debian",
-                "slug": "debian",
-                "requires": [
-                    {
-                        "or": [
-                            {"type": "hw.device-type", "slug": "artik10"},
-                            {"type": "hw.device-type", "slug": "raspberry-pi"}
-                        ]
-                    }
-                ]
-            })),
-            contract(json!({
-                "type": "hw.device-type",
-                "slug": "artik10",
-                "name": "Samsung Artik 10",
-                "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
-            })),
-            contract(json!({
-                "type": "arch.sw",
-                "slug": "armv7hf",
-                "name": "armv7hf"
-            })),
-        ]);
+        container
+            .add_children(vec![
+                contract(json!({
+                    "type": "sw.os",
+                    "name": "Debian",
+                    "slug": "debian",
+                    "requires": [
+                        {
+                            "or": [
+                                {"type": "hw.device-type", "slug": "artik10"},
+                                {"type": "hw.device-type", "slug": "raspberry-pi"}
+                            ]
+                        }
+                    ]
+                })),
+                contract(json!({
+                    "type": "hw.device-type",
+                    "slug": "artik10",
+                    "name": "Samsung Artik 10",
+                    "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
+                })),
+                contract(json!({
+                    "type": "arch.sw",
+                    "slug": "armv7hf",
+                    "name": "armv7hf"
+                })),
+            ])
+            .unwrap();
         let allowed: &[&str] = &["hw.device-type"];
         assert!(container.are_children_satisfied(Some(allowed)));
     }
@@ -4148,32 +4301,34 @@ mod tests {
     #[test]
     fn are_children_satisfied_types_filter_satisfied_in_unsatisfied_context() {
         let mut container = container();
-        container.add_children(vec![
-            contract(json!({
-                "type": "sw.os",
-                "name": "Debian",
-                "slug": "debian",
-                "requires": [
-                    {
-                        "or": [
-                            {"type": "hw.device-type", "slug": "intel-edison"},
-                            {"type": "hw.device-type", "slug": "raspberry-pi"}
-                        ]
-                    }
-                ]
-            })),
-            contract(json!({
-                "type": "hw.device-type",
-                "slug": "artik10",
-                "name": "Samsung Artik 10",
-                "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
-            })),
-            contract(json!({
-                "type": "arch.sw",
-                "slug": "armv7hf",
-                "name": "armv7hf"
-            })),
-        ]);
+        container
+            .add_children(vec![
+                contract(json!({
+                    "type": "sw.os",
+                    "name": "Debian",
+                    "slug": "debian",
+                    "requires": [
+                        {
+                            "or": [
+                                {"type": "hw.device-type", "slug": "intel-edison"},
+                                {"type": "hw.device-type", "slug": "raspberry-pi"}
+                            ]
+                        }
+                    ]
+                })),
+                contract(json!({
+                    "type": "hw.device-type",
+                    "slug": "artik10",
+                    "name": "Samsung Artik 10",
+                    "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
+                })),
+                contract(json!({
+                    "type": "arch.sw",
+                    "slug": "armv7hf",
+                    "name": "armv7hf"
+                })),
+            ])
+            .unwrap();
         let allowed: &[&str] = &["arch.sw"];
         assert!(container.are_children_satisfied(Some(allowed)));
     }
@@ -4184,32 +4339,34 @@ mod tests {
         // filter is disjoint for every child and the whole check is
         // trivially satisfied.
         let mut container = container();
-        container.add_children(vec![
-            contract(json!({
-                "type": "sw.os",
-                "name": "Debian",
-                "slug": "debian",
-                "requires": [
-                    {
-                        "or": [
-                            {"type": "hw.device-type", "slug": "intel-edison"},
-                            {"type": "hw.device-type", "slug": "raspberry-pi"}
-                        ]
-                    }
-                ]
-            })),
-            contract(json!({
-                "type": "hw.device-type",
-                "slug": "artik10",
-                "name": "Samsung Artik 10",
-                "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
-            })),
-            contract(json!({
-                "type": "arch.sw",
-                "slug": "armv7hf",
-                "name": "armv7hf"
-            })),
-        ]);
+        container
+            .add_children(vec![
+                contract(json!({
+                    "type": "sw.os",
+                    "name": "Debian",
+                    "slug": "debian",
+                    "requires": [
+                        {
+                            "or": [
+                                {"type": "hw.device-type", "slug": "intel-edison"},
+                                {"type": "hw.device-type", "slug": "raspberry-pi"}
+                            ]
+                        }
+                    ]
+                })),
+                contract(json!({
+                    "type": "hw.device-type",
+                    "slug": "artik10",
+                    "name": "Samsung Artik 10",
+                    "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
+                })),
+                contract(json!({
+                    "type": "arch.sw",
+                    "slug": "armv7hf",
+                    "name": "armv7hf"
+                })),
+            ])
+            .unwrap();
         let allowed: &[&str] = &["foo"];
         assert!(container.are_children_satisfied(Some(allowed)));
     }
@@ -4217,32 +4374,34 @@ mod tests {
     #[test]
     fn are_children_satisfied_types_filter_unsatisfied_returns_false() {
         let mut container = container();
-        container.add_children(vec![
-            contract(json!({
-                "type": "sw.os",
-                "name": "Debian",
-                "slug": "debian",
-                "requires": [
-                    {
-                        "or": [
-                            {"type": "hw.device-type", "slug": "intel-edison"},
-                            {"type": "hw.device-type", "slug": "raspberry-pi"}
-                        ]
-                    }
-                ]
-            })),
-            contract(json!({
-                "type": "hw.device-type",
-                "slug": "artik10",
-                "name": "Samsung Artik 10",
-                "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
-            })),
-            contract(json!({
-                "type": "arch.sw",
-                "slug": "armv7hf",
-                "name": "armv7hf"
-            })),
-        ]);
+        container
+            .add_children(vec![
+                contract(json!({
+                    "type": "sw.os",
+                    "name": "Debian",
+                    "slug": "debian",
+                    "requires": [
+                        {
+                            "or": [
+                                {"type": "hw.device-type", "slug": "intel-edison"},
+                                {"type": "hw.device-type", "slug": "raspberry-pi"}
+                            ]
+                        }
+                    ]
+                })),
+                contract(json!({
+                    "type": "hw.device-type",
+                    "slug": "artik10",
+                    "name": "Samsung Artik 10",
+                    "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
+                })),
+                contract(json!({
+                    "type": "arch.sw",
+                    "slug": "armv7hf",
+                    "name": "armv7hf"
+                })),
+            ])
+            .unwrap();
         let allowed: &[&str] = &["hw.device-type"];
         assert!(!container.are_children_satisfied(Some(allowed)));
     }
@@ -4250,32 +4409,34 @@ mod tests {
     #[test]
     fn are_children_satisfied_mixed_filter_returns_false_when_one_type_unsatisfied() {
         let mut container = container();
-        container.add_children(vec![
-            contract(json!({
-                "type": "sw.os",
-                "name": "Debian",
-                "slug": "debian",
-                "requires": [
-                    {
-                        "or": [
-                            {"type": "hw.device-type", "slug": "intel-edison"},
-                            {"type": "hw.device-type", "slug": "raspberry-pi"}
-                        ]
-                    }
-                ]
-            })),
-            contract(json!({
-                "type": "hw.device-type",
-                "slug": "artik10",
-                "name": "Samsung Artik 10",
-                "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
-            })),
-            contract(json!({
-                "type": "arch.sw",
-                "slug": "armv7hf",
-                "name": "armv7hf"
-            })),
-        ]);
+        container
+            .add_children(vec![
+                contract(json!({
+                    "type": "sw.os",
+                    "name": "Debian",
+                    "slug": "debian",
+                    "requires": [
+                        {
+                            "or": [
+                                {"type": "hw.device-type", "slug": "intel-edison"},
+                                {"type": "hw.device-type", "slug": "raspberry-pi"}
+                            ]
+                        }
+                    ]
+                })),
+                contract(json!({
+                    "type": "hw.device-type",
+                    "slug": "artik10",
+                    "name": "Samsung Artik 10",
+                    "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
+                })),
+                contract(json!({
+                    "type": "arch.sw",
+                    "slug": "armv7hf",
+                    "name": "armv7hf"
+                })),
+            ])
+            .unwrap();
         let allowed: &[&str] = &["arch.sw", "hw.device-type"];
         assert!(!container.are_children_satisfied(Some(allowed)));
     }
@@ -4283,32 +4444,34 @@ mod tests {
     #[test]
     fn are_children_satisfied_two_satisfied_types_returns_true() {
         let mut container = container();
-        container.add_children(vec![
-            contract(json!({
-                "type": "sw.os",
-                "name": "Debian",
-                "slug": "debian",
-                "requires": [
-                    {
-                        "or": [
-                            {"type": "hw.device-type", "slug": "artik10"},
-                            {"type": "hw.device-type", "slug": "raspberry-pi"}
-                        ]
-                    }
-                ]
-            })),
-            contract(json!({
-                "type": "hw.device-type",
-                "slug": "artik10",
-                "name": "Samsung Artik 10",
-                "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
-            })),
-            contract(json!({
-                "type": "arch.sw",
-                "slug": "armv7hf",
-                "name": "armv7hf"
-            })),
-        ]);
+        container
+            .add_children(vec![
+                contract(json!({
+                    "type": "sw.os",
+                    "name": "Debian",
+                    "slug": "debian",
+                    "requires": [
+                        {
+                            "or": [
+                                {"type": "hw.device-type", "slug": "artik10"},
+                                {"type": "hw.device-type", "slug": "raspberry-pi"}
+                            ]
+                        }
+                    ]
+                })),
+                contract(json!({
+                    "type": "hw.device-type",
+                    "slug": "artik10",
+                    "name": "Samsung Artik 10",
+                    "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
+                })),
+                contract(json!({
+                    "type": "arch.sw",
+                    "slug": "armv7hf",
+                    "name": "armv7hf"
+                })),
+            ])
+            .unwrap();
         let allowed: &[&str] = &["arch.sw", "hw.device-type"];
         assert!(container.are_children_satisfied(Some(allowed)));
     }
@@ -4438,7 +4601,9 @@ mod tests {
     #[test]
     fn get_not_satisfied_reports_single_unfulfilled_match() {
         let mut container = container();
-        container.add_children(vec![sw_os("debian", "wheezy")]);
+        container
+            .add_children(vec![sw_os("debian", "wheezy")])
+            .unwrap();
         let child = stack_with_requires(json!([
             {"slug": "void", "type": "sw.os"}
         ]));
@@ -4456,7 +4621,9 @@ mod tests {
     #[test]
     fn get_not_satisfied_reports_all_unfulfilled_conjuncts() {
         let mut container = container();
-        container.add_children(vec![sw_os("debian", "wheezy")]);
+        container
+            .add_children(vec![sw_os("debian", "wheezy")])
+            .unwrap();
         let child = stack_with_requires(json!([
             {"slug": "void", "type": "sw.os"},
             {"slug": "missing", "type": "hw.device-type"}
@@ -4468,7 +4635,9 @@ mod tests {
     #[test]
     fn get_not_satisfied_empty_for_fulfilled_child() {
         let mut container = container();
-        container.add_children(vec![sw_os("debian", "wheezy")]);
+        container
+            .add_children(vec![sw_os("debian", "wheezy")])
+            .unwrap();
         let child = stack_with_requires(json!([
             {"slug": "debian", "type": "sw.os", "version": "wheezy"}
         ]));
@@ -4481,17 +4650,19 @@ mod tests {
     #[test]
     fn get_all_not_satisfied_empty_when_everything_satisfied() {
         let mut container = container();
-        container.add_children(vec![
-            contract(json!({
-                "type": "sw.os",
-                "slug": "debian",
-                "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
-            })),
-            contract(json!({
-                "type": "arch.sw",
-                "slug": "armv7hf"
-            })),
-        ]);
+        container
+            .add_children(vec![
+                contract(json!({
+                    "type": "sw.os",
+                    "slug": "debian",
+                    "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
+                })),
+                contract(json!({
+                    "type": "arch.sw",
+                    "slug": "armv7hf"
+                })),
+            ])
+            .unwrap();
         let out = container.get_all_not_satisfied_child_requirements(None);
         assert!(out.is_empty());
     }
@@ -4499,11 +4670,13 @@ mod tests {
     #[test]
     fn get_all_not_satisfied_reports_missing_requirements() {
         let mut container = container();
-        container.add_children(vec![contract(json!({
-            "type": "sw.os",
-            "slug": "debian",
-            "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
-        }))]);
+        container
+            .add_children(vec![contract(json!({
+                "type": "sw.os",
+                "slug": "debian",
+                "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
+            }))])
+            .unwrap();
         let out = container.get_all_not_satisfied_child_requirements(None);
         assert_eq!(out.len(), 1);
         match &out[0] {
@@ -4523,11 +4696,13 @@ mod tests {
         // wholesale because they can't possibly be satisfied within
         // the current scope.
         let mut container = container();
-        container.add_children(vec![contract(json!({
-            "type": "sw.os",
-            "slug": "debian",
-            "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
-        }))]);
+        container
+            .add_children(vec![contract(json!({
+                "type": "sw.os",
+                "slug": "debian",
+                "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
+            }))])
+            .unwrap();
         let allowed: &[&str] = &["hw.device-type"];
         let out = container.get_all_not_satisfied_child_requirements(Some(allowed));
         assert_eq!(out.len(), 1);
@@ -4536,7 +4711,9 @@ mod tests {
     #[test]
     fn get_all_not_satisfied_empty_when_child_has_no_requirements() {
         let mut container = container();
-        container.add_children(vec![sw_os("debian", "wheezy")]);
+        container
+            .add_children(vec![sw_os("debian", "wheezy")])
+            .unwrap();
         let out = container.get_all_not_satisfied_child_requirements(None);
         assert!(out.is_empty());
     }
@@ -4555,18 +4732,20 @@ mod tests {
         //   single unsatisfied `arch.sw` match because no child of
         //   that type exists in the container
         let mut container = container();
-        container.add_children(vec![
-            contract(json!({
-                "type": "sw.os",
-                "slug": "debian",
-                "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
-            })),
-            contract(json!({
-                "type": "sw.stack",
-                "slug": "nodejs",
-                "requires": [{"type": "hw.device-type", "slug": "artik10"}]
-            })),
-        ]);
+        container
+            .add_children(vec![
+                contract(json!({
+                    "type": "sw.os",
+                    "slug": "debian",
+                    "requires": [{"type": "arch.sw", "slug": "armv7hf"}]
+                })),
+                contract(json!({
+                    "type": "sw.stack",
+                    "slug": "nodejs",
+                    "requires": [{"type": "hw.device-type", "slug": "artik10"}]
+                })),
+            ])
+            .unwrap();
         let allowed: &[&str] = &["arch.sw"];
         let out = container.get_all_not_satisfied_child_requirements(Some(allowed));
         assert_eq!(out.len(), 2);
@@ -4589,11 +4768,13 @@ mod tests {
         // descendant references an unknown type; without a filter,
         // the requirement must be checked and found unsatisfied.
         let mut container = container();
-        container.add_children(vec![contract(json!({
-            "type": "sw.os",
-            "slug": "debian",
-            "requires": [{"type": "hw.device-type", "slug": "artik10"}]
-        }))]);
+        container
+            .add_children(vec![contract(json!({
+                "type": "sw.os",
+                "slug": "debian",
+                "requires": [{"type": "hw.device-type", "slug": "artik10"}]
+            }))])
+            .unwrap();
         assert!(!container.are_children_satisfied(None));
     }
 

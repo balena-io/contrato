@@ -128,7 +128,7 @@ let source: RawContract = serde_json::from_value(serde_json::json!({
     ]
 })).unwrap();
 
-let contracts = Contract::build(source);
+let contracts = Contract::build(source).unwrap();
 assert_eq!(contracts.len(), 2);
 assert_eq!(contracts[0].get_version(), Some("3.19".to_string()));
 assert_eq!(contracts[1].get_version(), Some("3.20".to_string()));
@@ -149,7 +149,7 @@ let os: Contract = serde_json::from_value(serde_json::json!({
     "version": "12"
 })).unwrap();
 
-universe.add_child(os);
+universe.add_child(os).unwrap();
 assert_eq!(universe.get_children().len(), 1);
 ```
 

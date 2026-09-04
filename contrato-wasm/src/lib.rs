@@ -165,8 +165,12 @@ impl WasmContract {
     /// Invalidates the hash cache; the children subtree is left
     /// untouched — each child was already interpolated against its own
     /// fields at construction.
-    pub fn interpolate(&mut self) {
-        self.inner.interpolate();
+    ///
+    /// Throws when a templated field resolves to an invalid value (an
+    /// interpolated `type` or `slug` that is not a legal identifier);
+    /// the contract is left untouched in that case.
+    pub fn interpolate(&mut self) -> Result<(), JsValue> {
+        self.inner.interpolate().map_err(wasm_err)
     }
 
     // ── children management ─────────────────────────────────────────────

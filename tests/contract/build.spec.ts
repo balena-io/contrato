@@ -333,4 +333,15 @@ describe('Contract build', () => {
 			}),
 		]);
 	});
+
+	it('should reject a variant that completes a slug template with an invalid value', () => {
+		// The slug template is checked once the variant fills it in.
+		expect(() =>
+			Contract.build({
+				type: 'sw.os',
+				slug: '{{this.data.name}}',
+				variants: [{ data: { name: 'debian wheezy' } }],
+			}),
+		).to.throw('invalid slug');
+	});
 });

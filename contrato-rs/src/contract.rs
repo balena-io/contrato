@@ -32,8 +32,45 @@ use crate::hash::hash_object;
 use crate::index::ContractIndex;
 use crate::matcher::{partial_match, version_match};
 use crate::template;
-use crate::types::{ContractMatcher, ContractRequirement, RawContract, Slug, VersionReq};
+use crate::types::{
+    ContractMatcher, ContractRequirement, RawContract, Slug, VersionReq, validate_kind,
+    validate_slug,
+};
 use crate::variants;
+
+/// Validates the identifier fields of a compiled contract.
+///
+/// `type`, `slug`, `canonicalSlug` and the aliases are the only fields
+/// interpolation can invalidate; every other field either takes free text
+/// or, like [`Version`](crate::Version), falls back to an identifier for
+/// whatever it cannot parse.
+fn validate_identifiers(compiled: &Value) -> Result<(), Error> {
+    if let Some(kind) = compiled.get("type").and_then(Value::as_str) {
+        validate_kind(kind).map_err(|source| Error::InvalidIdentifier {
+            field: "type",
+            source,
+        })?;
+    }
+    for field in ["slug", "canonicalSlug"] {
+        if let Some(slug) = compiled.get(field).and_then(Value::as_str) {
+            validate_slug(slug).map_err(|source| Error::InvalidIdentifier { field, source })?;
+        }
+    }
+    for alias in compiled
+        .get("aliases")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+    {
+        validate_slug(alias).map_err(|source| Error::InvalidIdentifier {
+            field: "alias",
+            source,
+        })?;
+    }
+
+    Ok(())
+}
 
 /// Compiled requirements derived from `raw.requires`.
 ///
@@ -107,11 +144,12 @@ impl Contract {
     ///
     /// # Errors
     ///
-    /// Returns one of [`Error::OverlappingChildTypes`],
-    /// [`Error::MissingChildSlug`] or [`Error::InvalidChildType`] when
-    /// the children cannot be nested into a tree. Children are
-    /// constructed recursively, so an error from any descendant
-    /// propagates here.
+    /// Returns [`Error::InvalidIdentifier`] when interpolation resolves
+    /// a templated field to an invalid value, and one of
+    /// [`Error::OverlappingChildTypes`], [`Error::MissingChildSlug`] or
+    /// [`Error::InvalidChildType`] when the children cannot be nested
+    /// into a tree. Children are constructed recursively, so an error
+    /// from any descendant propagates here.
     pub(crate) fn new(raw: RawContract) -> Result<Self, Error> {
         let mut this = Self {
             raw,
@@ -123,7 +161,7 @@ impl Contract {
         // Templates are compiled before the children are extracted so
         // that `{{this.children.*}}` references still resolve against
         // the incoming tree.
-        this.compile_templates();
+        this.compile_templates()?;
 
         // The tree is moved out instead of cloned: `rebuild` below
         // regenerates `raw.children` from the index, so the incoming
@@ -156,22 +194,33 @@ impl Contract {
     /// child is its own contract and is interpolated against its own
     /// fields during its own construction. [`Self::rebuild`] is called
     /// at the end, which invalidates the hash cell.
-    pub fn interpolate(&mut self) {
-        self.compile_templates();
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidIdentifier`] when a templated field now
+    /// resolves to an invalid value — for example a `slug` template
+    /// pointing at a child name that contains a space.
+    pub fn interpolate(&mut self) -> Result<(), Error> {
+        self.compile_templates()?;
         self.rebuild();
+        Ok(())
     }
 
     /// Compiles `{{this.*}}` templates in `raw` in place, leaving derived
     /// state untouched.
-    fn compile_templates(&mut self) {
+    fn compile_templates(&mut self) -> Result<(), Error> {
         let mut blacklist = HashSet::new();
         blacklist.insert("children".to_string());
 
         let raw_value =
             serde_json::to_value(&self.raw).expect("RawContract must serialize to JSON");
         let compiled = template::compile_contract(&raw_value, &blacklist, None);
+
+        // Validate identifiers before deserialization to surface the appropriate error
+        validate_identifiers(&compiled)?;
         self.raw = serde_json::from_value(compiled)
-            .expect("compiled contract must deserialize into RawContract");
+            .expect("a compiled RawContract must deserialize into one");
+        Ok(())
     }
 
     /// Rebuilds derived state from the current children index and
@@ -1472,7 +1521,7 @@ mod tests {
             .as_object_mut()
             .unwrap()
             .insert("codename".to_string(), json!("Wheezy"));
-        c.interpolate();
+        c.interpolate().unwrap();
 
         assert_eq!(c.raw.body.name.as_deref(), Some("Debian Wheezy"));
     }
@@ -1534,8 +1583,96 @@ mod tests {
             "name": "Debian"
         }));
         let original = c.hash().to_string();
-        c.interpolate();
+        c.interpolate().unwrap();
         assert_eq!(c.hash(), original);
+    }
+
+    /// A templated identifier is validated once interpolated, not at
+    /// parse time.
+    #[test]
+    fn interpolated_identifiers_that_are_invalid_are_rejected() {
+        for (body, expected_field, offender) in [
+            (
+                json!({
+                    "type": "sw.{{this.data.kind}}",
+                    "slug": "debian",
+                    "data": { "kind": "os arch" }
+                }),
+                "type",
+                "sw.os arch",
+            ),
+            (
+                json!({
+                    "type": "sw.os",
+                    "slug": "{{this.data.name}}",
+                    "data": { "name": "1debian" }
+                }),
+                "slug",
+                "1debian",
+            ),
+            (
+                json!({
+                    "type": "sw.os",
+                    "slug": "debian",
+                    "aliases": ["{{this.data.alias}}"],
+                    "data": { "alias": "deb_ian" }
+                }),
+                "alias",
+                "deb_ian",
+            ),
+        ] {
+            let err = Contract::new(raw(body)).unwrap_err();
+            assert!(
+                matches!(&err, Error::InvalidIdentifier { field, .. } if *field == expected_field),
+                "{err}"
+            );
+            assert!(err.to_string().contains(offender), "{err}");
+        }
+    }
+
+    /// A `{{this.children.*}}` template only resolves once the children
+    /// are in place, so an invalid result surfaces on `interpolate`. The
+    /// contract is left unchanged.
+    #[test]
+    fn interpolate_after_mutation_rejects_an_invalid_result() {
+        let mut c = contract(json!({
+            "type": "sw.os",
+            "slug": "{{this.children.hw.device-type.name}}"
+        }));
+        c.add_child(contract(json!({
+            "type": "hw.device-type",
+            "slug": "raspberrypi4",
+            "name": "Raspberry Pi 4"
+        })))
+        .unwrap();
+        let before = serde_json::to_value(&c).unwrap();
+
+        let err = c.interpolate().unwrap_err();
+        assert!(
+            matches!(&err, Error::InvalidIdentifier { field: "slug", .. }),
+            "{err}"
+        );
+        assert_eq!(
+            serde_json::to_value(&c).unwrap(),
+            before,
+            "a failed interpolation must leave the contract untouched"
+        );
+    }
+
+    /// A variant can complete a templated field with an invalid value.
+    #[test]
+    fn build_rejects_a_variant_that_interpolates_to_an_invalid_slug() {
+        let err = Contract::build(raw(json!({
+            "type": "sw.os",
+            "slug": "{{this.data.name}}",
+            "variants": [{ "data": { "name": "debian wheezy" } }]
+        })))
+        .unwrap_err();
+
+        assert!(
+            matches!(&err, Error::InvalidIdentifier { field: "slug", .. }),
+            "{err}"
+        );
     }
 
     // ── Serialize (replaces the old `to_json` helper) ───────────────────

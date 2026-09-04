@@ -340,4 +340,26 @@ describe('Contract children', () => {
 		expect(contract.getSlug()).to.equal(undefined);
 		expect(contract.getChildren()).to.have.lengthOf(1);
 	});
+
+	it('should keep a dotted slug as a single key in the children tree', () => {
+		// A slug is one key however many dots it has; only the type is a path.
+		const contract = new Contract({
+			type: 'meta.universe',
+			slug: 'universe',
+			children: [
+				{ type: 'sw.os', slug: 'node.js' },
+				{ type: 'sw.os', slug: 'debian.' },
+			],
+		});
+
+		expect(contract.raw().children).to.deep.equal({
+			sw: {
+				os: {
+					'node.js': { type: 'sw.os', slug: 'node.js' },
+					'debian.': { type: 'sw.os', slug: 'debian.' },
+				},
+			},
+		});
+		expect(new Contract(contract.raw()).hash()).to.equal(contract.hash());
+	});
 });

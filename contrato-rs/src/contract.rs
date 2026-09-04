@@ -188,10 +188,7 @@ impl Contract {
         self.raw.body.children = if self.children.is_empty() {
             None
         } else {
-            Some(
-                children_tree::build(&self.children)
-                    .expect("children tree must build without path conflicts"),
-            )
+            Some(children_tree::build(&self.children))
         };
 
         let mut requirements = RequirementsIndex {
@@ -3015,6 +3012,27 @@ mod tests {
             "debian",
             "the sole remaining child moves up to the type path"
         );
+    }
+
+    /// A dotted slug is one key in the children tree, not a path.
+    #[test]
+    fn a_dotted_slug_stays_one_key_in_the_tree() {
+        let mut parent = container();
+        parent
+            .add_children(vec![
+                contract(json!({ "type": "sw.os", "slug": "node.js" })),
+                contract(json!({ "type": "sw.os", "slug": "debian." })),
+            ])
+            .unwrap();
+
+        let json = serde_json::to_value(&parent).unwrap();
+        assert_eq!(
+            json.pointer("/children/sw/os/node.js/slug").unwrap(),
+            "node.js"
+        );
+
+        let round: Contract = serde_json::from_value(json).unwrap();
+        assert_eq!(round, parent);
     }
 
     /// A child is rejected for having no slug whether or not it has

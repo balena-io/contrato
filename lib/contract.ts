@@ -14,14 +14,8 @@ function typesArg(types?: Set<string>): string[] | undefined {
 
 export default class Contract {
 	// The WASM-backed contract. A native private field, so the opaque handle
-	// cannot leak into `deep.equal` comparisons or JSON serialization.
+	// cannot leak into JSON serialization.
 	#inner: WasmContract;
-
-	// `$raw` is installed as an own, *enumerable* accessor by the constructor
-	// so that structural equality (chai `deep.equal`) compares two contracts
-	// by their JSON content — including children — rather than by the opaque
-	// WASM handle.
-	declare protected $raw: ContractObject;
 
 	/**
 	 * @summary Get a deep copy of the raw serializable contract
@@ -36,10 +30,10 @@ export default class Contract {
 	 * console.log(contract.raw())
 	 */
 	public raw(): ContractObject {
-		// `$raw` crosses the WASM boundary and yields a fresh object on every
-		// access, so no further cloning is needed to keep callers from mutating
-		// the contract's internals.
-		return this.$raw;
+		// The JSON crosses the WASM boundary and yields a fresh object on
+		// every call, so no further cloning is needed to keep callers from
+		// mutating the contract's internals.
+		return this.#inner.toJSON();
 	}
 
 	/**
@@ -64,11 +58,6 @@ export default class Contract {
 		// passed in from outside this module.
 		this.#inner =
 			object instanceof WasmContract ? object : new WasmContract(object);
-		Object.defineProperty(this, '$raw', {
-			get: (): ContractObject => this.#inner.toJSON(),
-			enumerable: true,
-			configurable: true,
-		});
 	}
 
 	// Wraps a handle returned by WASM.
@@ -96,6 +85,31 @@ export default class Contract {
 	 */
 	hash(): string {
 		return this.#inner.hash();
+	}
+
+	/**
+	 * @summary Check if this contract is equal to another one
+	 * @function
+	 * @name module:contrato.Contract#isEqual
+	 * @public
+	 *
+	 * @description
+	 * The method form of `Contract.isEqual`, for the common case of
+	 * comparing against a contract at hand.
+	 *
+	 * @param {Object} contract - the contract to compare against
+	 * @returns {Boolean} whether the contracts are equal
+	 *
+	 * @example
+	 * const contract1 = new Contract({ ... })
+	 * const contract2 = new Contract({ ... })
+	 *
+	 * if (contract1.isEqual(contract2)) {
+	 *   console.log('These contracts are equal')
+	 * }
+	 */
+	isEqual(contract: Contract): boolean {
+		return Contract.isEqual(this, contract);
 	}
 
 	/**
@@ -286,7 +300,7 @@ export default class Contract {
 	 * console.log(JSON.stringify(object))
 	 */
 	toJSON(): ContractObject {
-		return this.$raw;
+		return this.raw();
 	}
 
 	/**
@@ -358,7 +372,7 @@ export default class Contract {
 	 */
 	addChildren(contracts: Contract[] = []): this {
 		// we clone the passed contracts because the Rust side consumes the array
-		this.#inner.addChildren(contracts.map((c) => new WasmContract(c.$raw)));
+		this.#inner.addChildren(contracts.map((c) => new WasmContract(c.raw())));
 		return this;
 	}
 
@@ -602,7 +616,7 @@ export default class Contract {
 		const cardinality = options['cardinality'] ?? options;
 		if (options['filter']) {
 			contracts = contracts.filter((con) => {
-				return isValid(options['filter'], con.$raw);
+				return isValid(options['filter'], con.raw());
 			});
 		}
 		if (contracts.length > 0) {
@@ -1011,6 +1025,16 @@ export default class Contract {
 	 * @name module:contrato.Contract.isEqual
 	 * @public
 	 *
+	 * @description
+	 * Contracts are equal when their hashes match. The hash is a
+	 * deterministic digest of the contract's raw object, children
+	 * included, so equality means the two contracts hold the same
+	 * content. Children are keyed by type and slug, so the order they
+	 * were added in does not matter, but the order of array-valued
+	 * fields such as `aliases` does.
+	 *
+	 * Also available as a method, see `Contract#isEqual`.
+	 *
 	 * @param {Object} contract1 - a contract
 	 * @param {Object} contract2 - a contract
 	 * @returns {Boolean} whether the contracts are equal
@@ -1081,6 +1105,6 @@ export default class Contract {
 		// Returns an independent copy backed by its own WASM handle. Needed
 		// because the internal `#inner` handle is a native private field, so a
 		// generic (shallow) clone would drop it and leave a broken contract.
-		return new Contract(this.$raw);
+		return new Contract(this.raw());
 	}
 }

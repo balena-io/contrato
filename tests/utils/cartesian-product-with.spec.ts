@@ -21,6 +21,19 @@ describe('cartesianProductWith', () => {
 		expect([...product]).to.deep.equal([]);
 	});
 
+	it('should perform a cartesian product of empty sets with a seeded accumulator', () => {
+		const product = cartesianProductWith(
+			[[], []],
+			(accumulator: string[], element: string) => {
+				return _.concat(accumulator, [element]);
+			},
+			[['seed']],
+		);
+
+		// There is nothing to combine, so the seed is not a combination
+		expect([...product]).to.deep.equal([]);
+	});
+
 	it('should perform a cartesian product of a valid and an empty set', () => {
 		const product = cartesianProductWith(
 			[['foo'], [], []],

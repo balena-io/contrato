@@ -49,7 +49,7 @@ describe('Contract getChilredCombinations', () => {
 				from: 1,
 				to: 1,
 			}),
-		).to.deep.equal([[new Contract(CONTRACTS['sw.os'].debian.wheezy.object)]]);
+		).to.equalByHash([[new Contract(CONTRACTS['sw.os'].debian.wheezy.object)]]);
 	});
 
 	it('should return combinations of cardinality 1 for two contracts', () => {
@@ -70,7 +70,7 @@ describe('Contract getChilredCombinations', () => {
 				from: 1,
 				to: 1,
 			}),
-		).to.deep.equal([
+		).to.equalByHash([
 			[new Contract(CONTRACTS['sw.os'].debian.wheezy.object)],
 			[new Contract(CONTRACTS['sw.os'].debian.jessie.object)],
 		]);
@@ -95,7 +95,7 @@ describe('Contract getChilredCombinations', () => {
 				from: 1,
 				to: 1,
 			}),
-		).to.deep.equal([
+		).to.equalByHash([
 			[new Contract(CONTRACTS['sw.os'].debian.wheezy.object)],
 			[new Contract(CONTRACTS['sw.os'].debian.jessie.object)],
 			[new Contract(CONTRACTS['sw.os'].fedora['25'].object)],
@@ -120,7 +120,7 @@ describe('Contract getChilredCombinations', () => {
 				from: 2,
 				to: 2,
 			}),
-		).to.deep.equal([
+		).to.equalByHash([
 			[
 				new Contract(CONTRACTS['sw.os'].debian.wheezy.object),
 				new Contract(CONTRACTS['sw.os'].debian.jessie.object),
@@ -147,7 +147,7 @@ describe('Contract getChilredCombinations', () => {
 				from: 2,
 				to: 2,
 			}),
-		).to.deep.equal([
+		).to.equalByHash([
 			[
 				new Contract(CONTRACTS['sw.os'].debian.wheezy.object),
 				new Contract(CONTRACTS['sw.os'].debian.jessie.object),
@@ -202,7 +202,7 @@ describe('Contract getChilredCombinations', () => {
 				from: 1,
 				to: 2,
 			}),
-		).to.deep.equal([[new Contract(CONTRACTS['sw.os'].debian.wheezy.object)]]);
+		).to.equalByHash([[new Contract(CONTRACTS['sw.os'].debian.wheezy.object)]]);
 	});
 
 	it('should return combinations from 1 to 2 for two contracts', () => {
@@ -223,7 +223,7 @@ describe('Contract getChilredCombinations', () => {
 				from: 1,
 				to: 2,
 			}),
-		).to.deep.equal([
+		).to.equalByHash([
 			[new Contract(CONTRACTS['sw.os'].debian.wheezy.object)],
 			[new Contract(CONTRACTS['sw.os'].debian.jessie.object)],
 			[
@@ -251,7 +251,7 @@ describe('Contract getChilredCombinations', () => {
 				from: 1,
 				to: 3,
 			}),
-		).to.deep.equal([
+		).to.equalByHash([
 			[new Contract(CONTRACTS['sw.os'].debian.wheezy.object)],
 			[new Contract(CONTRACTS['sw.os'].debian.jessie.object)],
 			[
@@ -279,7 +279,7 @@ describe('Contract getChilredCombinations', () => {
 				from: 1,
 				to: 3,
 			}),
-		).to.deep.equal([
+		).to.equalByHash([
 			[new Contract(CONTRACTS['sw.os'].fedora['25'].object)],
 			[new Contract(CONTRACTS['sw.os'].debian.wheezy.object)],
 			[new Contract(CONTRACTS['sw.os'].debian.jessie.object)],
@@ -331,6 +331,6 @@ describe('Contract getChilredCombinations', () => {
 				from: 1,
 				to: 1,
 			}),
-		).to.deep.equal([[contract1], [contract2]]);
+		).to.equalByHash([[contract1], [contract2]]);
 	});
 });

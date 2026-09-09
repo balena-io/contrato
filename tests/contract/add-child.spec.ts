@@ -43,15 +43,15 @@ describe('Contract addChild', () => {
 		container.addChild(contract1);
 		container.addChild(contract2);
 
-		expect(container.getChildren()).to.have.deep.members([
+		expect(container.getChildren()).to.have.sameMembersByHash([
 			contract1,
 			contract2,
 		]);
 		expect(container.getChildrenTypes()).to.deep.equal(
 			new Set(['sw.os', 'sw.blob']),
 		);
-		expect(container.getChildrenByType('sw.os')).to.deep.equal([contract1]);
-		expect(container.getChildrenByType('sw.blob')).to.deep.equal([contract2]);
+		expect(container.getChildrenByType('sw.os')).to.equalByHash([contract1]);
+		expect(container.getChildrenByType('sw.blob')).to.equalByHash([contract2]);
 
 		expect(container.raw()).to.deep.equal({
 			type: 'foo',
@@ -74,9 +74,9 @@ describe('Contract addChild', () => {
 
 		container.addChild(contract1);
 
-		expect(container.getChildren()).to.deep.equal([contract1]);
+		expect(container.getChildren()).to.equalByHash([contract1]);
 		expect(container.getChildrenTypes()).to.deep.equal(new Set(['sw.os']));
-		expect(container.getChildrenByType('sw.os')).to.deep.equal([contract1]);
+		expect(container.getChildrenByType('sw.os')).to.equalByHash([contract1]);
 
 		expect(container.raw()).to.deep.equal({
 			type: 'foo',
@@ -101,12 +101,12 @@ describe('Contract addChild', () => {
 		container.addChild(contract1);
 		container.addChild(contract2);
 
-		expect(container.getChildren()).to.have.deep.members([
+		expect(container.getChildren()).to.have.sameMembersByHash([
 			contract1,
 			contract2,
 		]);
 		expect(container.getChildrenTypes()).to.deep.equal(new Set(['sw.os']));
-		expect(container.getChildrenByType('sw.os')).to.have.deep.members([
+		expect(container.getChildrenByType('sw.os')).to.have.sameMembersByHash([
 			contract1,
 			contract2,
 		]);
@@ -137,12 +137,12 @@ describe('Contract addChild', () => {
 		container.addChild(contract1);
 		container.addChild(contract2);
 
-		expect(container.getChildren()).to.have.deep.members([
+		expect(container.getChildren()).to.have.sameMembersByHash([
 			contract1,
 			contract2,
 		]);
 		expect(container.getChildrenTypes()).to.deep.equal(new Set(['sw.os']));
-		expect(container.getChildrenByType('sw.os')).to.have.deep.members([
+		expect(container.getChildrenByType('sw.os')).to.have.sameMembersByHash([
 			contract1,
 			contract2,
 		]);
@@ -174,13 +174,13 @@ describe('Contract addChild', () => {
 		container.addChild(contract2);
 		container.addChild(contract3);
 
-		expect(container.getChildren()).to.have.deep.members([
+		expect(container.getChildren()).to.have.sameMembersByHash([
 			contract1,
 			contract2,
 			contract3,
 		]);
 		expect(container.getChildrenTypes()).to.deep.equal(new Set(['sw.os']));
-		expect(container.getChildrenByType('sw.os')).to.have.deep.members([
+		expect(container.getChildrenByType('sw.os')).to.have.sameMembersByHash([
 			contract1,
 			contract2,
 			contract3,
@@ -206,7 +206,7 @@ describe('Contract addChild', () => {
 			slug: 'bar',
 		});
 
-		expect(container.addChild(contract1)).to.deep.equal(container);
+		expect(container.addChild(contract1)).to.equal(container);
 	});
 
 	it('should re-hash the parent contract', () => {
@@ -253,6 +253,6 @@ describe('Contract addChild', () => {
 			container.addChild(new Contract({ type: 'sw', slug: 'os' })),
 		).to.throw("'sw' is a prefix of 'sw.os'");
 
-		expect(container.getChildren()).to.deep.equal([contract1]);
+		expect(container.getChildren()).to.equalByHash([contract1]);
 	});
 });

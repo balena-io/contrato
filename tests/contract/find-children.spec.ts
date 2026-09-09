@@ -19,7 +19,7 @@ describe('Contract findChildren', () => {
 
 		container.addChild(contract1);
 
-		expect(container.findChildren(Contract.createMatcher({}))).to.deep.equal(
+		expect(container.findChildren(Contract.createMatcher({}))).to.equalByHash(
 			[],
 		);
 	});
@@ -43,7 +43,7 @@ describe('Contract findChildren', () => {
 					slug: 'fedora',
 				}),
 			),
-		).to.deep.equal([contract3]);
+		).to.equalByHash([contract3]);
 	});
 
 	it('should find a specific unique contract based on a data property', () => {
@@ -70,7 +70,7 @@ describe('Contract findChildren', () => {
 					data: { arch: 'armv7hf' },
 				}),
 			),
-		).to.deep.equal([contract4]);
+		).to.equalByHash([contract4]);
 	});
 
 	it('should find multiple contracts based on a type', () => {
@@ -91,7 +91,7 @@ describe('Contract findChildren', () => {
 					type: 'sw.os',
 				}),
 			),
-		).to.deep.equal([contract1, contract2, contract3]);
+		).to.equalByHash([contract1, contract2, contract3]);
 	});
 
 	it('should find nothing based on a non-existent type', () => {
@@ -112,7 +112,7 @@ describe('Contract findChildren', () => {
 					type: 'non-existent-type',
 				}),
 			),
-		).to.deep.equal([]);
+		).to.equalByHash([]);
 	});
 
 	it('should find nothing because of an invalid type', () => {
@@ -134,7 +134,7 @@ describe('Contract findChildren', () => {
 					slug: 'debian',
 				}),
 			),
-		).to.deep.equal([]);
+		).to.equalByHash([]);
 	});
 
 	it('should find a contract based on one of its aliases', () => {
@@ -166,7 +166,7 @@ describe('Contract findChildren', () => {
 					slug: 'rpi',
 				}),
 			),
-		).to.deep.equal([contract2]);
+		).to.equalByHash([contract2]);
 	});
 
 	it('should find a nested contract by its type and slug', () => {
@@ -190,7 +190,7 @@ describe('Contract findChildren', () => {
 					slug: 'nodejs',
 				}),
 			),
-		).to.deep.equal([contract3]);
+		).to.equalByHash([contract3]);
 	});
 
 	it('should find a nested contract by its type and another property', () => {
@@ -214,7 +214,7 @@ describe('Contract findChildren', () => {
 					version: '4.8.0',
 				}),
 			),
-		).to.deep.equal([contract3]);
+		).to.equalByHash([contract3]);
 	});
 
 	it('should fail to find a nested contract with an incorrect slug', () => {
@@ -238,7 +238,7 @@ describe('Contract findChildren', () => {
 					slug: 'jtest',
 				}),
 			),
-		).to.deep.equal([]);
+		).to.equalByHash([]);
 	});
 
 	it('should fail to find a nested contract with an incorrect type', () => {
@@ -262,7 +262,7 @@ describe('Contract findChildren', () => {
 					slug: 'nodejs',
 				}),
 			),
-		).to.deep.equal([]);
+		).to.equalByHash([]);
 	});
 
 	it('should be able to find a two level nested children using its type', () => {
@@ -285,6 +285,6 @@ describe('Contract findChildren', () => {
 					type: 'sw.blob',
 				}),
 			),
-		).to.deep.equal([contract3]);
+		).to.equalByHash([contract3]);
 	});
 });

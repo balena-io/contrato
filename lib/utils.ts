@@ -4,7 +4,6 @@
  * Proprietary and confidential.
  */
 
-import isEmpty from 'lodash/isEmpty';
 import clone from 'lodash/clone';
 
 /**
@@ -186,12 +185,10 @@ function* nextCartesianProduct<T, V>(
 	setRow: number,
 	setCol: number,
 ): IterableIterator<V> {
-	// If we have reached the last row of the sets, then we have a complete combination
-	// and we can yield a result if the combination is not empty
+	// If we have reached the last row of the sets, then we have a complete
+	// combination and we can yield a result
 	if (setRow >= sets.length) {
-		if (!isEmpty(combination)) {
-			yield combination;
-		}
+		yield combination;
 		return;
 	}
 
@@ -265,6 +262,12 @@ export function* cartesianProductWith<T, V>(
 	iteratee: (arg0: V, arg1: T) => V | undefined,
 	init: V[],
 ): IterableIterator<V> {
+	// With nothing to combine there are no combinations: every set being
+	// empty is the only way for a combination to reach the end untouched
+	if (sets.every((set) => set.length === 0)) {
+		return;
+	}
+
 	for (const combination of init) {
 		yield* nextCartesianProduct(sets, iteratee, combination, 0, 0);
 	}

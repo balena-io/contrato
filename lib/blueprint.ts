@@ -39,10 +39,11 @@ interface ParsedBlueprintLayout {
 }
 
 export default class Blueprint extends Contract {
-	declare protected $raw: BlueprintObject;
-
 	/** The parsed blueprint layout. */
 	private readonly $layout: ParsedBlueprintLayout;
+
+	// The inherited `raw()`, narrowed: a blueprint always carries a skeleton.
+	declare raw: () => BlueprintObject;
 
 	/**
 	 * @summary A blueprint contract data structure
@@ -146,7 +147,7 @@ export default class Blueprint extends Contract {
 	 */
 	reproduce(contract: Contract): IterableIterator<Contract> {
 		const layout = this.$layout;
-		const skeleton = this.$raw.skeleton;
+		const skeleton = this.raw().skeleton;
 
 		const combinations = reduce(
 			layout.finite.selectors,

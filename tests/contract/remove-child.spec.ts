@@ -25,14 +25,14 @@ it('should delete a contract from a set of contracts', () => {
 
 	const expected = new Contract(SKELETON);
 	expected.addChildren([contract1, contract3]);
-	expect(container).to.deep.equal(expected);
+	expect(container).to.equalByHash(expected);
 
 	expect(container.getChildByHash(contract2.hash())).to.equal(undefined);
 	expect(
 		container.findChildren(
 			Contract.createMatcher({ type: 'sw.os', slug: 'debian' }),
 		),
-	).to.deep.equal([contract1]);
+	).to.equalByHash([contract1]);
 });
 
 it('should ignore contracts that are not in the set', () => {
@@ -48,7 +48,7 @@ it('should ignore contracts that are not in the set', () => {
 
 	const expected = new Contract(SKELETON);
 	expected.addChildren([contract1, contract2, contract3]);
-	expect(container).to.deep.equal(expected);
+	expect(container).to.equalByHash(expected);
 });
 
 it('should remove a slug object if it becomes empty after the removal', () => {
@@ -61,7 +61,7 @@ it('should remove a slug object if it becomes empty after the removal', () => {
 
 	const expected = new Contract(SKELETON);
 	expected.addChildren([contract2]);
-	expect(container).to.deep.equal(expected);
+	expect(container).to.equalByHash(expected);
 
 	// the sole remaining child collapses from `sw.os.<slug>` up to `sw.os`
 	expect(container.raw().children).to.deep.equal({
@@ -80,7 +80,7 @@ it('should correctly handle number versions', () => {
 
 	const expected = new Contract(SKELETON);
 	expected.addChildren([contract1, contract3]);
-	expect(container).to.deep.equal(expected);
+	expect(container).to.equalByHash(expected);
 });
 
 it('should ignore an invalid version of an existing contract', () => {
@@ -94,7 +94,7 @@ it('should ignore an invalid version of an existing contract', () => {
 
 	const expected = new Contract(SKELETON);
 	expected.addChildren([contract1, contract2]);
-	expect(container).to.deep.equal(expected);
+	expect(container).to.equalByHash(expected);
 });
 
 it('should take versions into account before removing a contract from the slug object', () => {
@@ -108,7 +108,7 @@ it('should take versions into account before removing a contract from the slug o
 
 	const expected = new Contract(SKELETON);
 	expected.addChildren([contract1, contract2]);
-	expect(container).to.deep.equal(expected);
+	expect(container).to.equalByHash(expected);
 });
 
 it('should take versions into account before removing a contract from the type object', () => {
@@ -121,7 +121,7 @@ it('should take versions into account before removing a contract from the type o
 
 	const expected = new Contract(SKELETON);
 	expected.addChildren([contract1]);
-	expect(container).to.deep.equal(expected);
+	expect(container).to.equalByHash(expected);
 });
 
 it('should remove a type object if it becomes empty after the removal', () => {
@@ -134,7 +134,7 @@ it('should remove a type object if it becomes empty after the removal', () => {
 
 	const expected = new Contract(SKELETON);
 	expected.addChildren([contract2]);
-	expect(container).to.deep.equal(expected);
+	expect(container).to.equalByHash(expected);
 });
 
 it('should return the object instance', () => {
@@ -144,7 +144,7 @@ it('should return the object instance', () => {
 
 	const container = new Contract(SKELETON);
 	container.addChildren([contract1, contract2, contract3]);
-	expect(container.removeChild(contract2)).to.deep.equal(container);
+	expect(container.removeChild(contract2)).to.equal(container);
 });
 
 it('should return the object instance even if the type does not exist', () => {
@@ -154,7 +154,7 @@ it('should return the object instance even if the type does not exist', () => {
 
 	const container = new Contract(SKELETON);
 	container.addChildren([contract1, contract2]);
-	expect(container.removeChild(contract3)).to.deep.equal(container);
+	expect(container.removeChild(contract3)).to.equal(container);
 });
 
 it('should remove a contract with aliases', () => {
@@ -172,7 +172,7 @@ it('should remove a contract with aliases', () => {
 
 	const expected = new Contract(SKELETON);
 	expected.addChildren([contract1]);
-	expect(container).to.deep.equal(expected);
+	expect(container).to.equalByHash(expected);
 });
 
 it('should remove a contract with aliases when there is another aliased contract of the same type', () => {
@@ -196,7 +196,7 @@ it('should remove a contract with aliases when there is another aliased contract
 
 	const expected = new Contract(SKELETON);
 	expected.addChildren([contract1]);
-	expect(container).to.deep.equal(expected);
+	expect(container).to.equalByHash(expected);
 });
 
 it('should remove a contract with aliases when there are two aliased contracts of the same type', () => {
@@ -227,7 +227,7 @@ it('should remove a contract with aliases when there are two aliased contracts o
 
 	const expected = new Contract(SKELETON);
 	expected.addChildren([contract1, contract3]);
-	expect(container).to.deep.equal(expected);
+	expect(container).to.equalByHash(expected);
 });
 
 it('should re-hash the universe', () => {

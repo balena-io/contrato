@@ -38,7 +38,7 @@ describe('Contract children', () => {
 			},
 		});
 
-		expect(new Contract(contract.raw())).to.deep.equal(contract);
+		expect(new Contract(contract.raw())).to.equalByHash(contract);
 
 		const child = new Contract({
 			type: 'arch.sw',
@@ -46,13 +46,13 @@ describe('Contract children', () => {
 			slug: 'armv7hf',
 		});
 
-		expect(contract.getChildrenByType('arch.sw')).to.deep.equal([child]);
+		expect(contract.getChildrenByType('arch.sw')).to.equalByHash([child]);
 		expect(
 			contract.findChildren(
 				Contract.createMatcher({ type: 'arch.sw', slug: 'armv7hf' }),
 			),
-		).to.deep.equal([child]);
-		expect(contract.getChildByHash(child.hash())).to.deep.equal(child);
+		).to.equalByHash([child]);
+		expect(contract.getChildByHash(child.hash())).to.equalByHash(child);
 	});
 
 	it('should take a contract with two children of the same type', () => {
@@ -98,7 +98,7 @@ describe('Contract children', () => {
 			},
 		});
 
-		expect(new Contract(contract.raw())).to.deep.equal(contract);
+		expect(new Contract(contract.raw())).to.equalByHash(contract);
 
 		const armv7hf = new Contract({
 			type: 'arch.sw',
@@ -111,7 +111,7 @@ describe('Contract children', () => {
 			slug: 'armel',
 		});
 
-		expect(contract.getChildrenByType('arch.sw')).to.have.deep.members([
+		expect(contract.getChildrenByType('arch.sw')).to.have.sameMembersByHash([
 			armv7hf,
 			armel,
 		]);
@@ -119,14 +119,14 @@ describe('Contract children', () => {
 			contract.findChildren(
 				Contract.createMatcher({ type: 'arch.sw', slug: 'armv7hf' }),
 			),
-		).to.deep.equal([armv7hf]);
+		).to.equalByHash([armv7hf]);
 		expect(
 			contract.findChildren(
 				Contract.createMatcher({ type: 'arch.sw', slug: 'armel' }),
 			),
-		).to.deep.equal([armel]);
-		expect(contract.getChildByHash(armv7hf.hash())).to.deep.equal(armv7hf);
-		expect(contract.getChildByHash(armel.hash())).to.deep.equal(armel);
+		).to.equalByHash([armel]);
+		expect(contract.getChildByHash(armv7hf.hash())).to.equalByHash(armv7hf);
+		expect(contract.getChildByHash(armel.hash())).to.equalByHash(armel);
 	});
 
 	it('should take a contract with two children of the same type and slug', () => {
@@ -180,7 +180,7 @@ describe('Contract children', () => {
 			},
 		});
 
-		expect(new Contract(contract.raw())).to.deep.equal(contract);
+		expect(new Contract(contract.raw())).to.equalByHash(contract);
 
 		const wheezy = new Contract({
 			type: 'sw.distro',
@@ -195,7 +195,7 @@ describe('Contract children', () => {
 			slug: 'debian',
 		});
 
-		expect(contract.getChildrenByType('sw.distro')).to.have.deep.members([
+		expect(contract.getChildrenByType('sw.distro')).to.have.sameMembersByHash([
 			wheezy,
 			jessie,
 		]);
@@ -203,9 +203,9 @@ describe('Contract children', () => {
 			contract.findChildren(
 				Contract.createMatcher({ type: 'sw.distro', slug: 'debian' }),
 			),
-		).to.have.deep.members([wheezy, jessie]);
-		expect(contract.getChildByHash(wheezy.hash())).to.deep.equal(wheezy);
-		expect(contract.getChildByHash(jessie.hash())).to.deep.equal(jessie);
+		).to.have.sameMembersByHash([wheezy, jessie]);
+		expect(contract.getChildByHash(wheezy.hash())).to.equalByHash(wheezy);
+		expect(contract.getChildByHash(jessie.hash())).to.equalByHash(jessie);
 	});
 
 	it('should take a contract with two children of different types', () => {
@@ -253,7 +253,7 @@ describe('Contract children', () => {
 			},
 		});
 
-		expect(new Contract(contract.raw())).to.deep.equal(contract);
+		expect(new Contract(contract.raw())).to.equalByHash(contract);
 
 		const arch = new Contract({
 			type: 'arch.sw',
@@ -267,20 +267,20 @@ describe('Contract children', () => {
 			slug: 'debian',
 		});
 
-		expect(contract.getChildrenByType('arch.sw')).to.deep.equal([arch]);
-		expect(contract.getChildrenByType('sw.distro')).to.deep.equal([distro]);
+		expect(contract.getChildrenByType('arch.sw')).to.equalByHash([arch]);
+		expect(contract.getChildrenByType('sw.distro')).to.equalByHash([distro]);
 		expect(
 			contract.findChildren(
 				Contract.createMatcher({ type: 'arch.sw', slug: 'armv7hf' }),
 			),
-		).to.deep.equal([arch]);
+		).to.equalByHash([arch]);
 		expect(
 			contract.findChildren(
 				Contract.createMatcher({ type: 'sw.distro', slug: 'debian' }),
 			),
-		).to.deep.equal([distro]);
-		expect(contract.getChildByHash(arch.hash())).to.deep.equal(arch);
-		expect(contract.getChildByHash(distro.hash())).to.deep.equal(distro);
+		).to.equalByHash([distro]);
+		expect(contract.getChildByHash(arch.hash())).to.equalByHash(arch);
+		expect(contract.getChildByHash(distro.hash())).to.equalByHash(distro);
 	});
 
 	it('should reject overlapping types whatever the sibling count', () => {
@@ -360,6 +360,6 @@ describe('Contract children', () => {
 				},
 			},
 		});
-		expect(new Contract(contract.raw()).hash()).to.equal(contract.hash());
+		expect(new Contract(contract.raw())).to.equalByHash(contract);
 	});
 });

@@ -1,4 +1,207 @@
 - commits:
+    - subject: Remove ContractIndex::types
+      hash: 357434328d62e18b022121c4e01c9e0c1fd2cd44
+      body: >
+        Additional code cleanup. The property is equivalent to the keys of the
+        `by_type` index.
+
+        There is little benefit in maintaining a separate type index, so this
+
+        removes the property an replaces access by `by_type.keys()`
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Remove the ChildrenIndex trait
+      hash: d06a8c852bff296cec03dc5bcfb74229cdbc42d6
+      body: >
+        The trait was added during migration to work around a circular
+
+        dependency between the `children_tree` and the `index` modules. The
+
+        dependency no longer exists and ChildrenIndex is not implemented
+        anywhere else.
+
+
+        Removing it simplifies code and enforces that a ChildrenTree is
+
+        constructed from a well formed ContractIndex
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Document the fallible contract API
+      hash: ec5fb6bfd70add9822b27569c117e7d68bafbebf
+      body: |
+        Records the new behaviour where callers will look for it: the
+        deferred-validation note in the crate README, and `@throws` on the JS
+        `Contract` and `Blueprint` methods that can now fail.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Validate contract identifiers after interpolation
+      hash: c9ea2fd5272a5950fec2a23c72484003f3f67628
+      body: >
+        A `type` or `slug` can be written as a template, e.g.
+
+        `{ "slug": "{{this.name}}" }`, so its final value is only known once the
+
+        contract is interpolated. Deserialization defers validation for those
+
+        fields, which left an invalid interpolation result to panic further
+        down.
+
+
+        `compile_templates` now re-checks `type`, `slug`, `canonicalSlug` and
+        the
+
+        aliases against the compiled value before it is deserialized back into a
+
+        `RawContract`, and `Contract::interpolate` returns the error instead.
+        The
+
+        check runs before the assignment, so a contract that fails to
+        interpolate
+
+        is left as it was.
+
+
+        Covered from both APIs, including the two paths that only resolve a
+
+        template later: `Contract::build` completing a slug from a variant, and
+
+        `Blueprint.reproduce` resolving `{{this.children.*}}` per context.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Build the children tree without fallible paths
+      hash: a7466662f418689b903006e3fad6126d52005d78
+      body: >
+        Now that the index rejects children that cannot be nested, `build` can
+        no
+
+        longer encounter a conflicting path, so it returns a `ChildrenTree`
+
+        directly and `PathConflictError` / `BuildTreeError` go away along with
+
+        `set_path`. The remaining tree conditions are kept as debug assertions
+        in
+
+        case the index ever admits a child it should not have.
+
+
+        The per-type node construction moves into `type_node`, which builds the
+
+        node before the type path is walked so that a type contributing no node
+
+        cannot leave an empty branch behind. Walking the type segments directly
+
+        also fixes a dotted slug being treated as a path: `node.js` is now one
+
+        key rather than a `node` -> `js` branch, and a trailing dot no longer
+
+        fails to build at all.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Test the children-tree conditions from both APIs
+      hash: b082e9311019dc919d94e323b90b8c6a4d5b26d0
+      body: |
+        Covers the behaviour the previous commit introduced, from Rust and from
+        JS: overlapping child types and slugless children rejected on
+        deserialization, `add_child` / `add_children` rejecting the whole batch
+        and leaving the parent's index, serialized tree and hash untouched, an
+        alias not standing in for a missing slug, and a slugless contract still
+        being allowed as a parent.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Validate children when they enter the contract index
+      hash: e8456b6e73beb54e7ccb476e687743825cd4f430
+      body: >
+        Contracts serialize their children as a tree keyed by type and slug, so
+
+        that blueprint interpolation can reach them as
+
+        `this.children.sw.os.version`. Two shapes cannot be keyed in such a
+        tree:
+
+
+        - Children with overlapping types, e.g. `sw.os` and `sw.os.kernel`: the
+          shorter type needs a leaf exactly where the longer one needs a subtree.
+        - A slugless child, since the slug is the key of a tree branch. Before
+          this change such a child was silently dropped on deserialization.
+
+        `ContractIndex::insert` is replaced by `insert_all`, which validates the
+
+        whole batch — against the types already stored as well as the incoming
+
+        ones — before the first insertion, so a rejected batch leaves the index
+
+        untouched. `remove` becomes `remove_by_hash`, which looks the stored
+
+        contract up once instead of taking a `&Contract` it only needs a hash
+
+        from.
+
+
+        `Contract::new`, `build`, `add_child` and `add_children` return the
+
+        resulting `Error` rather than dropping the offending child, and
+
+        `addChild` / `addChildren` / `build` throw it through the wasm binding.
+
+        The bulk of the diff is the existing tests unwrapping those results.
+
+
+        This is a breaking change: children that were previously accepted and
+
+        silently dropped are now rejected.
+      footer:
+        Change-type: minor
+        change-type: minor
+      author: Felipe Lalanne
+      nested: []
+    - subject: Add the contract Error type
+      hash: 3adcdcc4ab5d4fbb2fbcc9238247963de44a2702
+      body: |
+        Introduces the error returned when a contract cannot be constructed or
+        updated. Nothing produces it yet; the following commits make the
+        construction and child mutation paths fallible and return it.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Add DottedPath::is_valid and expose the identifier validators
+      hash: 9762886e2b2dcdf50099b9a50ff42205f735884d
+      body: |
+        Preparation for validating contracts and their children.
+
+        `DottedPath::is_valid` is the borrowing half of the `TryFrom` impls, for
+        callers that only need the verdict and would otherwise pay for an
+        allocation. `validate_kind` and `validate_slug` become `pub(crate)` so
+        the contract layer can re-check a templated identifier once it has been
+        interpolated.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+  version: 0.18.0
+  title: ""
+  date: 2026-09-09T00:44:41.978Z
+- commits:
     - subject: Validate type/slug on contract deserialization
       hash: 0dc1e4d6689ea45aa7c861efd538c098b8597e45
       body: >

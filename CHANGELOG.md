@@ -5,6 +5,18 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## v0.0.6 - 2018-08-17
 
+## 0.18.0 - 2026-09-09
+
+* Remove ContractIndex::types [Felipe Lalanne]
+* Remove the ChildrenIndex trait [Felipe Lalanne]
+* Document the fallible contract API [Felipe Lalanne]
+* Validate contract identifiers after interpolation [Felipe Lalanne]
+* Build the children tree without fallible paths [Felipe Lalanne]
+* Test the children-tree conditions from both APIs [Felipe Lalanne]
+* Validate children when they enter the contract index [Felipe Lalanne]
+* Add the contract Error type [Felipe Lalanne]
+* Add DottedPath::is_valid and expose the identifier validators [Felipe Lalanne]
+
 ## 0.17.3 - 2026-09-02
 
 * Validate type/slug on contract deserialization [Felipe Lalanne]

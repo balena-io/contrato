@@ -105,6 +105,9 @@ export default class Contract {
 	 * @protected
 	 *
 	 * @returns {Object} contract instance
+	 * @throws {Error} if a templated field interpolates to an invalid value,
+	 * e.g. a `slug` template resolving to a string with a space. The contract
+	 * is left untouched in that case.
 	 *
 	 * @example
 	 * const contract = new Contract({ ... })
@@ -294,6 +297,11 @@ export default class Contract {
 	 *
 	 * @param {Object} contract - contract
 	 * @returns {Object} contract
+	 * @throws {Error} if the child cannot be nested: its type overlaps an
+	 * existing child's type, one being a prefix of the other (e.g. adding
+	 * `sw.os.kernel` under a contract that already holds `sw.os`), it has no
+	 * slug to be keyed by, or its type is not a dotted path. Nothing is added
+	 * in those cases.
 	 *
 	 * @example
 	 * const contract = new Contract({ ... })
@@ -336,6 +344,9 @@ export default class Contract {
 	 *
 	 * @param {Object[]} contracts - contracts
 	 * @returns {Object} contract
+	 * @throws {Error} if any child cannot be nested, see `.addChild()`.
+	 * Nothing is added in that case; the contracts passed in are cloned, so
+	 * they stay usable.
 	 *
 	 * @example
 	 * const contract = new Contract({ ... })
@@ -1043,6 +1054,9 @@ export default class Contract {
 	 *     console.log('This is a built contract')
 	 *   }
 	 * })
+	 *
+	 * @throws {Error} if an expanded contract is invalid, e.g. a variant that
+	 * completes a templated `slug` with an illegal value.
 	 */
 	static build(source: ContractObject): Contract[] {
 		return (WasmContract.build(source) as WasmContract[]).map((c) =>

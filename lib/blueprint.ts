@@ -126,6 +126,9 @@ export default class Blueprint extends Contract {
 	 *
 	 * @param {Contract} contract - contract
 	 * @returns {Iterable<Contract>} - an iterable over the valid contexts
+	 * @throws {Error} while iterating, if a generated context is invalid, e.g.
+	 * a skeleton `slug` template that interpolates to a value which is not a
+	 * valid slug. The iterator cannot be resumed past the failure.
 	 *
 	 * @example
 	 * const contract = new Contract({ ... })

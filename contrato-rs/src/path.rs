@@ -52,7 +52,7 @@ impl TryFrom<String> for DottedPath {
         if s.is_empty() {
             return Err(InvalidPath::Empty);
         }
-        if s.starts_with('.') || s.ends_with('.') || s.contains("..") {
+        if !DottedPath::is_valid(&s) {
             return Err(InvalidPath::EmptySegment(s));
         }
         Ok(Self(s))
@@ -69,6 +69,15 @@ impl TryFrom<&str> for DottedPath {
 }
 
 impl DottedPath {
+    /// Returns `true` when `s` is a non-empty string of non-empty
+    /// dot-separated segments.
+    ///
+    /// The borrowing half of the [`TryFrom`] impls: callers that only
+    /// need the verdict avoid the allocation a conversion would make.
+    pub(crate) fn is_valid(s: &str) -> bool {
+        !s.is_empty() && !s.starts_with('.') && !s.ends_with('.') && !s.contains("..")
+    }
+
     /// Creates a `DottedPath` by joining parts with `"."`.
     ///
     /// Intended for constructing paths from already-validated pieces (e.g.,

@@ -220,4 +220,39 @@ describe('Contract addChild', () => {
 		container.addChild(contract1);
 		expect(container.hash()).to.not.equal(hash);
 	});
+
+	it('should reject a child whose type extends an existing child type', () => {
+		const container = new Contract({
+			type: 'foo',
+			slug: 'bar',
+		});
+
+		const contract1 = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
+		container.addChild(contract1);
+		const before = container.raw();
+		const hash = container.hash();
+
+		expect(() =>
+			container.addChild(new Contract({ type: 'sw.os.kernel', slug: 'linux' })),
+		).to.throw("'sw.os' is a prefix of 'sw.os.kernel'");
+
+		expect(container.raw()).to.deep.equal(before);
+		expect(container.hash()).to.equal(hash, 'a rejected child must not rehash');
+	});
+
+	it('should reject a child whose type is a prefix of an existing child type', () => {
+		const container = new Contract({
+			type: 'foo',
+			slug: 'bar',
+		});
+
+		const contract1 = new Contract(CONTRACTS['sw.os'].debian.wheezy.object);
+		container.addChild(contract1);
+
+		expect(() =>
+			container.addChild(new Contract({ type: 'sw', slug: 'os' })),
+		).to.throw("'sw' is a prefix of 'sw.os'");
+
+		expect(container.getChildren()).to.deep.equal([contract1]);
+	});
 });

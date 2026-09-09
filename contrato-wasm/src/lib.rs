@@ -165,26 +165,43 @@ impl WasmContract {
     /// Invalidates the hash cache; the children subtree is left
     /// untouched — each child was already interpolated against its own
     /// fields at construction.
-    pub fn interpolate(&mut self) {
-        self.inner.interpolate();
+    ///
+    /// Throws when a templated field resolves to an invalid value (an
+    /// interpolated `type` or `slug` that is not a legal identifier);
+    /// the contract is left untouched in that case.
+    pub fn interpolate(&mut self) -> Result<(), JsValue> {
+        self.inner.interpolate().map_err(wasm_err)
     }
 
     // ── children management ─────────────────────────────────────────────
 
     /// Adds a single child contract.
+    ///
+    /// Throws when the child's type overlaps an existing child's type —
+    /// one being a prefix of the other, like `sw.os` and `sw.os.kernel` —
+    /// since the two cannot both be nested. Nothing is added in that case.
     #[wasm_bindgen(js_name = addChild)]
-    pub fn add_child(&mut self, child: &WasmContract) {
-        self.inner.add_child(child.inner.clone());
+    pub fn add_child(&mut self, child: &WasmContract) -> Result<(), JsValue> {
+        self.inner
+            .add_child(child.inner.clone())
+            .map(|_| ())
+            .map_err(wasm_err)
     }
 
     /// Adds many child contracts in a single batch.
     ///
     /// Note that this moves the contract array into the function so the original
     /// contracts will become unusable after using this function
+    ///
+    /// Throws when the children cannot be nested — see `addChild` — leaving
+    /// this contract untouched. The passed-in handles are consumed either
+    /// way, so a failed batch cannot be retried with the same objects.
     #[wasm_bindgen(js_name = addChildren)]
-    pub fn add_children(&mut self, children: Vec<WasmContract>) {
+    pub fn add_children(&mut self, children: Vec<WasmContract>) -> Result<(), JsValue> {
         self.inner
-            .add_children(children.into_iter().map(|c| c.inner));
+            .add_children(children.into_iter().map(|c| c.inner))
+            .map(|_| ())
+            .map_err(wasm_err)
     }
 
     /// Removes a child matching the given contract.
@@ -349,11 +366,13 @@ impl WasmContract {
     /// by running variant expansion and alias generation.
     ///
     /// Accepts a JS value deserialized into [`RawContract`]. Returns an
-    /// array of fresh `Contract` handles.
+    /// array of fresh `Contract` handles, and throws when an expanded
+    /// contract is invalid (e.g. a variant that completes a templated
+    /// `slug` with an illegal value).
     #[wasm_bindgen(js_name = build)]
     pub fn build(source: JsValue) -> Result<Array, JsValue> {
         let raw: RawContract = serde_wasm_bindgen::from_value(source).map_err(wasm_err)?;
-        Ok(contracts_to_array(Contract::build(raw)))
+        Ok(contracts_to_array(Contract::build(raw).map_err(wasm_err)?))
     }
 
     /// Returns `true` when two contracts have the same deterministic

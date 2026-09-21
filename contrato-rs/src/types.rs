@@ -215,6 +215,30 @@ fn deserialize_slug_list<'de, D: Deserializer<'de>>(
     Ok(slugs)
 }
 
+/// Error returned when a string is not valid semver.
+///
+/// Produced by [`Version::semver`] and [`VersionReq::semver`], the
+/// constructors that refuse the identifier fallback.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InvalidSemver {
+    /// The string is not a semver version, even after padding partial
+    /// versions such as `2.31` to `2.31.0`.
+    Version(String),
+    /// The string is not a semver range.
+    Range(String),
+}
+
+impl fmt::Display for InvalidSemver {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            InvalidSemver::Version(s) => write!(f, "'{s}' is not a valid semver version"),
+            InvalidSemver::Range(s) => write!(f, "'{s}' is not a valid semver range"),
+        }
+    }
+}
+
+impl std::error::Error for InvalidSemver {}
+
 /// Internal representation of a version: either valid semver or a plain
 /// identifier (e.g., `wheezy`, `jessie`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -247,6 +271,17 @@ enum VersionInner {
 /// let identifier = Version::new("wheezy");
 /// assert!(!identifier.is_semver());
 /// ```
+///
+/// Use [`Version::semver`] when the value is meant to be a version
+/// rather than an identifier, so a typo fails instead of silently
+/// becoming one:
+///
+/// ```rust
+/// use contrato::Version;
+///
+/// assert!(Version::semver("2.31").is_ok());
+/// assert!(Version::semver("wheezy").is_err());
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Version(VersionInner);
 
@@ -270,6 +305,33 @@ impl Version {
                 original: s,
             }),
             Err(_) => Self(VersionInner::Identifier(s)),
+        }
+    }
+
+    /// Creates a new version, failing if the string is not semver.
+    ///
+    /// Partial versions are accepted and padded exactly as
+    /// [`Version::new`] does; only values that would fall back to an
+    /// identifier are rejected.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidSemver::Version`] if the string does not parse
+    /// as a semver version.
+    ///
+    /// ```rust
+    /// use contrato::Version;
+    ///
+    /// assert_eq!(Version::semver("2.31")?.to_string(), "2.31");
+    ///
+    /// let err = Version::semver("wheezy").unwrap_err();
+    /// assert_eq!(err.to_string(), "'wheezy' is not a valid semver version");
+    /// # Ok::<(), contrato::InvalidSemver>(())
+    /// ```
+    pub fn semver(s: impl Into<String>) -> Result<Self, InvalidSemver> {
+        match Self::new(s) {
+            Self(VersionInner::Identifier(s)) => Err(InvalidSemver::Version(s)),
+            v => Ok(v),
         }
     }
 
@@ -337,6 +399,17 @@ enum VersionReqInner {
 /// let identifier = VersionReq::from("wheezy");
 /// assert!(identifier.matches(&Version::new("wheezy")));
 /// ```
+///
+/// Use [`VersionReq::semver`] when the value is meant to be a range
+/// rather than an identifier, so a typo fails instead of silently
+/// becoming one:
+///
+/// ```rust
+/// use contrato::VersionReq;
+///
+/// assert!(VersionReq::semver(">=2.17").is_ok());
+/// assert!(VersionReq::semver(">>=2.17").is_err());
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct VersionReq(VersionReqInner);
 
@@ -347,6 +420,32 @@ impl VersionReq {
         match semver::VersionReq::parse(&s) {
             Ok(r) => Self(VersionReqInner::SemverRange(r)),
             Err(_) => Self(VersionReqInner::Identifier(s)),
+        }
+    }
+
+    /// Creates a new version requirement, failing if the string is not
+    /// a semver range.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidSemver::Range`] if the string does not parse as
+    /// a semver range.
+    ///
+    /// ```rust
+    /// use contrato::{Version, VersionReq};
+    ///
+    /// let range = VersionReq::semver(">=2.17")?;
+    /// assert!(range.matches(&Version::new("2.31")));
+    ///
+    /// let err = VersionReq::semver("wheezy").unwrap_err();
+    /// assert_eq!(err.to_string(), "'wheezy' is not a valid semver range");
+    /// # Ok::<(), contrato::InvalidSemver>(())
+    /// ```
+    pub fn semver(s: impl Into<String>) -> Result<Self, InvalidSemver> {
+        let s = s.into();
+        match semver::VersionReq::parse(&s) {
+            Ok(r) => Ok(Self(VersionReqInner::SemverRange(r))),
+            Err(_) => Err(InvalidSemver::Range(s)),
         }
     }
 
@@ -496,7 +595,8 @@ impl ContractMatcher {
     /// Strings are converted as [`VersionReq`] describes: anything that
     /// is not a valid semver range becomes an identifier matched by
     /// exact equality, so a typo silently changes what the matcher
-    /// means rather than failing.
+    /// means rather than failing. Pass a [`VersionReq::semver`] instead
+    /// of a string to reject a malformed range up front.
     ///
     /// # Examples
     ///
@@ -508,6 +608,16 @@ impl ContractMatcher {
     ///
     /// // typo: matches only a version equal to the string ">>=6"
     /// let bad = ContractMatcher::new("sw.os").with_version(">>=6");
+    /// ```
+    ///
+    /// ```rust
+    /// use contrato::{ContractMatcher, VersionReq};
+    ///
+    /// // the same typo, rejected instead of silently reinterpreted
+    /// assert!(VersionReq::semver(">>=6").is_err());
+    ///
+    /// let matcher = ContractMatcher::new("sw.os").with_version(VersionReq::semver(">=6")?);
+    /// # Ok::<(), contrato::InvalidSemver>(())
     /// ```
     pub fn with_version(mut self, version: impl Into<VersionReq>) -> Self {
         self.version = Some(version.into());
@@ -903,6 +1013,54 @@ mod tests {
         let v = Version::new("wheezy");
         assert!(!v.is_semver());
         assert_eq!(v.to_string(), "wheezy");
+    }
+
+    #[test]
+    fn version_semver_constructor_rejects_identifiers() {
+        assert_eq!(Version::semver("1.2.3").unwrap(), Version::new("1.2.3"));
+        // partial versions are still accepted and keep their original form
+        assert_eq!(Version::semver("2.31").unwrap().to_string(), "2.31");
+        assert_eq!(Version::semver("5").unwrap().to_string(), "5");
+
+        assert_eq!(
+            Version::semver("wheezy").unwrap_err(),
+            InvalidSemver::Version("wheezy".to_string())
+        );
+        // use of dots doesn't automatically process the string as a version
+        assert_eq!(
+            Version::semver("abc.def.1").unwrap_err(),
+            InvalidSemver::Version("abc.def.1".to_string())
+        );
+    }
+
+    #[test]
+    fn version_req_semver_constructor_rejects_identifiers() {
+        let vr = VersionReq::semver(">=1.0.0").unwrap();
+        assert!(vr.is_semver_range());
+        assert!(vr.matches(&Version::new("1.2.3")));
+
+        assert_eq!(
+            VersionReq::semver("wheezy").unwrap_err(),
+            InvalidSemver::Range("wheezy".to_string())
+        );
+        // a malformed range fails instead of becoming an identifier
+        assert_eq!(
+            VersionReq::semver(">>=6").unwrap_err(),
+            InvalidSemver::Range(">>=6".to_string())
+        );
+        assert!(!VersionReq::new(">>=6").is_semver_range());
+    }
+
+    #[test]
+    fn invalid_semver_display_names_the_value() {
+        assert_eq!(
+            InvalidSemver::Version("wheezy".to_string()).to_string(),
+            "'wheezy' is not a valid semver version"
+        );
+        assert_eq!(
+            InvalidSemver::Range(">>=6".to_string()).to_string(),
+            "'>>=6' is not a valid semver range"
+        );
     }
 
     #[test]

@@ -22,7 +22,7 @@ const serviceContract = new Contract({
 	type: 'sw.application',
 	slug: 'myapp',
 	requires: [
-		{ type: 'sw.service', slug: 'balena-engine', version: '>20' },
+		{ type: 'sw.service', slug: 'balena-engine', version: '>=20' },
 		{ type: 'sw.feature', slug: 'secureboot' },
 	],
 });
@@ -226,7 +226,7 @@ For example
 	"slug": "mycontract",
 	"version": "1.0.0",
 	"name": "This is my contract",
-	"aliases": ["my_contract"],
+	"aliases": ["my-contract"],
 	"data": {
 		"number": 5
 	},

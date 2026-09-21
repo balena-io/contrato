@@ -999,9 +999,9 @@ export default class Contract {
 	 * @description
 	 * A matcher allows to search for child contracts by type, slug, version
 	 * range and data. It is a plain object handed straight to the WASM
-	 * boundary, where `contrato::ContractMatcher` validates it — matchers
-	 * carrying fields other than `type`, `slug`, `version` and `data` are
-	 * rejected there, at `findChildren` time.
+	 * boundary, where `contrato::Matcher` validates it — matchers carrying
+	 * fields other than `type`, `slug`, `version` and `data` are rejected
+	 * there, at `findChildren` time.
 	 *
 	 * @param {Object} obj - the match criteria
 	 * @returns {MatcherObject} matcher

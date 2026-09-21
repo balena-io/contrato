@@ -633,11 +633,11 @@ mod tests {
 
     #[test]
     fn build_manually_constructed_contract() {
-        use crate::types::{ContractType, PartialContract, Slug, Version};
+        use crate::types::{Kind, PartialContract, Slug, Version};
         use serde_json::Map;
 
         let contract = RawContract {
-            kind: ContractType::new("sw.app"),
+            kind: Kind::new("sw.app"),
             canonical_slug: None,
             body: PartialContract {
                 slug: Some(Slug::new("myapp")),

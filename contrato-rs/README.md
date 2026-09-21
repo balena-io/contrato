@@ -37,10 +37,10 @@ assert_eq!(contract.get_children_types(), vec!["sw.service"]);
 
 ### Searching for children
 
-Use `ContractMatcher` to find children by type, slug, version, or data fields.
+Use `Matcher` to find children by type, slug, version, or data fields.
 
 ```rust
-use contrato::{Contract, ContractMatcher, VersionReq};
+use contrato::{Contract, Matcher, VersionReq};
 
 let mut os: Contract = serde_json::from_value(serde_json::json!({
     "type": "sw.os",
@@ -53,7 +53,7 @@ let mut os: Contract = serde_json::from_value(serde_json::json!({
 })).unwrap();
 
 // Find all sw.service children with version >= 20
-let matcher = ContractMatcher::new("sw.service").with_version(">=20");
+let matcher = Matcher::new("sw.service").with_version(">=20");
 let matches = os.find_children(&matcher);
 assert_eq!(matches.len(), 1);
 assert_eq!(matches[0].get_slug(), Some("balena-engine"));

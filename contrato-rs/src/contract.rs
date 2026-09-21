@@ -33,8 +33,7 @@ use crate::index::ContractIndex;
 use crate::matcher::{partial_match, version_match};
 use crate::template;
 use crate::types::{
-    ContractMatcher, ContractRequirement, RawContract, Slug, VersionReq, validate_kind,
-    validate_slug,
+    Matcher, RawContract, Requirement, Slug, VersionReq, validate_kind, validate_slug,
 };
 use crate::variants;
 
@@ -75,10 +74,10 @@ fn validate_identifiers(compiled: &Value) -> Result<(), Error> {
 /// Compiled requirements derived from `raw.requires`.
 ///
 /// Each entry in `raw.requires` is registered as strongly typed
-/// [`ContractMatcher`] and [`ContractRequirement`] values — simple `Match`
-/// entries contribute their inner matcher directly, while `Or` / `Not`
-/// entries contribute every inner matcher plus the boolean requirement
-/// itself. Both sets deduplicate structurally equal entries, so duplicate
+/// [`Matcher`] and [`Requirement`] values — simple `Match` entries
+/// contribute their inner matcher directly, while `Or` / `Not` entries
+/// contribute every inner matcher plus the boolean requirement itself.
+/// Both sets deduplicate structurally equal entries, so duplicate
 /// `requires` entries collapse to a single stored matcher / requirement.
 /// Iteration follows insertion order, so requirement checks report in the
 /// order the contract declared them.
@@ -90,14 +89,14 @@ struct RequirementsIndex {
     /// inner matcher of an `Or` / `Not` entry. Gives requirement-satisfaction
     /// checks a flat list of matchers per target type without re-walking
     /// the `compiled` set to unwrap boolean operations.
-    matchers: HashMap<String, IndexSet<ContractMatcher>>,
+    matchers: HashMap<String, IndexSet<Matcher>>,
 
     /// Flat set of top-level compiled requirements.
     ///
     /// For simple `Match` entries this holds one requirement per `requires`
     /// entry. For `Or` / `Not` entries it holds one boolean-operation
     /// requirement whose inner matchers are also indexed in `matchers`.
-    compiled: IndexSet<ContractRequirement>,
+    compiled: IndexSet<Requirement>,
 }
 
 /// A versioned *thing* — its identity, the capabilities it provides
@@ -285,25 +284,25 @@ impl Contract {
 
     /// Registers a single top-level requirement into the requirements index.
     ///
-    /// For a `Match` entry the inner [`ContractMatcher`] is inserted into
+    /// For a `Match` entry the inner [`Matcher`] is inserted into
     /// `matchers[kind]` (deduplicated by equality) and the whole
     /// requirement is inserted into `compiled`. For an `Or` / `Not` entry
     /// every inner matcher is inserted into `matchers[kind]` so the
     /// satisfaction check can iterate per-type matchers without re-walking
-    /// the operation node, and the original `ContractRequirement` is
-    /// inserted into `compiled` so boolean semantics are preserved at
-    /// validation time.
+    /// the operation node, and the original `Requirement` is inserted
+    /// into `compiled` so boolean semantics are preserved at validation
+    /// time.
     ///
     /// Nested boolean operations cannot reach this function: the inner
-    /// type of `Or` / `Not` is [`ContractMatcher`], not
-    /// [`ContractRequirement`], so the type system rules out
-    /// `{or: [{or: [...]}]}` shapes at deserialization.
-    fn register_requirement(index: &mut RequirementsIndex, req: &ContractRequirement) {
+    /// type of `Or` / `Not` is [`Matcher`], not [`Requirement`], so the
+    /// type system rules out `{or: [{or: [...]}]}` shapes at
+    /// deserialization.
+    fn register_requirement(index: &mut RequirementsIndex, req: &Requirement) {
         match req {
-            ContractRequirement::Match(m) => {
+            Requirement::Match(m) => {
                 Self::register_matcher(index, m);
             }
-            ContractRequirement::Or(items) | ContractRequirement::Not(items) => {
+            Requirement::Or(items) | Requirement::Not(items) => {
                 for m in items {
                     Self::register_matcher(index, m);
                 }
@@ -312,12 +311,12 @@ impl Contract {
         index.compiled.insert(req.clone());
     }
 
-    /// Inserts a single [`ContractMatcher`] into `matchers[kind]`.
+    /// Inserts a single [`Matcher`] into `matchers[kind]`.
     ///
     /// Shared by the `Match` and `Or` / `Not` arms of
     /// [`Self::register_requirement`] so both code paths agree on
     /// deduplication semantics.
-    fn register_matcher(index: &mut RequirementsIndex, matcher: &ContractMatcher) {
+    fn register_matcher(index: &mut RequirementsIndex, matcher: &Matcher) {
         let kind = matcher.kind.as_str();
         if let Some(matchers) = index.matchers.get_mut(kind) {
             matchers.insert(matcher.clone());
@@ -465,10 +464,7 @@ impl Contract {
     /// assert_eq!(resolved, ["glibc@2.31"]);
     /// # Ok::<(), serde_json::Error>(())
     /// ```
-    pub fn requirement_matchers_for_type(
-        &self,
-        kind: &str,
-    ) -> impl Iterator<Item = &ContractMatcher> {
+    pub fn requirement_matchers_for_type(&self, kind: &str) -> impl Iterator<Item = &Matcher> {
         self.requirements.matchers.get(kind).into_iter().flatten()
     }
 
@@ -705,7 +701,7 @@ impl Contract {
     /// extra keys are ignored).
     ///
     /// ```rust
-    /// use contrato::{Contract, ContractMatcher};
+    /// use contrato::{Contract, Matcher};
     /// use serde_json::json;
     ///
     /// let os: Contract = serde_json::from_value(json!({
@@ -717,14 +713,14 @@ impl Contract {
     ///     ]
     /// }))?;
     ///
-    /// let matcher = ContractMatcher::new("sw.service").with_version(">=20");
+    /// let matcher = Matcher::new("sw.service").with_version(">=20");
     /// let found = os.find_children(&matcher);
     ///
     /// assert_eq!(found.len(), 1);
     /// assert_eq!(found[0].get_slug(), Some("balena-engine"));
     /// # Ok::<(), serde_json::Error>(())
     /// ```
-    pub fn find_children(&self, matcher: &ContractMatcher) -> Vec<&Contract> {
+    pub fn find_children(&self, matcher: &Matcher) -> Vec<&Contract> {
         let target_type = matcher.kind.as_str();
         if !Self::has_descendant_type_in(&self.children, target_type) {
             return Vec::new();
@@ -844,7 +840,7 @@ impl Contract {
     /// Returns `true` as soon as any child across the full descendant
     /// walk satisfies the matcher — no `Vec<&Contract>` is ever
     /// materialized on the hot validation path.
-    fn any_child_matches_in(children: &ContractIndex, matcher: &ContractMatcher) -> bool {
+    fn any_child_matches_in(children: &ContractIndex, matcher: &Matcher) -> bool {
         let target_type = matcher.kind.as_str();
         if !Self::has_descendant_type_in(children, target_type) {
             return false;
@@ -993,7 +989,7 @@ impl Contract {
         &self,
         contract: &Contract,
         types: Option<&[&str]>,
-    ) -> Vec<ContractRequirement> {
+    ) -> Vec<Requirement> {
         let mut out = Vec::new();
         Self::collect_not_satisfied_recursive(&self.children, contract, types, &mut out);
         out
@@ -1010,7 +1006,7 @@ impl Contract {
         children: &ContractIndex,
         contract: &Contract,
         types: Option<&[&str]>,
-        out: &mut Vec<ContractRequirement>,
+        out: &mut Vec<Requirement>,
     ) {
         for req in contract.requirements.compiled.iter() {
             if !Self::is_requirement_satisfied_in(children, req, types) {
@@ -1112,7 +1108,7 @@ impl Contract {
     pub fn get_all_not_satisfied_child_requirements(
         &self,
         types: Option<&[&str]>,
-    ) -> Vec<ContractRequirement> {
+    ) -> Vec<Requirement> {
         let root_children = &self.children;
         let mut out = Vec::new();
         Self::collect_all_not_satisfied_recursive(root_children, root_children, types, &mut out);
@@ -1132,7 +1128,7 @@ impl Contract {
         root_children: &ContractIndex,
         walk: &ContractIndex,
         types: Option<&[&str]>,
-        out: &mut Vec<ContractRequirement>,
+        out: &mut Vec<Requirement>,
     ) {
         for descendant in walk.values() {
             let disjoint = matches!(
@@ -1168,22 +1164,22 @@ impl Contract {
     /// Evaluates a single compiled requirement against the root
     /// described by `children`.
     ///
-    /// Dispatches on the [`ContractRequirement`] variant:
+    /// Dispatches on the [`Requirement`] variant:
     ///
-    /// - [`Match`](ContractRequirement::Match): satisfied when
+    /// - [`Match`](Requirement::Match): satisfied when
     ///   [`Self::any_child_matches_in`] reports a match, or when the
-    ///   requirement's type is not in `types` (the caller has opted
-    ///   out of evaluating this type).
-    /// - [`Or`](ContractRequirement::Or): satisfied when at least one
-    ///   inner matcher whose type is allowed by `types` has a match,
-    ///   or when no inner matcher is of an allowed type (empty
-    ///   disjunction after filtering is trivially satisfied).
-    /// - [`Not`](ContractRequirement::Not): satisfied when no inner
-    ///   matcher whose type is allowed by `types` has a match. An
-    ///   empty `Not` is trivially satisfied.
+    ///   requirement's type is not in `types` (the caller has opted out
+    ///   of evaluating this type).
+    /// - [`Or`](Requirement::Or): satisfied when at least one inner
+    ///   matcher whose type is allowed by `types` has a match, or when
+    ///   no inner matcher is of an allowed type (empty disjunction
+    ///   after filtering is trivially satisfied).
+    /// - [`Not`](Requirement::Not): satisfied when no inner matcher
+    ///   whose type is allowed by `types` has a match. An empty `Not`
+    ///   is trivially satisfied.
     fn is_requirement_satisfied_in(
         children: &ContractIndex,
-        req: &ContractRequirement,
+        req: &Requirement,
         types: Option<&[&str]>,
     ) -> bool {
         let should_evaluate = |kind: &str| -> bool {
@@ -1194,13 +1190,13 @@ impl Contract {
         };
 
         match req {
-            ContractRequirement::Match(m) => {
+            Requirement::Match(m) => {
                 if !should_evaluate(m.kind.as_str()) {
                     return true;
                 }
                 Self::any_child_matches_in(children, m)
             }
-            ContractRequirement::Or(items) => {
+            Requirement::Or(items) => {
                 let mut any_applicable = false;
                 for m in items {
                     if !should_evaluate(m.kind.as_str()) {
@@ -1213,7 +1209,7 @@ impl Contract {
                 }
                 !any_applicable
             }
-            ContractRequirement::Not(items) => {
+            Requirement::Not(items) => {
                 for m in items {
                     if !should_evaluate(m.kind.as_str()) {
                         continue;
@@ -1899,9 +1895,9 @@ mod tests {
         assert_eq!(c.requirements.matchers["hw.device-type"].len(), 1);
         assert_eq!(c.requirements.compiled.len(), 1);
 
-        // The typed matcher stored in the index is the same
-        // `ContractMatcher` that was deserialized from `requires`
-        // — no Contract wrapping, no extra fields.
+        // The typed matcher stored in the index is the same `Matcher`
+        // that was deserialized from `requires` — no Contract wrapping,
+        // no extra fields.
         let matcher = c.requirements.matchers["hw.device-type"]
             .iter()
             .next()
@@ -1915,7 +1911,7 @@ mod tests {
         // the `Match` variant carrying the same matcher.
         let compiled = c.requirements.compiled.iter().next().unwrap();
         match compiled {
-            ContractRequirement::Match(m) => {
+            Requirement::Match(m) => {
                 assert_eq!(m.kind.as_str(), "hw.device-type");
                 assert_eq!(m.slug.as_ref().unwrap().as_str(), "raspberry-pi");
             }
@@ -1940,7 +1936,7 @@ mod tests {
             "matchers by type are deduplicated"
         );
         // Compiled requirements deduplicate on equality
-        // (ContractRequirement::Match of an identical matcher).
+        // (Requirement::Match of an identical matcher).
         assert_eq!(c.requirements.compiled.len(), 1);
     }
 
@@ -1974,7 +1970,7 @@ mod tests {
         // conversion to a Contract wrapper with an `operation` tag.
         let compiled = c.requirements.compiled.iter().next().unwrap();
         match compiled {
-            ContractRequirement::Or(items) => {
+            Requirement::Or(items) => {
                 assert_eq!(items.len(), 2);
                 let slugs: HashSet<&str> = items
                     .iter()
@@ -2001,7 +1997,7 @@ mod tests {
 
         let compiled = c.requirements.compiled.iter().next().unwrap();
         match compiled {
-            ContractRequirement::Not(items) => {
+            Requirement::Not(items) => {
                 assert_eq!(items.len(), 1);
                 assert_eq!(items[0].kind.as_str(), "sw.os");
                 assert_eq!(items[0].slug.as_ref().unwrap().as_str(), "windows");
@@ -2050,7 +2046,7 @@ mod tests {
             HashSet::from(["raspberry-pi", "raspberry-pi2"])
         );
 
-        let arch: Vec<&ContractMatcher> = c.requirement_matchers_for_type("arch.sw").collect();
+        let arch: Vec<&Matcher> = c.requirement_matchers_for_type("arch.sw").collect();
         assert_eq!(arch.len(), 1);
         assert_eq!(arch[0].kind.as_str(), "arch.sw");
         assert_eq!(arch[0].slug.as_ref().unwrap().as_str(), "armv7hf");
@@ -2287,8 +2283,8 @@ mod tests {
     #[test]
     fn requirements_nested_or_inside_or_fails_to_deserialize() {
         // Nested boolean operations are rejected at the type level:
-        // `Or` / `Not` carry `Vec<ContractMatcher>`, so an inner
-        // `{"or": [...]}` has no `type` field and fails as a matcher.
+        // `Or` / `Not` carry `Vec<Matcher>`, so an inner `{"or": [...]}`
+        // has no `type` field and fails as a matcher.
         let result: Result<RawContract, _> = serde_json::from_value(json!({
             "type": "sw.os",
             "slug": "test",
@@ -3355,13 +3351,13 @@ mod tests {
 
     // ── find_children ────────────────────────────────────────────────────
 
-    /// Constructs a simple [`ContractMatcher`] from a type / slug /
-    /// version triple. `slug` and `version` are left out when
-    /// `None`. The returned matcher has no `data` payload — use
-    /// [`matcher_with_data`] for tests that need the deep-partial
-    /// match path.
-    fn matcher(type_: &str, slug: Option<&str>, version: Option<&str>) -> ContractMatcher {
-        let mut m = ContractMatcher::new(type_);
+    /// Constructs a simple [`Matcher`] from a type / slug / version
+    /// triple. `slug` and `version` are left out when `None`. The
+    /// returned matcher has no `data` payload — use
+    /// [`matcher_with_data`] for tests that need the deep-partial match
+    /// path.
+    fn matcher(type_: &str, slug: Option<&str>, version: Option<&str>) -> Matcher {
+        let mut m = Matcher::new(type_);
         if let Some(slug) = slug {
             m = m.with_slug(slug);
         }
@@ -3371,11 +3367,11 @@ mod tests {
         m
     }
 
-    /// Constructs a [`ContractMatcher`] for a target type with an
-    /// explicit `data` payload. Used by tests that exercise the
+    /// Constructs a [`Matcher`] for a target type with an explicit
+    /// `data` payload. Used by tests that exercise the
     /// deep-partial-match predicate against nested child data.
-    fn matcher_with_data(type_: &str, data: Value) -> ContractMatcher {
-        ContractMatcher::new(type_).with_data(data)
+    fn matcher_with_data(type_: &str, data: Value) -> Matcher {
+        Matcher::new(type_).with_data(data)
     }
 
     // find_children
@@ -5058,7 +5054,7 @@ mod tests {
         let out = container.get_not_satisfied_child_requirements(&child, None);
         assert_eq!(out.len(), 1);
         match &out[0] {
-            ContractRequirement::Match(m) => {
+            Requirement::Match(m) => {
                 assert_eq!(m.kind.as_str(), "sw.os");
                 assert_eq!(m.slug.as_ref().unwrap().as_str(), "void");
             }
@@ -5128,7 +5124,7 @@ mod tests {
         let out = container.get_all_not_satisfied_child_requirements(None);
         assert_eq!(out.len(), 1);
         match &out[0] {
-            ContractRequirement::Match(m) => {
+            Requirement::Match(m) => {
                 assert_eq!(m.kind.as_str(), "arch.sw");
                 assert_eq!(m.slug.as_ref().unwrap().as_str(), "armv7hf");
             }
@@ -5200,7 +5196,7 @@ mod tests {
         let kinds: HashSet<&str> = out
             .iter()
             .map(|r| match r {
-                ContractRequirement::Match(m) => m.kind.as_str(),
+                Requirement::Match(m) => m.kind.as_str(),
                 other => panic!("expected Match, got {other:?}"),
             })
             .collect();

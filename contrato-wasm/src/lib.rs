@@ -7,7 +7,7 @@
 //! Contracts and matchers cross the boundary as plain JS objects — e.g.
 //! `{ type: 'sw.os', slug: 'debian' }`.
 
-use contrato::{Contract, ContractMatcher, RawContract};
+use contrato::{Contract, Matcher, RawContract};
 use js_sys::Array;
 use serde::Serialize;
 use serde_wasm_bindgen::Serializer;
@@ -57,13 +57,13 @@ fn borrow_type_filter(types: &Option<Vec<String>>) -> Option<Vec<&str>> {
         .map(|v| v.iter().map(String::as_str).collect())
 }
 
-/// Deserializes a [`ContractMatcher`] from a plain JS value.
+/// Deserializes a [`Matcher`] from a plain JS value.
 ///
 /// Shared by every `WasmContract` method that accepts a matcher so the
 /// deserialization error shape stays consistent regardless of whether
 /// the caller is searching, capability-matching, or doing anything
 /// else that takes a matcher argument.
-fn matcher_from_js(value: JsValue) -> Result<ContractMatcher, JsValue> {
+fn matcher_from_js(value: JsValue) -> Result<Matcher, JsValue> {
     serde_wasm_bindgen::from_value(value).map_err(wasm_err)
 }
 

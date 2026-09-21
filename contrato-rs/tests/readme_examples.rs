@@ -29,7 +29,7 @@ fn readme_searching() {
         ]
     }))
     .unwrap();
-    let matcher = contrato::ContractMatcher::new("sw.service").with_version(">=20");
+    let matcher = contrato::Matcher::new("sw.service").with_version(">=20");
     let matches = os.find_children(&matcher);
     assert_eq!(matches.len(), 1);
     assert_eq!(matches[0].get_slug(), Some("balena-engine"));

@@ -7,7 +7,7 @@
 //! normally read from JSON.
 //!
 //! ```rust
-//! use contrato::{Contract, ContractMatcher};
+//! use contrato::{Contract, Matcher};
 //!
 //! let os: Contract = serde_json::from_value(serde_json::json!({
 //!     "type": "sw.os",
@@ -27,7 +27,7 @@
 //!
 //! assert!(os.satisfies_child_contract(&app, None));
 //!
-//! let matcher = ContractMatcher::new("sw.library").with_version(">=2");
+//! let matcher = Matcher::new("sw.library").with_version(">=2");
 //! assert_eq!(os.find_children(&matcher).len(), 1);
 //! # Ok::<(), serde_json::Error>(())
 //! ```
@@ -48,7 +48,7 @@ pub use children_tree::ChildrenTree;
 pub use contract::Contract;
 pub use error::Error;
 pub use types::{
-    Asset, ContractMatcher, ContractRequirement, ContractType, InvalidIdentifier, InvalidSemver,
-    PartialContract, RawContract, Slug, UNIVERSE, Version, VersionReq,
+    Asset, InvalidIdentifier, InvalidSemver, Kind, Matcher, PartialContract, RawContract,
+    Requirement, Slug, UNIVERSE, Version, VersionReq,
 };
 pub use universe::Universe;

@@ -10,4 +10,6 @@ license = "Apache-2.0"
 homepage = "https://github.com/balena-io/contrato"
 repository = "https://github.com/balena-io/contrato"
 authors = ["Balena Inc. <hello@balena.io>"]
+keywords = ["contracts", "dependencies", "capabilities", "balena"]
+categories = ["config", "data-structures"]
 readme = "README.md"

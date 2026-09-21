@@ -1,13 +1,15 @@
 {
   "name": "@balena/contrato",
   "version": "0.18.1",
-  "description": "The official contract implementation",
+  "description": "A simple, yet effective system for capability/requirements description and validation via contracts",
   "homepage": "https://github.com/balena-io/contrato",
   "main": "build/index.js",
   "types": "build/index.d.ts",
   "keywords": [
-    "balena",
-    "typescript"
+    "contracts",
+    "dependencies",
+    "capabilities",
+    "balena"
   ],
   "author": "Balena Inc. <hello@balena.io>",
   "license": "Apache-2.0",

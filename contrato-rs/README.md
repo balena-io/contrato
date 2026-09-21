@@ -1,6 +1,6 @@
 # contrato
 
-The official [contracts](#about-contracts) implementation for Rust.
+A simple, yet effective system for capability/requirements description and validation via [contracts](#about-contracts) in Rust.
 
 ## Quickstart
 
@@ -8,7 +8,7 @@ Add `contrato` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-contrato = { git = "https://github.com/balena-io/contrato" }
+contrato = "0"
 serde_json = "1"
 ```
 

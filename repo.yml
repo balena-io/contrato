@@ -1,4 +1,4 @@
-type: 'node'
+type: "docker"
 upstream:
-  - repo: 'skhema'
-    url: 'https://github.com/balena-io-modules/skhema'
+  - repo: "skhema"
+    url: "https://github.com/balena-io-modules/skhema"

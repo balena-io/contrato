@@ -1,6 +1,6 @@
 # Contrato
 
-The official [contracts](#about-contracts) implementation
+A simple, yet effective system for capability/requirements description and validation via [contracts](#about-contracts).
 
 ## Quickstart
 

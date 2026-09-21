@@ -98,8 +98,15 @@ pub(crate) fn validate_slug(s: &str) -> Result<(), InvalidIdentifier> {
 
 /// A contract type/kind string (e.g., `sw.os`, `hw.device-type`).
 ///
-/// Type strings identify the category of the *thing* the contract describes.
-/// They use dot-separated namespacing (e.g., `hw.device-type`, `arch.sw`).
+/// Type strings identify the category of the *thing* a contract describes,
+/// using dot-separated namespacing.
+///
+/// ```rust
+/// use contrato::ContractType;
+///
+/// let kind = ContractType::from("hw.device-type");
+/// assert_eq!(kind.as_str(), "hw.device-type");
+/// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ContractType(String);
@@ -136,7 +143,14 @@ impl From<String> for ContractType {
 
 /// A contract slug identifier (e.g., `debian`, `raspberry-pi`).
 ///
-/// Slugs uniquely identify a contract within its type.
+/// Slugs identify a contract within its type.
+///
+/// ```rust
+/// use contrato::Slug;
+///
+/// let slug = Slug::from("raspberry-pi");
+/// assert_eq!(slug.to_string(), "raspberry-pi");
+/// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Slug(String);
@@ -218,19 +232,26 @@ enum VersionInner {
 
 /// A contract version (e.g., `1.0.0`, `2.31`, `wheezy`).
 ///
-/// Construction tries strict semver first (`MAJOR.MINOR.PATCH`). If that
-/// fails, it pads the string with `.0` components (so `"2.31"` becomes
-/// `"2.31.0"` and `"1"` becomes `"1.0.0"`). This allows partial versions
-/// to participate in semver range comparisons while preserving the
-/// original string for serialization. Falls back to a plain identifier
-/// if padding doesn't produce valid semver either.
+/// Partial versions such as `"2.31"` are treated as semver (`2.31.0`) so
+/// they take part in range comparisons, while serializing back to the
+/// string they were written with. Anything that is not semver-shaped is
+/// kept as a plain identifier and compared for equality.
+///
+/// ```rust
+/// use contrato::Version;
+///
+/// let partial = Version::new("2.31");
+/// assert!(partial.is_semver());
+/// assert_eq!(partial.to_string(), "2.31");
+///
+/// let identifier = Version::new("wheezy");
+/// assert!(!identifier.is_semver());
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Version(VersionInner);
 
 impl Version {
-    /// Creates a new version by parsing the string. Tries strict semver
-    /// first, then pads with `.0` components, and falls back to a plain
-    /// identifier.
+    /// Creates a new version by parsing the string.
     pub fn new(s: impl Into<String>) -> Self {
         let s = s.into();
         if let Ok(v) = semver::Version::parse(&s) {
@@ -303,15 +324,24 @@ enum VersionReqInner {
 
 /// A version requirement or range (e.g., `>=1.0.0`, `^2.3`, `wheezy`).
 ///
-/// Deserialization tries semver range first; if that fails, stores as an
-/// identifier. Matching semantics depend on the variant: semver ranges
-/// use `satisfies()`, identifiers use exact string equality.
+/// A string that parses as a semver range is matched as a range; anything
+/// else is kept as an identifier and matched by exact equality.
+///
+/// ```rust
+/// use contrato::{Version, VersionReq};
+///
+/// let range = VersionReq::from(">=2.17");
+/// assert!(range.matches(&Version::new("2.31")));
+/// assert!(!range.matches(&Version::new("2.10")));
+///
+/// let identifier = VersionReq::from("wheezy");
+/// assert!(identifier.matches(&Version::new("wheezy")));
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct VersionReq(VersionReqInner);
 
 impl VersionReq {
-    /// Creates a new version requirement by parsing the string. If it is a
-    /// valid semver range, it is stored as such; otherwise as an identifier.
+    /// Creates a new version requirement by parsing the string.
     pub fn new(s: impl Into<String>) -> Self {
         let s = s.into();
         match semver::VersionReq::parse(&s) {
@@ -327,18 +357,9 @@ impl VersionReq {
 
     /// Returns `true` if `target` satisfies this requirement.
     ///
-    /// The allocation-free fast paths are:
-    /// - **Semver range × semver version**: delegate to
-    ///   [`semver::VersionReq::matches`] on the already-parsed inner
-    ///   values — the common case on the validation hot path.
-    /// - **Identifier × identifier**: direct string equality on the
-    ///   stored inner strings — no allocation, no re-parse.
-    ///
-    /// The mismatched cases (identifier target against a semver
-    /// range, or vice versa) fall back to comparing the two sides'
-    /// `Display` output. This allocates, but it is the rare path —
-    /// the contract corpus either uses semver throughout or
-    /// identifier strings throughout.
+    /// A semver range is satisfied by any version inside it; an
+    /// identifier requirement is satisfied only by the identical
+    /// version string.
     pub fn matches(&self, target: &Version) -> bool {
         // Fast path: both sides are semver (including padded partial versions).
         if let (Some(v), VersionReqInner::SemverRange(r)) = (target.as_semver(), &self.0) {
@@ -415,8 +436,20 @@ pub struct Asset {
 /// A matcher that references contracts by type and optional additional criteria.
 ///
 /// Used as requirement targets: what a contract needs from its context. Any
-/// additional matching outside kind/slug/version criteria should be placed in
-/// `data`, not as top-level fields.
+/// criteria outside type, slug and version belong in `data`, not as
+/// top-level fields.
+///
+/// ```rust
+/// use contrato::ContractMatcher;
+/// use serde_json::json;
+///
+/// let matcher = ContractMatcher::new("sw.library")
+///     .with_slug("glibc")
+///     .with_version(">=2.17")
+///     .with_data(json!({ "arch": "aarch64" }));
+///
+/// assert_eq!(matcher.kind.as_str(), "sw.library");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContractMatcher {
@@ -460,18 +493,20 @@ impl ContractMatcher {
     /// Restricts this matcher to contracts whose version satisfies
     /// the given requirement.
     ///
-    /// Note that version conversion from strings uses the same rules as [`VersionReq`] deserialization,
-    /// if the input can be parsed into semver range correctly, it is treated as such, otherwise it
-    /// is treated as an identifier. This has the downside that a typo will be treated as an identifier.
+    /// Strings are converted as [`VersionReq`] describes: anything that
+    /// is not a valid semver range becomes an identifier matched by
+    /// exact equality, so a typo silently changes what the matcher
+    /// means rather than failing.
     ///
-    /// Example:
+    /// # Examples
+    ///
     /// ```rust
     /// use contrato::ContractMatcher;
     ///
-    /// // matches any OS contract with version older than v6
+    /// // matches any OS contract at v6 or newer
     /// let good = ContractMatcher::new("sw.os").with_version(">=6");
     ///
-    /// // matches a contract with version exactly equal to the identifier `>>=6`
+    /// // typo: matches only a version equal to the string ">>=6"
     /// let bad = ContractMatcher::new("sw.os").with_version(">>=6");
     /// ```
     pub fn with_version(mut self, version: impl Into<VersionReq>) -> Self {
@@ -479,8 +514,9 @@ impl ContractMatcher {
         self
     }
 
-    /// Restricts this matcher to contracts whose `data` deep-matches
-    /// the given payload.
+    /// Restricts this matcher to contracts whose `data` contains every
+    /// key in the given payload, with matching values. Nested objects
+    /// are compared the same way; extra keys are ignored.
     pub fn with_data(mut self, data: Value) -> Self {
         self.data = Some(data);
         self
@@ -490,18 +526,28 @@ impl ContractMatcher {
 /// A contract requirement — either a direct match or a boolean operation
 /// over a flat list of simple matchers.
 ///
-/// Requirements express what a contract needs. They can be:
+/// Requirements express what a contract needs:
 /// - A simple match: `{"type": "hw.device-type", "slug": "rpi"}`
 /// - A disjunction: `{"or": [{"type": "hw.device-type", "slug": "rpi"}, ...]}`
 /// - A negation: `{"not": [{"type": "sw.os", "slug": "windows"}]}`
 ///
-/// The CUE schema that this type mirrors allows only one level of boolean
-/// nesting: the items inside an `or` / `not` are always simple matchers,
-/// never further boolean operations. That constraint is enforced here at
-/// the type level — `Or` / `Not` carry `Vec<ContractMatcher>`, not
-/// `Vec<ContractRequirement>`. Attempting to deserialize a nested
-/// `{"or": [{"or": [...]}]}` shape will fail with a serde error because
-/// the inner object has no `type` field.
+/// Only one level of boolean nesting is allowed: the items inside an `or`
+/// or a `not` are always simple matchers, so a nested
+/// `{"or": [{"or": [...]}]}` shape fails to deserialize.
+///
+/// ```rust
+/// use contrato::ContractRequirement;
+///
+/// let req: ContractRequirement = serde_json::from_value(serde_json::json!({
+///     "or": [
+///         { "type": "hw.device-type", "slug": "raspberrypi4-64" },
+///         { "type": "hw.device-type", "slug": "raspberrypi5" }
+///     ]
+/// }))?;
+///
+/// assert!(matches!(req, ContractRequirement::Or(ref items) if items.len() == 2));
+/// # Ok::<(), serde_json::Error>(())
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ContractRequirement {
     /// A direct matcher requirement.
@@ -567,7 +613,7 @@ fn deserialize_requirement_from_value(value: Value) -> Result<ContractRequiremen
 /// Contract metadata fields without a type identifier.
 ///
 /// Used for variant definitions that get deep-merged with a base contract
-/// during expansion. The `type` and `slug` come from the base contract.
+/// during expansion. The `type` in that case comes from the base contract.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct PartialContract {
     /// Contract slug.
@@ -614,20 +660,30 @@ pub struct PartialContract {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub variants: Vec<PartialContract>,
 
-    /// Children contracts stored as a nested tree (`{type: {slug: contract}}`).
-    ///
-    /// Deserialized into a strongly typed [`ChildrenTree`] enum. Conversion
-    /// between this tree format and flat contract lists is handled by the
-    /// [`children_tree`](crate::children_tree) module.
+    /// Children contracts, nested by type and slug — see [`ChildrenTree`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub children: Option<ChildrenTree>,
 }
 
 /// The raw contract data as deserialized from JSON.
 ///
-/// A full contract has a required `kind` (`type` on JSON), an optional `canonical_slug`, shared
-/// fields via [`PartialContract`], and a catch-all `extra` for round-trip
-/// fidelity of unknown top-level fields.
+/// A full contract has a required `kind` (`type` in JSON), an optional
+/// `canonical_slug`, the shared fields of [`PartialContract`], and a
+/// catch-all `extra` preserving unknown top-level fields.
+///
+/// ```rust
+/// use contrato::RawContract;
+///
+/// let raw: RawContract = serde_json::from_value(serde_json::json!({
+///     "type": "sw.library",
+///     "slug": "glibc",
+///     "version": "2.40"
+/// }))?;
+///
+/// assert_eq!(raw.kind.as_str(), "sw.library");
+/// assert_eq!(raw.body.version.map(|v| v.to_string()), Some("2.40".into()));
+/// # Ok::<(), serde_json::Error>(())
+/// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct RawContract {
     /// The contract type (e.g., `sw.os`, `hw.device-type`).

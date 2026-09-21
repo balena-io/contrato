@@ -1,18 +1,31 @@
 //! The [`Universe`] newtype: a top-level [`Contract`] of type
 //! `meta.universe` that aggregates other contracts as children.
-//!
-//! `Universe` is a thin wrapper whose sole purpose is to construct a
-//! contract with the well-known `meta.universe` type. All contract
-//! operations — adding children, searching, requirement checks — work
-//! transparently via [`Deref`] / [`DerefMut`] to the inner [`Contract`].
 
 use std::ops::{Deref, DerefMut};
 
 use crate::contract::Contract;
 use crate::types::{ContractType, RawContract, UNIVERSE};
 
-/// A universe: a [`Contract`] with type `meta.universe` used as the
-/// root container for a collection of contracts.
+/// A [`Contract`] of type [`UNIVERSE`](crate::UNIVERSE), used as the root
+/// container for a collection of contracts.
+///
+/// Every contract operation — adding children, searching, checking
+/// requirements — is available through [`Deref`] to the inner
+/// [`Contract`].
+///
+/// ```rust
+/// use contrato::{Contract, ContractMatcher, Universe};
+///
+/// let mut universe = Universe::new();
+/// let os: Contract = serde_json::from_value(
+///     serde_json::json!({ "type": "sw.os", "slug": "balenaos", "version": "6.1.2" }))?;
+///
+/// universe.add_child(os).unwrap();
+///
+/// let found = universe.find_children(&ContractMatcher::new("sw.os"));
+/// assert_eq!(found.len(), 1);
+/// # Ok::<(), serde_json::Error>(())
+/// ```
 #[derive(Debug, Clone)]
 pub struct Universe(Contract);
 

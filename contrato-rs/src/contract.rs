@@ -100,13 +100,30 @@ struct RequirementsIndex {
     compiled: IndexSet<ContractRequirement>,
 }
 
-/// A contract: raw data plus derived hash, children index, and requirements.
+/// A versioned *thing* — its identity, the capabilities it provides
+/// (`children`) and the ones it needs (`requires`).
 ///
-/// The preferred way to construct a [`Contract`] is via [`serde`]
-/// deserialization from JSON, or via [`Contract::build`] for variant + alias
-/// expansion. Construction interpolates `{{this.*}}` templates and
-/// rebuilds the children tree and requirements index; the hash itself is
-/// computed lazily on first call to [`Self::hash`].
+/// Contracts are built by deserializing a contract JSON document, or with
+/// [`Contract::build`] when the document declares variants or aliases that
+/// need expanding. `{{this.*}}` expressions in the document are
+/// interpolated against the contract's own fields as it is built.
+///
+/// ```rust
+/// use contrato::Contract;
+///
+/// let os: Contract = serde_json::from_value(serde_json::json!({
+///     "type": "sw.os",
+///     "slug": "balenaos",
+///     "version": "6.1.2",
+///     "children": [
+///         { "type": "sw.service", "slug": "balena-engine", "version": "20.10.43" }
+///     ]
+/// }))?;
+///
+/// assert_eq!(os.get_reference_string(), "balenaos@6.1.2");
+/// assert_eq!(os.get_children_by_type("sw.service").len(), 1);
+/// # Ok::<(), serde_json::Error>(())
+/// ```
 #[derive(Clone)]
 pub struct Contract {
     /// The raw contract data.
@@ -137,10 +154,9 @@ impl Contract {
     /// Children are loaded from `raw.children`, templates are
     /// interpolated, and the requirements index is rebuilt. The
     /// contract's own hash is **not** computed at this point — it is
-    /// populated lazily on first call to [`Self::hash`]. Blueprint's
-    /// combinatorial expansion relies on this: ephemeral parent
-    /// contracts that are only used for satisfiability checks never pay
-    /// the hashing cost.
+    /// populated lazily on first call to [`Self::hash`], so contracts
+    /// that are only used for satisfiability checks never pay the
+    /// hashing cost.
     ///
     /// # Errors
     ///
@@ -178,28 +194,37 @@ impl Contract {
         Ok(this)
     }
 
-    /// Compiles `{{this.*}}` templates in `raw`, then rebuilds derived
-    /// state.
+    /// Re-resolves this contract's `{{this.*}}` expressions against its
+    /// current fields.
     ///
-    /// Runs automatically during construction. Exposed publicly so that
-    /// callers which mutate the contract afterwards — typically by
-    /// replacing the children index with a new set and wanting the
-    /// parent's `{{this.*}}` placeholders re-evaluated against any
-    /// field that changed — can force a fresh pass. Repeated calls are
-    /// safe: unresolved placeholders stay unresolved and
-    /// already-resolved values stay stable as long as `raw` is
-    /// unchanged.
-    ///
-    /// The `children` subtree is excluded from interpolation: each
-    /// child is its own contract and is interpolated against its own
-    /// fields during its own construction. [`Self::rebuild`] is called
-    /// at the end, which invalidates the hash cell.
+    /// Interpolation already runs when a contract is built; call this
+    /// after mutating a contract so placeholders that referenced a
+    /// changed field are evaluated again. Repeated calls are safe:
+    /// unresolved placeholders stay unresolved, resolved values stay
+    /// stable. Children are left alone — each is interpolated against
+    /// its own fields.
     ///
     /// # Errors
     ///
     /// Returns [`Error::InvalidIdentifier`] when a templated field now
     /// resolves to an invalid value — for example a `slug` template
-    /// pointing at a child name that contains a space.
+    /// pointing at a name that contains a space.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use contrato::Contract;
+    ///
+    /// let mut contract: Contract = serde_json::from_value(serde_json::json!({
+    ///     "type": "sw.os",
+    ///     "slug": "balenaos",
+    ///     "version": "6.1.2",
+    ///     "name": "{{this.slug}} v{{this.version}}"
+    /// }))?;
+    ///
+    /// contract.interpolate().unwrap();
+    /// # Ok::<(), serde_json::Error>(())
+    /// ```
     pub fn interpolate(&mut self) -> Result<(), Error> {
         self.compile_templates()?;
         self.rebuild();
@@ -209,6 +234,8 @@ impl Contract {
     /// Compiles `{{this.*}}` templates in `raw` in place, leaving derived
     /// state untouched.
     fn compile_templates(&mut self) -> Result<(), Error> {
+        // Children are skipped: each is its own contract and resolves
+        // `{{this.*}}` against its own fields during its construction.
         let mut blacklist = HashSet::new();
         blacklist.insert("children".to_string());
 
@@ -346,11 +373,7 @@ impl Contract {
     }
 
     /// Returns an iterator over all slugs this contract can be referenced
-    /// by: its own slug (if any) together with every alias.
-    ///
-    /// Prefers borrowed `&str` over allocated `String` so callers that
-    /// build indexes (e.g. [`crate::index::ContractIndex`])
-    /// can avoid one allocation per insertion.
+    /// by: every alias, followed by its own slug (if any).
     pub fn get_all_slugs(&self) -> impl Iterator<Item = &str> {
         self.raw
             .body
@@ -365,14 +388,23 @@ impl Contract {
         !self.raw.body.aliases.is_empty()
     }
 
-    /// Returns the contract's deterministic hash, computing it on
-    /// first call and caching the result.
+    /// Returns the contract's deterministic hash.
     ///
-    /// The hash is a deterministic SHA-256 digest of the serialized raw
-    /// contract data. Subsequent calls return the cached value without
-    /// re-hashing. Any mutation that routes through [`Self::rebuild`]
-    /// (i.e. every mutator on [`Contract`]) invalidates the cache, so
-    /// the next call recomputes.
+    /// A SHA-256 digest of the contract data, stable across property
+    /// reordering and recomputed after any mutation. Two contracts hash
+    /// to the same value exactly when they hold the same data.
+    ///
+    /// ```rust
+    /// use contrato::Contract;
+    ///
+    /// let a: Contract = serde_json::from_value(
+    ///     serde_json::json!({ "type": "sw.os", "slug": "debian" }))?;
+    /// let b: Contract = serde_json::from_value(
+    ///     serde_json::json!({ "slug": "debian", "type": "sw.os" }))?;
+    ///
+    /// assert_eq!(a.hash(), b.hash());
+    /// # Ok::<(), serde_json::Error>(())
+    /// ```
     pub fn hash(&self) -> &str {
         self.hash.get_or_init(|| {
             let value =
@@ -384,25 +416,55 @@ impl Contract {
     /// Returns an iterator over the distinct contract types referenced
     /// by this contract's own `requires` entries.
     ///
-    /// Only this contract's direct requirements are reported; the walk
-    /// does **not** descend into children. Intended for callers that
-    /// need to decide whether a given contract has any opinion about a
-    /// set of types — typically to short-circuit a cross-reference
-    /// resolution or a filter pass before iterating the matcher
-    /// buckets returned by [`Self::requirement_matchers_for_type`].
+    /// Only direct requirements are reported — children are not walked.
+    /// Use [`Self::requirement_matchers_for_type`] to get the matchers
+    /// behind each type.
     pub fn requirement_types(&self) -> impl Iterator<Item = &str> {
         self.requirements.matchers.keys().map(String::as_str)
     }
 
-    /// Returns an iterator over the simple matchers registered under
-    /// the given requirement type.
+    /// Returns an iterator over this contract's simple requirement
+    /// matchers targeting `kind`, empty when it requires nothing of
+    /// that type.
     ///
-    /// Returns an empty iterator when the type is not present in this
-    /// contract's own requirements index. The matchers yielded are the
-    /// compiled form of this contract's `requires` entries, bucketed
-    /// by target type; feeding each one back into
-    /// [`Self::find_children`] on a parent contract walks the
-    /// cross-references a requirement entry induces.
+    /// Matchers inside an `or` or a `not` are reported alongside plain
+    /// ones, without their boolean context — use them to find out *what*
+    /// a contract points at, not whether its requirements hold. Feeding
+    /// each one to [`Self::find_children`] on a contract that holds
+    /// candidates resolves the reference to the contracts behind it.
+    ///
+    /// # Examples
+    ///
+    /// Resolving an application's library requirements against a
+    /// universe of known contracts:
+    ///
+    /// ```rust
+    /// use contrato::{Contract, Universe};
+    ///
+    /// let mut universe = Universe::new();
+    /// for candidate in [
+    ///     serde_json::json!({ "type": "sw.library", "slug": "glibc", "version": "2.31" }),
+    ///     serde_json::json!({ "type": "sw.library", "slug": "glibc", "version": "2.10" }),
+    ///     serde_json::json!({ "type": "sw.library", "slug": "openssl", "version": "3.0.0" }),
+    /// ] {
+    ///     universe.add_child(serde_json::from_value(candidate)?).unwrap();
+    /// }
+    ///
+    /// let app: Contract = serde_json::from_value(serde_json::json!({
+    ///     "type": "sw.application",
+    ///     "slug": "myapp",
+    ///     "requires": [{ "type": "sw.library", "slug": "glibc", "version": ">=2.17" }]
+    /// }))?;
+    ///
+    /// let resolved: Vec<String> = app
+    ///     .requirement_matchers_for_type("sw.library")
+    ///     .flat_map(|matcher| universe.find_children(matcher))
+    ///     .map(Contract::get_reference_string)
+    ///     .collect();
+    ///
+    /// assert_eq!(resolved, ["glibc@2.31"]);
+    /// # Ok::<(), serde_json::Error>(())
+    /// ```
     pub fn requirement_matchers_for_type(
         &self,
         kind: &str,
@@ -411,10 +473,6 @@ impl Contract {
     }
 
     /// Returns a reference to the underlying [`RawContract`].
-    ///
-    /// Crate-internal accessor used by [`children_tree::build`] when
-    /// rebuilding the serialized children tree from
-    /// [`crate::index::ContractIndex`].
     pub(crate) fn raw(&self) -> &RawContract {
         &self.raw
     }
@@ -422,21 +480,37 @@ impl Contract {
 
 /// Static helpers.
 impl Contract {
-    /// Expands a source contract into one or more concrete contracts by
-    /// applying variant expansion and alias generation.
+    /// Expands a source contract into one concrete contract per variant,
+    /// plus one per alias.
     ///
-    /// For each expanded variant:
-    /// 1. One contract is produced for each alias, with `canonical_slug`
-    ///    set to the original slug and `slug` replaced by the alias.
-    /// 2. One contract is produced for the variant itself, with its
-    ///    `aliases` cleared.
-    ///
-    /// The alias contracts come before the base contract in the output.
+    /// Each variant is merged onto the base contract. Every alias then
+    /// yields its own contract, whose `slug` is the alias and whose
+    /// `canonical_slug` is the original slug; the alias contracts come
+    /// before the contract they are aliases of.
     ///
     /// # Errors
     ///
-    /// Returns the first error raised while constructing an expanded
-    /// contract (see [`Contract::new`])
+    /// Returns the first [`Error`] raised while constructing one of the
+    /// expanded contracts — for instance when a variant completes a
+    /// templated `slug` with an invalid value.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use contrato::{Contract, RawContract};
+    ///
+    /// let raw: RawContract = serde_json::from_value(serde_json::json!({
+    ///     "type": "hw.device-type",
+    ///     "slug": "raspberrypi4-64",
+    ///     "aliases": ["rpi4"],
+    ///     "variants": [{ "version": "1" }, { "version": "2" }]
+    /// }))?;
+    ///
+    /// let expanded = Contract::build(raw).unwrap();
+    /// let refs: Vec<_> = expanded.iter().map(|c| c.get_reference_string()).collect();
+    /// assert_eq!(refs, ["rpi4@1", "raspberrypi4-64@1", "rpi4@2", "raspberrypi4-64@2"]);
+    /// # Ok::<(), serde_json::Error>(())
+    /// ```
     pub fn build(source: RawContract) -> Result<Vec<Contract>, Error> {
         let mut result = Vec::new();
         for mut base in variants::build(source) {
@@ -458,31 +532,39 @@ impl Contract {
 impl Contract {
     /// Adds a child contract to this contract.
     ///
-    /// When the child is new, the derived state (`raw.children`
-    /// serialized tree and the requirements index) is rebuilt and
-    /// the parent's hash cache is invalidated so the next
-    /// [`Self::hash`] call recomputes. Adding a child whose hash is
-    /// already present in the index is a full no-op.
+    /// Adding a child equal to one already present is a no-op.
     ///
     /// # Errors
     ///
     /// Returns [`Error::OverlappingChildTypes`] when the new child cannot
     /// be nested alongside the existing ones, [`Error::MissingChildSlug`]
-    /// when the child has no slug to be keyed by, and [`Error::InvalidChildType`]
-    /// when the child type is not a valid path.
-    /// Nothing is inserted in any of those cases.
+    /// when the child has no slug to be keyed by, and
+    /// [`Error::InvalidChildType`] when the child type is not a valid
+    /// path. Nothing is inserted in any of those cases.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use contrato::Contract;
+    ///
+    /// let mut os: Contract = serde_json::from_value(
+    ///     serde_json::json!({ "type": "sw.os", "slug": "balenaos" }))?;
+    /// let service: Contract = serde_json::from_value(
+    ///     serde_json::json!({ "type": "sw.service", "slug": "balena-engine" }))?;
+    ///
+    /// os.add_child(service).unwrap();
+    /// assert_eq!(os.get_children().len(), 1);
+    /// # Ok::<(), serde_json::Error>(())
+    /// ```
     pub fn add_child(&mut self, contract: Contract) -> Result<&mut Self, Error> {
         self.add_children([contract])
     }
 
     /// Removes a child contract from this contract.
     ///
-    /// The child is identified by its hash: any [`Contract`] hashing to
-    /// the same value as a stored child will remove that child. When the
-    /// child is not present the call is a no-op and the derived state is
-    /// left untouched. Otherwise the children tree and requirements
-    /// index are rebuilt (which also invalidates the parent's hash
-    /// cache).
+    /// The child is identified by equality, so any contract holding the
+    /// same data as a stored child removes it. Removing a child that is
+    /// not present is a no-op.
     pub fn remove_child(&mut self, contract: &Contract) -> &mut Self {
         if self.children.remove_by_hash(contract.hash()) {
             self.rebuild();
@@ -490,16 +572,11 @@ impl Contract {
         self
     }
 
-    /// Adds multiple child contracts to this contract.
+    /// Adds multiple child contracts to this contract, cheaper than
+    /// repeated [`Self::add_child`] calls.
     ///
-    /// All insertions happen first, then a single [`Self::rebuild`]
-    /// is performed — avoiding the O(n²) cost of rebuilding after
-    /// each individual insertion. Duplicate children (by hash)
-    /// within the batch are deduplicated through the same no-op
-    /// path used by single insertion. If every contract in the
-    /// batch turns out to be a duplicate (or the batch is empty),
-    /// no `rebuild` is performed and the parent's hash cache is
-    /// left intact.
+    /// Duplicates, whether already stored or repeated within the batch,
+    /// are ignored.
     ///
     /// # Errors
     ///
@@ -510,44 +587,61 @@ impl Contract {
         &mut self,
         contracts: impl IntoIterator<Item = Contract>,
     ) -> Result<&mut Self, Error> {
+        // One `rebuild` for the whole batch, rather than the O(n²) cost
+        // of rebuilding after each insertion. `insert_all` reports
+        // `false` when every contract was a duplicate, leaving the
+        // derived state (and the hash cache) untouched.
         if self.children.insert_all(contracts.into_iter().collect())? {
             self.rebuild();
         }
         Ok(self)
     }
 
-    /// Looks up a direct child contract by its hash.
+    /// Looks up a direct child contract by its [`hash`](Self::hash).
     ///
-    /// This is a non-recursive lookup — only direct children of `self`
-    /// are considered, not children of children.
+    /// Only direct children of `self` are considered, not children of
+    /// children.
     pub fn get_child_by_hash(&self, child_hash: &str) -> Option<&Contract> {
         self.children.get(child_hash)
     }
 
-    /// Recursively collects all children of this contract.
+    /// Returns every descendant of this contract: its direct children,
+    /// their children, and so on.
     ///
-    /// Returns direct children of `self` and, for each of those,
-    /// recurses into their own children. A contract with no children
-    /// returns an empty vector. Use [`Self::get_children_filtered`] to
-    /// constrain the result to a fixed set of types.
+    /// Use [`Self::get_children_filtered`] to constrain the result to a
+    /// set of types.
+    ///
+    /// ```rust
+    /// use contrato::Contract;
+    ///
+    /// let os: Contract = serde_json::from_value(serde_json::json!({
+    ///     "type": "sw.os",
+    ///     "slug": "balenaos",
+    ///     "children": [{
+    ///         "type": "sw.service",
+    ///         "slug": "balena-engine",
+    ///         "children": [{ "type": "sw.feature", "slug": "overlay2" }]
+    ///     }]
+    /// }))?;
+    ///
+    /// assert_eq!(os.get_children().len(), 2);
+    /// # Ok::<(), serde_json::Error>(())
+    /// ```
     pub fn get_children(&self) -> Vec<&Contract> {
         let mut out = Vec::new();
         self.collect_children(&[], &mut out);
         out
     }
 
-    /// Recursively collects children whose type is in `types`.
+    /// Returns every descendant whose type is in `types`.
     ///
-    /// Non-matching children are still traversed so that their own
-    /// matching descendants are returned — filtering prunes the
-    /// emitted set, not the walk.
-    ///
-    /// The filter is a slice rather than a set: typical call sites pass
-    /// one or a handful of types, so linear scan is both faster than a
-    /// `HashSet` lookup and zero-allocation at the call site. Duplicate
-    /// entries in `types` are harmless — each child is still emitted at
-    /// most once per visit.
+    /// Non-matching descendants are still traversed, so a match nested
+    /// under a non-matching parent is still returned. Duplicate entries
+    /// in `types` are harmless.
     pub fn get_children_filtered(&self, types: &[&str]) -> Vec<&Contract> {
+        // A slice rather than a set: call sites pass one or a handful of
+        // types, where a linear scan beats hashing and costs the caller
+        // no allocation.
         let mut out = Vec::new();
         self.collect_children(types, &mut out);
         out
@@ -570,21 +664,16 @@ impl Contract {
         }
     }
 
-    /// Recursively collects children whose type matches `type_`.
+    /// Returns every descendant whose type is `type_`.
     ///
-    /// Convenience shorthand for [`Self::get_children_filtered`] with a
-    /// single-element slice. Callers who matcher-keyed
-    /// lookup should use [`Self::find_children`] instead.
+    /// Shorthand for [`Self::get_children_filtered`] with a single type.
+    /// To narrow by slug, version or `data`, use [`Self::find_children`].
     pub fn get_children_by_type(&self, type_: &str) -> Vec<&Contract> {
         self.get_children_filtered(&[type_])
     }
 
-    /// Returns the deduplicated list of child contract types reachable
-    /// from this contract, including every descendant's direct types.
-    ///
-    /// A single `HashSet` accumulator is threaded through the recursion
-    /// to deduplicate in place; the final set is converted to a `Vec`
-    /// at the top of the call. The output order is unspecified.
+    /// Returns the deduplicated types of every descendant of this
+    /// contract. The order is unspecified.
     pub fn get_children_types(&self) -> Vec<String> {
         let mut acc = HashSet::new();
         self.collect_children_types_into(&mut acc);
@@ -607,22 +696,34 @@ impl Contract {
 
 /// Matcher-based child search.
 impl Contract {
-    /// Recursively finds children matching the given matcher.
+    /// Returns every descendant matching `matcher`.
     ///
-    /// The matcher is a typed [`ContractMatcher`] with a required
-    /// target type plus optional slug, semver requirement, and a
-    /// `data` payload for deep partial matching.
+    /// A descendant matches when its type equals the matcher's, and —
+    /// where the matcher sets them — its slug is equal, its version
+    /// satisfies the requirement, and its `data` contains everything in
+    /// the matcher's `data` (nested objects are compared the same way;
+    /// extra keys are ignored).
     ///
-    /// The search walks `self` together with every descendant. For
-    /// each visited contract, the candidate set is drawn from that
-    /// contract's own children index, narrowed first by `(type,
-    /// slug)` when the matcher specifies a slug and by `type` alone
-    /// otherwise. Each candidate is then filtered by [`partial_match`]
-    /// over the matcher's `data` (against the child's own `data`) and
-    /// by [`version_match`] over the matcher's version requirement.
+    /// ```rust
+    /// use contrato::{Contract, ContractMatcher};
+    /// use serde_json::json;
     ///
-    /// Returns an empty vector when the target type is not present
-    /// in any descendant of `self`.
+    /// let os: Contract = serde_json::from_value(json!({
+    ///     "type": "sw.os",
+    ///     "slug": "balenaos",
+    ///     "children": [
+    ///         { "type": "sw.service", "slug": "balena-engine", "version": "20.10.43" },
+    ///         { "type": "sw.service", "slug": "NetworkManager", "version": "0.6.0" }
+    ///     ]
+    /// }))?;
+    ///
+    /// let matcher = ContractMatcher::new("sw.service").with_version(">=20");
+    /// let found = os.find_children(&matcher);
+    ///
+    /// assert_eq!(found.len(), 1);
+    /// assert_eq!(found[0].get_slug(), Some("balena-engine"));
+    /// # Ok::<(), serde_json::Error>(())
+    /// ```
     pub fn find_children(&self, matcher: &ContractMatcher) -> Vec<&Contract> {
         let target_type = matcher.kind.as_str();
         if !Self::has_descendant_type_in(&self.children, target_type) {
@@ -807,23 +908,35 @@ impl Contract {
 
 /// Requirement satisfaction.
 impl Contract {
-    /// Checks whether `contract`'s compiled requirements are all
-    /// satisfied by the children (and capabilities) reachable from
-    /// `self`.
+    /// Returns `true` when everything `contract` requires is provided by
+    /// the descendants of `self`.
     ///
-    /// The conjuncts checked are `contract`'s own compiled
-    /// requirements plus the compiled requirements of every
-    /// descendant of **`contract`** (not of `self`). Iteration
-    /// short-circuits on the first unsatisfied conjunct. An empty
-    /// conjunct list is always satisfied.
+    /// The requirements checked are `contract`'s own plus those of every
+    /// descendant of **`contract`**. A contract that requires nothing is
+    /// always satisfied.
     ///
-    /// The `types` filter, when supplied, restricts which requirement
-    /// types are evaluated: a simple `Match` whose type is not in the
-    /// filter is treated as satisfied; `Or` / `Not` disjuncts are first
-    /// filtered by allowed types before the boolean logic runs. Pass
-    /// `None` to evaluate every requirement. The slice is consumed
-    /// by linear `contains` on every requirement-type check —
-    /// duplicates are harmless, so callers need not dedupe.
+    /// `types`, when supplied, restricts the check to requirements
+    /// targeting those types; requirements on any other type are treated
+    /// as satisfied. Pass `None` to check every requirement.
+    ///
+    /// ```rust
+    /// use contrato::Contract;
+    ///
+    /// let os: Contract = serde_json::from_value(serde_json::json!({
+    ///     "type": "sw.os",
+    ///     "slug": "balenaos",
+    ///     "children": [{ "type": "sw.library", "slug": "glibc", "version": "2.31" }]
+    /// }))?;
+    ///
+    /// let app: Contract = serde_json::from_value(serde_json::json!({
+    ///     "type": "sw.application",
+    ///     "slug": "myapp",
+    ///     "requires": [{ "type": "sw.library", "slug": "glibc", "version": ">=2.17" }]
+    /// }))?;
+    ///
+    /// assert!(os.satisfies_child_contract(&app, None));
+    /// # Ok::<(), serde_json::Error>(())
+    /// ```
     pub fn satisfies_child_contract(&self, contract: &Contract, types: Option<&[&str]>) -> bool {
         Self::check_contract_satisfied_recursive(&self.children, contract, types)
     }
@@ -852,23 +965,30 @@ impl Contract {
         true
     }
 
-    /// Returns the list of `contract`'s compiled requirements that
-    /// are not satisfied by the children (and capabilities) reachable
-    /// from `self`.
+    /// Returns the requirements of `contract` that the descendants of
+    /// `self` do not provide — the detail behind a `false` from
+    /// [`Self::satisfies_child_contract`], which it matches in scope and
+    /// in the meaning of `types`.
     ///
-    /// The conjunct set is identical to the one used by
-    /// [`Self::satisfies_child_contract`]: `contract`'s own compiled
-    /// requirements plus the compiled requirements of every
-    /// descendant of **`contract`**. Unlike the satisfaction check,
-    /// this method does not short-circuit — every conjunct is
-    /// evaluated so that the full unsatisfied list can be reported.
-    /// Returns an empty vector when the conjunct set is empty.
+    /// ```rust
+    /// use contrato::Contract;
     ///
-    /// The returned requirements are cloned from the compiled
-    /// index; callers receive owned data and can freely drop the
-    /// source contract without affecting the result. The `types`
-    /// filter has the same semantics as on
-    /// [`Self::satisfies_child_contract`].
+    /// let os: Contract = serde_json::from_value(serde_json::json!({
+    ///     "type": "sw.os",
+    ///     "slug": "balenaos",
+    ///     "children": [{ "type": "sw.library", "slug": "glibc", "version": "2.10" }]
+    /// }))?;
+    ///
+    /// let app: Contract = serde_json::from_value(serde_json::json!({
+    ///     "type": "sw.application",
+    ///     "slug": "myapp",
+    ///     "requires": [{ "type": "sw.library", "slug": "glibc", "version": ">=2.17" }]
+    /// }))?;
+    ///
+    /// let missing = os.get_not_satisfied_child_requirements(&app, None);
+    /// assert_eq!(missing.len(), 1);
+    /// # Ok::<(), serde_json::Error>(())
+    /// ```
     pub fn get_not_satisfied_child_requirements(
         &self,
         contract: &Contract,
@@ -902,26 +1022,33 @@ impl Contract {
         }
     }
 
-    /// Checks whether every descendant of `self` has its compiled
-    /// requirements satisfied against `self`.
+    /// Returns `true` when every descendant of `self` has its
+    /// requirements provided by the other descendants of `self` —
+    /// i.e. this contract is internally consistent.
     ///
-    /// Walks every descendant recursively. When a `types` filter is
-    /// supplied, a descendant whose own requirement-types set is
-    /// disjoint with `types` is skipped: **its own** compiled
-    /// requirements are not checked, but the walk still recurses
-    /// into its children so any satisfied-relevant grandchildren
-    /// are evaluated. The disjoint check targets the descendant's
-    /// direct requirements only — not the types referenced by its
-    /// subtree.
+    /// `types`, when supplied, skips descendants that require nothing of
+    /// those types; their own descendants are still checked. A contract
+    /// with no descendants is satisfied.
     ///
-    /// Returns `true` when every evaluated descendant is satisfied,
-    /// including the trivial cases of no descendants or every
-    /// descendant being skipped by the `types` filter. Short-circuits
-    /// on the first unsatisfied descendant.
+    /// ```rust
+    /// use contrato::Contract;
     ///
-    /// Iterates descendants' `requirements.compiled` directly — no
-    /// owned snapshot, no per-descendant `ContractRequirement`
-    /// clones on the happy path.
+    /// let os: Contract = serde_json::from_value(serde_json::json!({
+    ///     "type": "sw.os",
+    ///     "slug": "balenaos",
+    ///     "children": [
+    ///         { "type": "sw.library", "slug": "glibc", "version": "2.31" },
+    ///         {
+    ///             "type": "sw.utility",
+    ///             "slug": "curl",
+    ///             "requires": [{ "type": "sw.library", "slug": "glibc", "version": ">=2.17" }]
+    ///         }
+    ///     ]
+    /// }))?;
+    ///
+    /// assert!(os.are_children_satisfied(None));
+    /// # Ok::<(), serde_json::Error>(())
+    /// ```
     pub fn are_children_satisfied(&self, types: Option<&[&str]>) -> bool {
         let root_children = &self.children;
         Self::check_descendants_satisfied_recursive(root_children, root_children, types)
@@ -973,30 +1100,15 @@ impl Contract {
         true
     }
 
-    /// Returns the aggregated list of unsatisfied requirements across
-    /// every descendant of `self`.
+    /// Returns the requirements that the descendants of `self` leave
+    /// unsatisfied — the detail behind a `false` from
+    /// [`Self::are_children_satisfied`].
     ///
-    /// # Semantics asymmetry
-    ///
-    /// **This method does not compose with
-    /// [`Self::get_not_satisfied_child_requirements`] on a per-child
-    /// basis.** Their disjoint-filter branches diverge deliberately:
-    ///
-    /// - **Non-disjoint descendant**: the descendant is evaluated
-    ///   via the same per-conjunct satisfaction check as
-    ///   [`Self::get_not_satisfied_child_requirements`], and the
-    ///   unsatisfied subset is appended.
-    /// - **Disjoint descendant** (its direct requirement types share
-    ///   no element with the `types` filter): the descendant's
-    ///   **own** compiled requirements are appended wholesale, **not**
-    ///   the result of the per-conjunct check. They target types the
-    ///   caller has opted out of, so they cannot possibly be
-    ///   satisfied inside the current validation scope. The direct
-    ///   requirements alone are enough to signal "this descendant
-    ///   has unsatisfied needs" without walking into its subtree.
-    ///
-    /// In either branch the walk continues into the descendant's
-    /// own children, so nested descendants are still processed.
+    /// The `types` filter behaves differently here than on
+    /// [`Self::are_children_satisfied`]: a descendant that requires
+    /// nothing of those types is not skipped, all of its requirements
+    /// are reported unsatisfied. They target types the caller excluded
+    /// from the check, so nothing in scope can satisfy them.
     pub fn get_all_not_satisfied_child_requirements(
         &self,
         types: Option<&[&str]>,
@@ -1124,9 +1236,8 @@ impl Serialize for Contract {
 }
 
 impl<'de> Deserialize<'de> for Contract {
-    /// Deserializes a contract by first deserializing into a [`RawContract`]
-    /// and then constructing through the normal lifecycle (load children,
-    /// interpolate, rebuild).
+    /// Deserializes a contract, nesting its children and interpolating
+    /// its `{{this.*}}` expressions.
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let raw = RawContract::deserialize(deserializer)?;
         Contract::new(raw).map_err(de::Error::custom)
@@ -1134,11 +1245,8 @@ impl<'de> Deserialize<'de> for Contract {
 }
 
 impl PartialEq for Contract {
-    /// Two contracts are equal when their deterministic hashes match.
-    ///
-    /// Triggers lazy hashing on either side if the cache is empty.
-    /// Because the hash is a SHA-256 of the serialized raw data,
-    /// `a.raw == b.raw` iff `a.hash() == b.hash()`.
+    /// Two contracts are equal when they hold the same data, regardless
+    /// of the order its properties were written in.
     fn eq(&self, other: &Self) -> bool {
         self.hash() == other.hash()
     }
@@ -1147,11 +1255,8 @@ impl PartialEq for Contract {
 impl Eq for Contract {}
 
 impl std::hash::Hash for Contract {
-    /// Hashes the contract using its deterministic SHA-256 hash string.
-    ///
-    /// Triggers lazy hashing on the first call to the accessor.
-    /// Consistency with [`Eq`] follows because both sides delegate to
-    /// the same cached SHA-256.
+    /// Hashes the contract through its deterministic
+    /// [`hash`](Contract::hash), so equal contracts hash alike.
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.hash().hash(state);
     }

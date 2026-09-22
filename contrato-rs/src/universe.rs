@@ -1,18 +1,31 @@
 //! The [`Universe`] newtype: a top-level [`Contract`] of type
 //! `meta.universe` that aggregates other contracts as children.
-//!
-//! `Universe` is a thin wrapper whose sole purpose is to construct a
-//! contract with the well-known `meta.universe` type. All contract
-//! operations — adding children, searching, requirement checks — work
-//! transparently via [`Deref`] / [`DerefMut`] to the inner [`Contract`].
 
 use std::ops::{Deref, DerefMut};
 
 use crate::contract::Contract;
-use crate::types::{ContractType, RawContract, UNIVERSE};
+use crate::types::{Kind, RawContract, UNIVERSE};
 
-/// A universe: a [`Contract`] with type `meta.universe` used as the
-/// root container for a collection of contracts.
+/// A [`Contract`] of type [`UNIVERSE`](crate::UNIVERSE), used as the root
+/// container for a collection of contracts.
+///
+/// Every contract operation — adding children, searching, checking
+/// requirements — is available through [`Deref`] to the inner
+/// [`Contract`].
+///
+/// ```rust
+/// use contrato::{Contract, Matcher, Universe};
+///
+/// let mut universe = Universe::new();
+/// let os: Contract = serde_json::from_value(
+///     serde_json::json!({ "type": "sw.os", "slug": "balenaos", "version": "6.1.2" }))?;
+///
+/// universe.add_child(os).unwrap();
+///
+/// let found = universe.find_children(&Matcher::new("sw.os"));
+/// assert_eq!(found.len(), 1);
+/// # Ok::<(), serde_json::Error>(())
+/// ```
 #[derive(Debug, Clone)]
 pub struct Universe(Contract);
 
@@ -21,7 +34,7 @@ impl Universe {
     pub fn new() -> Self {
         Self(
             Contract::new(RawContract {
-                kind: ContractType::new(UNIVERSE),
+                kind: Kind::new(UNIVERSE),
                 ..RawContract::default()
             })
             // No templates to interpolate, no children to nest.
@@ -60,7 +73,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    use crate::types::ContractMatcher;
+    use crate::types::Matcher;
 
     fn child(kind: &str, slug: &str) -> Contract {
         serde_json::from_value(json!({
@@ -115,7 +128,7 @@ mod tests {
         u.add_children(vec![child("sw.os", "debian"), child("sw.os", "fedora")])
             .unwrap();
 
-        let matcher = ContractMatcher::new("sw.os").with_slug("debian");
+        let matcher = Matcher::new("sw.os").with_slug("debian");
         let found = u.find_children(&matcher);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].get_slug(), Some("debian"));

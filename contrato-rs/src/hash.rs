@@ -10,17 +10,6 @@ use sha2::{Digest, Sha256};
 /// Objects are canonicalized by sorting keys recursively before hashing, so
 /// `{"a":1,"b":2}` and `{"b":2,"a":1}` produce the same hash. Arrays preserve
 /// their element order.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// use serde_json::json;
-/// use contrato::hash::hash_object;
-///
-/// let h1 = hash_object(&json!({"foo": "bar", "baz": 1}));
-/// let h2 = hash_object(&json!({"baz": 1, "foo": "bar"}));
-/// assert_eq!(h1, h2);
-/// ```
 pub(crate) fn hash_object(value: &serde_json::Value) -> String {
     let mut buf = String::new();
     write_canonical(value, &mut buf);

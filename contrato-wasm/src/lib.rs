@@ -1,15 +1,13 @@
 //! WebAssembly bindings for the `contrato` contract system.
 //!
-//! Exposes [`contrato::Contract`]  to JavaScript via `wasm-bindgen`. The
-//! surface covers construction, accessors, children mutation, matcher
-//! search, requirement validation, and the read-only requirement-index
-//! accessors needed to compose cross-reference walks on the JS side.
+//! Exposes [`contrato::Contract`] to JavaScript via `wasm-bindgen`, as the
+//! class `Contract`: construction, accessors, children mutation, matcher
+//! search, requirement validation and requirement inspection.
 //!
-//! Matchers cross the boundary as plain JS objects (e.g.
-//! `{ type: 'sw.os', slug: 'debian' }`), deserialized into
-//! [`contrato::ContractMatcher`] at each call site.
+//! Contracts and matchers cross the boundary as plain JS objects — e.g.
+//! `{ type: 'sw.os', slug: 'debian' }`.
 
-use contrato::{Contract, ContractMatcher, RawContract};
+use contrato::{Contract, Matcher, RawContract};
 use js_sys::Array;
 use serde::Serialize;
 use serde_wasm_bindgen::Serializer;
@@ -59,13 +57,13 @@ fn borrow_type_filter(types: &Option<Vec<String>>) -> Option<Vec<&str>> {
         .map(|v| v.iter().map(String::as_str).collect())
 }
 
-/// Deserializes a [`ContractMatcher`] from a plain JS value.
+/// Deserializes a [`Matcher`] from a plain JS value.
 ///
 /// Shared by every `WasmContract` method that accepts a matcher so the
 /// deserialization error shape stays consistent regardless of whether
 /// the caller is searching, capability-matching, or doing anything
 /// else that takes a matcher argument.
-fn matcher_from_js(value: JsValue) -> Result<ContractMatcher, JsValue> {
+fn matcher_from_js(value: JsValue) -> Result<Matcher, JsValue> {
     serde_wasm_bindgen::from_value(value).map_err(wasm_err)
 }
 
@@ -81,13 +79,12 @@ pub struct WasmContract {
 
 #[wasm_bindgen(js_class = Contract)]
 impl WasmContract {
-    /// Constructs a contract from a JS value (typically a plain object
-    /// produced from a contract JSON document).
+    /// Constructs a contract from a plain JS object holding a contract
+    /// JSON document.
     ///
-    /// The value is deserialized directly into `contrato::Contract` via
-    /// the latter's `Deserialize` impl, which runs the full construction
-    /// pipeline: children are loaded from the nested tree, `{{this.*}}`
-    /// templates are interpolated, and the requirements index is built.
+    /// Children are nested and `{{this.*}}` expressions are interpolated
+    /// as the contract is built. Throws when the document is not a valid
+    /// contract.
     #[wasm_bindgen(constructor)]
     pub fn new(value: JsValue) -> Result<WasmContract, JsValue> {
         let inner: Contract = serde_wasm_bindgen::from_value(value).map_err(wasm_err)?;
@@ -157,14 +154,10 @@ impl WasmContract {
         self.inner.serialize(&json_serializer()).map_err(wasm_err)
     }
 
-    /// Re-runs `{{this.*}}` template interpolation against the current
-    /// state of the contract. Intended for JS callers that mutate the
-    /// underlying data between constructions (for example by swapping
-    /// in a new children set) and want the parent's template
-    /// placeholders re-resolved against any field whose value changed.
-    /// Invalidates the hash cache; the children subtree is left
-    /// untouched — each child was already interpolated against its own
-    /// fields at construction.
+    /// Re-resolves this contract's `{{this.*}}` expressions against its
+    /// current fields. Call it after mutating a contract so placeholders
+    /// that referenced a changed field are evaluated again. Children are
+    /// left alone — each is interpolated against its own fields.
     ///
     /// Throws when a templated field resolves to an invalid value (an
     /// interpolated `type` or `slug` that is not a legal identifier);
@@ -232,10 +225,6 @@ impl WasmContract {
     }
 
     /// Returns every reachable child whose type is in `kinds` (recursive).
-    ///
-    /// Filters on the Rust side using the type index, avoiding the
-    /// serialization of children that would be discarded by a JS-side
-    /// filter.
     #[wasm_bindgen(js_name = getChildrenByTypes)]
     pub fn get_children_by_types(&self, kinds: Vec<String>) -> Array {
         let refs: Vec<&str> = kinds.iter().map(String::as_str).collect();
@@ -255,11 +244,8 @@ impl WasmContract {
 
     // ── search ──────────────────────────────────────────────────────────
 
-    /// Searches for children matching the given matcher.
-    ///
-    /// `matcher` is a plain JS object shaped like `{ type, slug?,
-    /// version?, data? }`, deserialized into [`ContractMatcher`] at the
-    /// boundary.
+    /// Returns every reachable child matching the given matcher, a plain
+    /// JS object shaped like `{ type, slug?, version?, data? }`.
     #[wasm_bindgen(js_name = findChildren)]
     pub fn find_children(&self, matcher: JsValue) -> Result<Array, JsValue> {
         let matcher = matcher_from_js(matcher)?;
@@ -270,8 +256,11 @@ impl WasmContract {
 
     // ── validation ──────────────────────────────────────────────────────
 
-    /// Returns `true` if every compiled requirement of `contract` and
-    /// its descendants is satisfied by children reachable from `self`.
+    /// Returns `true` when everything `contract` and its descendants
+    /// require is provided by the children reachable from this contract.
+    ///
+    /// `types`, when given, restricts the check to requirements
+    /// targeting those types.
     #[wasm_bindgen(js_name = satisfiesChildContract)]
     pub fn satisfies_child_contract(
         &self,
@@ -283,10 +272,9 @@ impl WasmContract {
             .satisfies_child_contract(&contract.inner, owned.as_deref())
     }
 
-    /// Returns the set of `contract`'s compiled requirements that are
-    /// unsatisfied by children reachable from `self`, as an array of
-    /// plain JS objects. Each entry has the same shape as a
-    /// `requires` entry on the source contract.
+    /// Returns the requirements of `contract` and its descendants that
+    /// this contract's children do not provide, as an array of plain JS
+    /// objects shaped like the source contract's `requires` entries.
     #[wasm_bindgen(js_name = getNotSatisfiedChildRequirements)]
     pub fn get_not_satisfied_child_requirements(
         &self,
@@ -300,16 +288,17 @@ impl WasmContract {
         result.serialize(&json_serializer()).map_err(wasm_err)
     }
 
-    /// Returns `true` if every direct and descendant child of `self`
-    /// has its compiled requirements satisfied against `self` itself.
+    /// Returns `true` when every child reachable from this contract has
+    /// its requirements provided by the others — i.e. this contract is
+    /// internally consistent.
     #[wasm_bindgen(js_name = areChildrenSatisfied)]
     pub fn are_children_satisfied(&self, types: Option<Vec<String>>) -> bool {
         let owned = borrow_type_filter(&types);
         self.inner.are_children_satisfied(owned.as_deref())
     }
 
-    /// Aggregates every unsatisfied compiled requirement across all
-    /// descendants of `self`, as an array of plain JS objects.
+    /// Returns the requirements the children of this contract leave
+    /// unsatisfied, as an array of plain JS objects.
     #[wasm_bindgen(js_name = getAllNotSatisfiedChildRequirements)]
     pub fn get_all_not_satisfied_child_requirements(
         &self,
@@ -327,11 +316,9 @@ impl WasmContract {
     /// Returns the distinct contract types this contract's own
     /// `requires` entries reference, as an array of strings.
     ///
-    /// Only direct requirements are reported — descendants are not
-    /// walked. Intended for JS callers that need to short-circuit a
-    /// cross-reference walk when the contract has no opinion about a
-    /// given set of types, before iterating the matcher buckets
-    /// returned by [`Self::get_requirement_matchers_for_type`].
+    /// Only direct requirements are reported — children are not walked.
+    /// Use `getRequirementMatchersForType` to get the matchers behind
+    /// each type.
     #[wasm_bindgen(js_name = getRequirementTypes)]
     pub fn get_requirement_types(&self) -> Array {
         let arr = Array::new();
@@ -341,15 +328,13 @@ impl WasmContract {
         arr
     }
 
-    /// Returns every simple matcher registered under the given
-    /// requirement type, as an array of plain JS objects.
+    /// Returns this contract's simple requirement matchers targeting
+    /// `kind`, as an array of plain JS objects — empty when it requires
+    /// nothing of that type.
     ///
-    /// Each object has the same shape as a matcher argument to
-    /// [`Self::find_children`] and can be handed straight back into
-    /// that method — the intended use is to walk cross-references by
-    /// resolving each bucketed matcher against a parent contract. The
-    /// returned array is empty when the type is absent from this
-    /// contract's requirements index.
+    /// Matchers inside an `or` or a `not` are reported alongside plain
+    /// ones, without their boolean context. Each can be handed straight
+    /// to `findChildren`.
     #[wasm_bindgen(js_name = getRequirementMatchersForType)]
     pub fn get_requirement_matchers_for_type(&self, kind: &str) -> Result<Array, JsValue> {
         let serializer = json_serializer();
@@ -362,13 +347,12 @@ impl WasmContract {
 
     // ── statics ─────────────────────────────────────────────────────────
 
-    /// Expands a source contract into one or more concrete contracts
-    /// by running variant expansion and alias generation.
+    /// Expands a contract document into one concrete contract per
+    /// variant, plus one per alias.
     ///
-    /// Accepts a JS value deserialized into [`RawContract`]. Returns an
-    /// array of fresh `Contract` handles, and throws when an expanded
-    /// contract is invalid (e.g. a variant that completes a templated
-    /// `slug` with an illegal value).
+    /// Returns an array of fresh `Contract` handles. Throws when an
+    /// expanded contract is invalid — for instance when a variant
+    /// completes a templated `slug` with an illegal value.
     #[wasm_bindgen(js_name = build)]
     pub fn build(source: JsValue) -> Result<Array, JsValue> {
         let raw: RawContract = serde_wasm_bindgen::from_value(source).map_err(wasm_err)?;

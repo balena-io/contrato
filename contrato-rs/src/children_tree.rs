@@ -1,20 +1,7 @@
 //! Serialize and deserialize the nested children tree format.
 //!
-//! Contracts store their children in a nested tree structure keyed by type and
-//! slug. This module converts between that tree format and flat collections of
-//! contract data.
-//!
-//! # Tree Format
-//!
-//! The tree nests contracts by their dotted type path. Types like `sw.os` become
-//! nested objects `{ "sw": { "os": ... } }`.
-//!
-//! - **Single child of a type**: stored directly at the type path.
-//!   `{ "sw": { "os": { "type": "sw.os", "slug": "debian", ... } } }`
-//! - **Multiple children of a type**: nested one level deeper by slug.
-//!   `{ "sw": { "os": { "debian": { ... }, "fedora": { ... } } } }`
-//! - **Multiple children with the same slug**: stored as an array.
-//!   `{ "sw": { "os": { "debian": [{ ... }, { ... }] } } }`
+//! Converts between the [`ChildrenTree`] format contracts serialize their
+//! children into and the flat collections the rest of the crate works with.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -27,11 +14,40 @@ use serde_json::{Map, Value};
 use crate::index::ContractIndex;
 use crate::types::RawContract;
 
-/// A strongly typed representation of the nested children tree.
+/// The nested structure a contract's `children` are serialized as.
 ///
-/// The tree structure mirrors the JSON format used in contract serialization:
-/// intermediate nodes map path segments to subtrees, while leaf nodes hold
-/// one or more [`RawContract`] values.
+/// Children are nested under the segments of their dotted type, so a
+/// `sw.os` child sits at `{ "sw": { "os": ... } }`. When a type has
+/// several children they nest one level deeper, keyed by slug, and
+/// children sharing a slug are held in an array:
+///
+/// ```json
+/// {
+///   "sw": {
+///     "os": { "debian": [ {"..." : "..."}, {"...": "..."} ], "fedora": {"...": "..."} },
+///     "feature": { "type": "sw.feature", "slug": "secureboot" }
+///   }
+/// }
+/// ```
+///
+/// Contracts accept their children either in this form or as a flat
+/// array, and always serialize them back in this one.
+///
+/// ```rust
+/// use contrato::Contract;
+///
+/// let os: Contract = serde_json::from_value(serde_json::json!({
+///     "type": "sw.os",
+///     "slug": "balenaos",
+///     "children": [{ "type": "sw.feature", "slug": "secureboot" }]
+/// }))?;
+///
+/// assert_eq!(
+///     serde_json::to_value(&os)?["children"],
+///     serde_json::json!({ "sw": { "feature": { "type": "sw.feature", "slug": "secureboot" } } })
+/// );
+/// # Ok::<(), serde_json::Error>(())
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChildrenTree {
     /// An intermediate node mapping keys (type path segments or slugs) to subtrees.
@@ -44,7 +60,6 @@ pub enum ChildrenTree {
 }
 
 impl Serialize for ChildrenTree {
-    /// Serializes directly to the target format without an intermediate `Value`.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
             ChildrenTree::Branch(map) => {
@@ -140,13 +155,8 @@ fn collect_into(tree: ChildrenTree, out: &mut Vec<RawContract>) {
 
 /// Builds a [`ChildrenTree`] from a contract index.
 ///
-/// Reconstructs the nested tree format used in contract JSON serialization.
-/// Types are split on `.` to create nested path segments (e.g., `sw.os` becomes
-/// `{ "sw": { "os": ... } }`).
-///
-/// # Returns
-///
-/// A `ChildrenTree` representing the nested tree structure.
+/// Types are split on `.` to create nested path segments (e.g., `sw.os`
+/// becomes `{ "sw": { "os": ... } }`).
 pub(crate) fn build(index: &ContractIndex) -> ChildrenTree {
     let mut root = BTreeMap::new();
 

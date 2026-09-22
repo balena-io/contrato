@@ -1,6 +1,6 @@
 # Contrato
 
-The official [contracts](#about-contracts) implementation
+A simple, yet effective system for capability/requirements description and validation via [contracts](#about-contracts).
 
 ## Quickstart
 
@@ -22,7 +22,7 @@ const serviceContract = new Contract({
 	type: 'sw.application',
 	slug: 'myapp',
 	requires: [
-		{ type: 'sw.service', slug: 'balena-engine', version: '>20' },
+		{ type: 'sw.service', slug: 'balena-engine', version: '>=20' },
 		{ type: 'sw.feature', slug: 'secureboot' },
 	],
 });
@@ -40,9 +40,7 @@ Contracts provide a standardized mechanism to describing _things_. A thing gener
 
 ### Why build this?
 
-balena.io is a complex product with a great number of inter-conecting components. Each of the components have their own requisites, capabilities, and incompatibilities. Contracts are an effort to formally document those interfaces, and a foundation on which we can build advanced tooling to ultimately automate the process of the team, increase productivity, and remove the human element from tasks that can be performed better by a machine.
-
-The concept of contracts is generic enough that it can be applied to seemingly unrelated scenarios, from base images and OS images, to device types and backend components. Re-using the same contract syntax between them allows us to multiply the gains we get by developing complex contract-related programming modules.
+[Balena](https://www.balena.io/) enables users in deploying, managing and scaling large fleets of IoT devices. These fleets may be composed from devices using different combinations of hardware and software components, as well as different OS versions. Contracts provide an interface to describe capabilities and requirements, allowing users to safely push updates to their fleets and ensure their software will only run on devices that meet the requirements to run it.
 
 ### What can be done with contracts?
 
@@ -226,7 +224,7 @@ For example
 	"slug": "mycontract",
 	"version": "1.0.0",
 	"name": "This is my contract",
-	"aliases": ["my_contract"],
+	"aliases": ["my-contract"],
 	"data": {
 		"number": 5
 	},

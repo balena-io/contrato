@@ -1,9 +1,4 @@
-//! Contrato: a contract system for describing composable, versioned things
-//! and their relationships.
-//!
-//! This crate provides the core data structures and logic for the contrato
-//! contract system. Contracts represent versioned "things" (devices, OSes,
-//! stacks, etc.) with typed relationships, requirements, and capabilities.
+#![doc = include_str!("../README.md")]
 
 mod children_tree;
 mod contract;
@@ -21,7 +16,7 @@ pub use children_tree::ChildrenTree;
 pub use contract::Contract;
 pub use error::Error;
 pub use types::{
-    Asset, ContractMatcher, ContractRequirement, ContractType, InvalidIdentifier, PartialContract,
-    RawContract, Slug, UNIVERSE, Version, VersionReq,
+    Asset, InvalidIdentifier, InvalidSemver, Kind, Matcher, PartialContract, RawContract,
+    Requirement, Slug, UNIVERSE, Version, VersionReq,
 };
 pub use universe::Universe;

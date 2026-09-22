@@ -14,8 +14,9 @@ serde_json = "1"
 
 ```rust
 use contrato::Contract;
+use serde_json::{from_value, json};
 
-let os_contract: Contract = serde_json::from_value(serde_json::json!({
+let os_contract: Contract = from_value(json!({
     "type": "sw.os",
     "slug": "balenaos",
     "version": "6.1.2",
@@ -26,7 +27,7 @@ let os_contract: Contract = serde_json::from_value(serde_json::json!({
     ]
 })).unwrap();
 
-let service_contract: Contract = serde_json::from_value(serde_json::json!({
+let service_contract: Contract = from_value(json!({
     "type": "sw.application",
     "slug": "myapp",
     "requires": [
@@ -46,61 +47,80 @@ Contracts provide a standardized mechanism to describing _things_. A thing gener
 
 ### Why build this?
 
-balena.io enables users in deploying, managing and scaling large fleets of IoT devices. These fleets may be composed from devices using different combinations of hardware and software components, as well as different OS versions. Contracts provide an interface to describe capabilities and requirements, allowing users to safely push updates to their fleets and ensure their software will only run on devices that meet the requirements to run it.
+[Balena](https://www.balena.io/) enables users in deploying, managing and scaling large fleets of IoT devices. These fleets may be composed from devices using different combinations of hardware and software components, as well as different OS versions. Contracts provide an interface to describe capabilities and requirements, allowing users to safely push updates to their fleets and ensure their software will only run on devices that meet the requirements to run it.
 
 ### What can be done with contracts?
 
 Describe a _thing_
 
-```json
-{
-	"type": "sw.library",
-	"slug": "glibc",
-	"version": "2.40",
-	"assets": {
-		"license": {
-			"name": "GNU Lesser General Public License",
-			"url": "https://www.gnu.org/licenses/lgpl-3.0.html#license-text"
-		}
-	}
-}
+```rust
+use contrato::Contract;
+use serde_json::{from_value, json};
+
+let glibc: Contract = from_value(json!({
+    "type": "sw.library",
+    "slug": "glibc",
+    "version": "2.40",
+    "assets": {
+        "license": {
+            "name": "GNU Lesser General Public License",
+            "url": "https://www.gnu.org/licenses/lgpl-3.0.html#license-text"
+        }
+    }
+})).unwrap();
+
+assert_eq!(glibc.get_reference_string(), "glibc@2.40");
 ```
 
 Describe a _thing_ that requires a _thing_
 
-```json
-{
-	"type": "sw.utility",
-	"slug": "curl",
-	"version": "8.11.1",
-	"requires": [{ "type": "sw.library", "slug": "glibc", "version": ">=2.17" }],
-	"data": {
-		"protocols": ["HTTP", "HTTPS", "FTP"]
-	}
-}
+```rust
+use contrato::Contract;
+use serde_json::{from_value, json};
+
+let curl: Contract = from_value(json!({
+    "type": "sw.utility",
+    "slug": "curl",
+    "version": "8.11.1",
+    "requires": [{ "type": "sw.library", "slug": "glibc", "version": ">=2.17" }],
+    "data": {
+        "protocols": ["HTTP", "HTTPS", "FTP"]
+    }
+})).unwrap();
+
+let required: Vec<&str> = curl.requirement_types().collect();
+assert_eq!(required, ["sw.library"]);
 ```
 
 Describe a complex _thing_ via a composite contract
 
-```json
-{
-	"type": "sw.os",
-	"slug": "balenaos",
-	"version": "4.1.5",
-	"children": [
-		{
-			"type": "sw.library",
-			"slug": "glibc",
-			"version": "2.16",
-			"assets": {
-				"license": {
-					"name": "GNU Lesser General Public License",
-					"url": "https://www.gnu.org/licenses/lgpl-3.0.html#license-text"
-				}
-			}
-		}
-	]
-}
+```rust
+use contrato::Contract;
+use serde_json::{from_value, json};
+
+let os: Contract = from_value(json!({
+    "type": "sw.os",
+    "slug": "balenaos",
+    "version": "4.1.5",
+    "children": [
+        {
+            "type": "sw.library",
+            "slug": "glibc",
+            "version": "2.16",
+            "assets": {
+                "license": {
+                    "name": "GNU Lesser General Public License",
+                    "url": "https://www.gnu.org/licenses/lgpl-3.0.html#license-text"
+                }
+            }
+        }
+    ]
+})).unwrap();
+
+let libraries = os.get_children_by_type("sw.library");
+
+assert_eq!(libraries.len(), 1);
+assert_eq!(libraries[0].get_reference_string(), "glibc@2.16");
 ```
 
 Children are also how a contract declares the capabilities it makes available to
@@ -108,45 +128,55 @@ its context: any child can be matched by another contract's `requires`.
 
 Describe a set of things via [templating](#contract-templating)
 
-```json
-{
-	"slug": "alpine",
-	"type": "sw.os",
-	"version": "1",
-	"data": {
-		"libc": "musl-libc",
-		"latest": "3.20",
-		"versionList": "`3.20 (latest)`, `3.19`"
-	},
-	"name": "Alpine Linux {{this.version}}",
-	"requires": [{ "type": "sw.blob", "slug": "balena-idle" }],
-	"variants": [
-		{
-			"requires": [
-				{ "type": "sw.blob", "slug": "qemu" },
-				{
-					"or": [
-						{ "type": "arch.sw", "slug": "armv7hf" },
-						{ "type": "arch.sw", "slug": "rpi" },
-						{ "type": "arch.sw", "slug": "aarch64" }
-					]
-				}
-			],
-			"variants": [{ "version": "3.19" }, { "version": "3.20" }]
-		},
-		{
-			"requires": [
-				{
-					"or": [
-						{ "type": "arch.sw", "slug": "i386" },
-						{ "type": "arch.sw", "slug": "amd64" }
-					]
-				}
-			],
-			"variants": [{ "version": "3.19" }, { "version": "3.20" }]
-		}
-	]
-}
+```rust
+use contrato::{Contract, RawContract};
+use serde_json::{from_value, json};
+
+let template: RawContract = from_value(json!({
+    "slug": "alpine",
+    "type": "sw.os",
+    "version": "1",
+    "data": {
+        "libc": "musl-libc",
+        "latest": "3.20",
+        "versionList": "`3.20 (latest)`, `3.19`"
+    },
+    "name": "Alpine Linux {{this.version}}",
+    "requires": [{ "type": "sw.blob", "slug": "balena-idle" }],
+    "variants": [
+        {
+            "requires": [
+                { "type": "sw.blob", "slug": "qemu" },
+                {
+                    "or": [
+                        { "type": "arch.sw", "slug": "armv7hf" },
+                        { "type": "arch.sw", "slug": "rpi" },
+                        { "type": "arch.sw", "slug": "aarch64" }
+                    ]
+                }
+            ],
+            "variants": [{ "version": "3.19" }, { "version": "3.20" }]
+        },
+        {
+            "requires": [
+                {
+                    "or": [
+                        { "type": "arch.sw", "slug": "i386" },
+                        { "type": "arch.sw", "slug": "amd64" }
+                    ]
+                }
+            ],
+            "variants": [{ "version": "3.19" }, { "version": "3.20" }]
+        }
+    ]
+})).unwrap();
+
+// One concrete contract per architecture group and version
+let contracts = Contract::build(template).unwrap();
+
+let built: Vec<String> = contracts.iter().map(Contract::get_reference_string).collect();
+
+assert_eq!(built, ["alpine@3.19", "alpine@3.20", "alpine@3.19", "alpine@3.20"]);
 ```
 
 ## About contrato
@@ -163,8 +193,9 @@ a lazily computed deterministic hash.
 
 ```rust
 use contrato::Contract;
+use serde_json::{from_value, json};
 
-let contract: Contract = serde_json::from_value(serde_json::json!({
+let contract: Contract = from_value(json!({
     "type": "sw.os",
     "slug": "balenaos",
     "version": "6.1.2",
@@ -186,8 +217,9 @@ fields.
 
 ```rust
 use contrato::{Contract, Matcher};
+use serde_json::{from_value, json};
 
-let os: Contract = serde_json::from_value(serde_json::json!({
+let os: Contract = from_value(json!({
     "type": "sw.os",
     "slug": "balenaos",
     "version": "6.1.2",
@@ -211,8 +243,9 @@ A contract is valid within a context if all requirements of the contract and its
 
 ```rust
 use contrato::Contract;
+use serde_json::{from_value, json};
 
-let os_contract: Contract = serde_json::from_value(serde_json::json!({
+let os_contract: Contract = from_value(json!({
     "type": "sw.os",
     "slug": "balenaos",
     "version": "4.1.5",
@@ -223,7 +256,7 @@ let os_contract: Contract = serde_json::from_value(serde_json::json!({
 
 // This is true
 assert!(os_contract.satisfies_child_contract(
-    &serde_json::from_value(serde_json::json!({
+    &from_value(json!({
         "type": "sw.utility",
         "slug": "myapp",
         "version": "8.11.1",
@@ -234,7 +267,7 @@ assert!(os_contract.satisfies_child_contract(
 
 // This is false
 assert!(!os_contract.satisfies_child_contract(
-    &serde_json::from_value(serde_json::json!({
+    &from_value(json!({
         "type": "sw.utility",
         "slug": "myapp",
         "version": "8.11.1",
@@ -248,8 +281,9 @@ Requirements support `or` and `not` combinators:
 
 ```rust
 use contrato::Contract;
+use serde_json::{from_value, json};
 
-let board: Contract = serde_json::from_value(serde_json::json!({
+let board: Contract = from_value(json!({
     "type": "hw.board",
     "slug": "rpi4",
     "children": [
@@ -257,7 +291,7 @@ let board: Contract = serde_json::from_value(serde_json::json!({
     ]
 })).unwrap();
 
-let stack: Contract = serde_json::from_value(serde_json::json!({
+let stack: Contract = from_value(json!({
     "type": "sw.stack",
     "slug": "node",
     "requires": [
@@ -275,8 +309,9 @@ Contrato also allows to find unsatisfied requirements, e.g.
 
 ```rust
 use contrato::Contract;
+use serde_json::{from_value, json};
 
-let os_contract: Contract = serde_json::from_value(serde_json::json!({
+let os_contract: Contract = from_value(json!({
     "type": "sw.os",
     "slug": "balenaos",
     "version": "4.1.5",
@@ -285,7 +320,7 @@ let os_contract: Contract = serde_json::from_value(serde_json::json!({
     ]
 })).unwrap();
 
-let curl: Contract = serde_json::from_value(serde_json::json!({
+let curl: Contract = from_value(json!({
     "type": "sw.utility",
     "slug": "curl",
     "version": "8.11.1",
@@ -332,8 +367,9 @@ recursively.
 
 ```rust
 use contrato::{Contract, RawContract};
+use serde_json::{from_value, json};
 
-let source: RawContract = serde_json::from_value(serde_json::json!({
+let source: RawContract = from_value(json!({
     "type": "sw.os",
     "slug": "alpine",
     "variants": [
@@ -360,14 +396,15 @@ operation is available on it.
 
 ```rust
 use contrato::{Contract, Matcher, Universe};
+use serde_json::{from_value, json};
 
 let mut universe = Universe::new();
 
 universe.add_children(vec![
-    serde_json::from_value(serde_json::json!({
+    from_value(json!({
         "type": "sw.os", "slug": "debian", "version": "12"
     })).unwrap(),
-    serde_json::from_value(serde_json::json!({
+    from_value(json!({
         "type": "sw.os", "slug": "alpine", "version": "3.20"
     })).unwrap(),
 ]).unwrap();

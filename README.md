@@ -40,7 +40,7 @@ Contracts provide a standardized mechanism to describing _things_. A thing gener
 
 ### Why build this?
 
-balena.io enables users in deploying, managing and scaling large fleets of IoT devices. These fleets may be composed from devices using different combinations of hardware and software components, as well as different OS versions. Contracts provide an interface to describe capabilities and requirements, allowing users to safely push updates to their fleets and ensure their software will only run on devices that meet the requirements to run it.
+[Balena](https://www.balena.io/) enables users in deploying, managing and scaling large fleets of IoT devices. These fleets may be composed from devices using different combinations of hardware and software components, as well as different OS versions. Contracts provide an interface to describe capabilities and requirements, allowing users to safely push updates to their fleets and ensure their software will only run on devices that meet the requirements to run it.
 
 ### What can be done with contracts?
 

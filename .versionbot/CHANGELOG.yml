@@ -1,4 +1,23 @@
 - commits:
+    - subject: Revove `$raw` in typescript `Contract` type
+      hash: 57882c675a33d5633cc475081917af3d0f65fb0f
+      body: |
+        The `$raw` property was only kept so chai deep equality would be able to
+        keep working during the migration, but it adds unnecessary complexity.
+
+        Contracts should be compared using `isEqual`, this updates the method to
+        provide a non-static version that uses the existing static `isEqual`
+        (that delegates to WASM). It also updates tests and some utils methods
+        that made use of lodash isEqual as well.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+  version: 0.18.1
+  title: ""
+  date: 2026-09-22T20:34:20.598Z
+- commits:
     - subject: Remove ContractIndex::types
       hash: 357434328d62e18b022121c4e01c9e0c1fd2cd44
       body: >

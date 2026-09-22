@@ -5,6 +5,10 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## v0.0.6 - 2018-08-17
 
+## 0.18.1 - 2026-09-22
+
+* Revove `$raw` in typescript `Contract` type [Felipe Lalanne]
+
 ## 0.18.0 - 2026-09-09
 
 * Remove ContractIndex::types [Felipe Lalanne]

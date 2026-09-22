@@ -1,15 +1,15 @@
 [workspace]
 resolver = "3"
-members = ["contrato-rs", "contrato-wasm"]
+members = [ "contrato-rs", "contrato-wasm" ]
 
 [workspace.package]
-version = "0.13.4"
+version = "0.18.2"
 edition = "2024"
 rust-version = "1.89"
 license = "Apache-2.0"
 homepage = "https://github.com/balena-io/contrato"
 repository = "https://github.com/balena-io/contrato"
-authors = ["Balena Inc. <hello@balena.io>"]
-keywords = ["contracts", "dependencies", "capabilities", "balena"]
-categories = ["config", "data-structures"]
+authors = [ "Balena Inc. <hello@balena.io>" ]
+keywords = [ "contracts", "dependencies", "capabilities", "balena" ]
+categories = [ "config", "data-structures" ]
 readme = "README.md"

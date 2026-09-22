@@ -5,6 +5,15 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## v0.0.6 - 2018-08-17
 
+# v0.18.2
+## (2026-09-22)
+
+* Include README in crate docs [Felipe Lalanne]
+* Publish crate [Felipe Lalanne]
+* Rename Rust crate types [Felipe Lalanne]
+* Add `semver` constructor to version types [Felipe Lalanne]
+* Update crate documentation [Felipe Lalanne]
+
 ## 0.18.1 - 2026-09-22
 
 * Revove `$raw` in typescript `Contract` type [Felipe Lalanne]

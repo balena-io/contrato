@@ -1,4 +1,61 @@
 - commits:
+    - subject: Include README in crate docs
+      hash: f087cd265c35bc1beb3712ba5e48d23989c85dc4
+      body: |
+        This allows to get rid of readme_examples and test the README as part of
+        the doc tests
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Publish crate
+      hash: 417ab0aa38a60dc5ad1bb27069d1872529c22a99
+      body: |
+        Add keywords and categories, improve description and include LICENSE
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Rename Rust crate types
+      hash: f28a7bd191470727b3f7a93b512eccfcfd67ec7d
+      body: |
+        - `ContractType` is now `Kind`
+        - `ContractMatcher` is now `Matcher`
+        - `ContractRequirement` is now `Requirement`
+
+        This is not a breaking change since the crate is not public yet
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Add `semver` constructor to version types
+      hash: f70dce2fd24365a2826e63d51d2cf183e4f25093
+      body: >
+        These allow to construct a `Version` or `VersionReq` validating the
+
+        passed string. This can be used to avoid typos when constructing
+        matchers.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+    - subject: Update crate documentation
+      hash: 5995693327726952c1cb880062d02e09da27416a
+      body: |
+        Simplify docs and add examples
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+  version: 0.18.2
+  title: ""
+  date: 2026-09-22T23:40:40.880Z
+- commits:
     - subject: Revove `$raw` in typescript `Contract` type
       hash: 57882c675a33d5633cc475081917af3d0f65fb0f
       body: |

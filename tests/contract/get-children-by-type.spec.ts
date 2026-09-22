@@ -23,7 +23,7 @@ describe('Contract getChildrenByType', () => {
 
 		container.addChildren([contract1, contract2, contract3, contract4]);
 
-		expect(container.getChildrenByType('sw.os')).to.deep.equal([
+		expect(container.getChildrenByType('sw.os')).to.equalByHash([
 			contract1,
 			contract2,
 			contract3,
@@ -43,19 +43,19 @@ describe('Contract getChildrenByType', () => {
 
 		container.addChildren([contract1, contract2, contract3, contract4]);
 
-		expect(container.getChildrenByType('sw.os')).to.deep.equal([
+		expect(container.getChildrenByType('sw.os')).to.equalByHash([
 			contract1,
 			contract2,
 			contract3,
 		]);
 
-		expect(container.getChildrenByType('sw.os')).to.deep.equal([
+		expect(container.getChildrenByType('sw.os')).to.equalByHash([
 			contract1,
 			contract2,
 			contract3,
 		]);
 
-		expect(container.getChildrenByType('sw.os')).to.deep.equal([
+		expect(container.getChildrenByType('sw.os')).to.equalByHash([
 			contract1,
 			contract2,
 			contract3,
@@ -75,7 +75,7 @@ describe('Contract getChildrenByType', () => {
 
 		container.addChildren([contract1, contract2, contract3, contract4]);
 
-		expect(container.getChildrenByType('arch.sw')).to.deep.equal([]);
+		expect(container.getChildrenByType('arch.sw')).to.equalByHash([]);
 	});
 
 	it('should not return the same contract multiple times if it contains aliases', () => {
@@ -94,7 +94,7 @@ describe('Contract getChildrenByType', () => {
 
 		container.addChildren([contract1, contract2]);
 
-		expect(container.getChildrenByType('hw.device-type')).to.deep.equal([
+		expect(container.getChildrenByType('hw.device-type')).to.equalByHash([
 			contract2,
 		]);
 	});

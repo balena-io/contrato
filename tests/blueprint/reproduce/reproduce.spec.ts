@@ -86,9 +86,7 @@ describe('Blueprint reproduce', () => {
 		const derivedContract1 = new Contract(skeleton).addChild(contract1);
 		const derivedContract2 = new Contract(skeleton).addChild(contract2);
 
-		expect(contexts).to.have.length(2);
-		expect(contexts[0].hash()).to.equal(derivedContract1.hash());
-		expect(contexts[1].hash()).to.equal(derivedContract2.hash());
+		expect(contexts).to.equalByHash([derivedContract1, derivedContract2]);
 	});
 
 	it('should use a `meta.context` skeleton if none is given', () => {
@@ -122,9 +120,7 @@ describe('Blueprint reproduce', () => {
 			contract2,
 		);
 
-		expect(contexts).to.have.length(2);
-		expect(contexts[0].hash()).to.equal(derivedContract1.hash());
-		expect(contexts[1].hash()).to.equal(derivedContract2.hash());
+		expect(contexts).to.equalByHash([derivedContract1, derivedContract2]);
 	});
 
 	it('should throw while iterating if a context interpolates to an invalid slug', () => {

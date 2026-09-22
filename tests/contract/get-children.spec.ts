@@ -16,7 +16,7 @@ describe('Contract getChildren', () => {
 			slug: 'bar',
 		});
 
-		expect(container.getChildren()).to.deep.equal([]);
+		expect(container.getChildren()).to.equalByHash([]);
 	});
 
 	it('should get the paths of a one child container', () => {
@@ -28,7 +28,7 @@ describe('Contract getChildren', () => {
 
 		container.addChild(contract1);
 
-		expect(container.getChildren()).to.deep.equal([contract1]);
+		expect(container.getChildren()).to.equalByHash([contract1]);
 	});
 
 	it('should get the paths of two contracts with different slugs', () => {
@@ -41,7 +41,7 @@ describe('Contract getChildren', () => {
 
 		container.addChildren([contract1, contract2]);
 
-		expect(container.getChildren()).to.deep.equal([contract1, contract2]);
+		expect(container.getChildren()).to.equalByHash([contract1, contract2]);
 	});
 
 	it('should get the paths of two contracts with same slugs', () => {
@@ -54,7 +54,7 @@ describe('Contract getChildren', () => {
 
 		container.addChildren([contract1, contract2]);
 
-		expect(container.getChildren()).to.deep.equal([contract1, contract2]);
+		expect(container.getChildren()).to.equalByHash([contract1, contract2]);
 	});
 
 	it('should be able to filter by one type', () => {
@@ -71,7 +71,7 @@ describe('Contract getChildren', () => {
 			container.getChildren({
 				types: new Set(['sw.os']),
 			}),
-		).to.deep.equal([contract1]);
+		).to.equalByHash([contract1]);
 	});
 
 	it('should be able to filter by two types', () => {
@@ -89,7 +89,7 @@ describe('Contract getChildren', () => {
 			container.getChildren({
 				types: new Set(['sw.os', 'sw.blob']),
 			}),
-		).to.deep.equal([contract1, contract2]);
+		).to.equalByHash([contract1, contract2]);
 	});
 
 	it('should ignore unknown types', () => {
@@ -106,7 +106,7 @@ describe('Contract getChildren', () => {
 			container.getChildren({
 				types: new Set(['sw.os', 'hello']),
 			}),
-		).to.deep.equal([contract1]);
+		).to.equalByHash([contract1]);
 	});
 
 	it('should return an empty array if no type matches', () => {
@@ -123,7 +123,7 @@ describe('Contract getChildren', () => {
 			container.getChildren({
 				types: new Set(['hello', 'world']),
 			}),
-		).to.deep.equal([]);
+		).to.equalByHash([]);
 	});
 
 	it('should not return the same contract multiple times if it contains aliases', () => {
@@ -142,7 +142,7 @@ describe('Contract getChildren', () => {
 
 		container.addChildren([contract1, contract2]);
 
-		expect(container.getChildren()).to.deep.equal([contract1, contract2]);
+		expect(container.getChildren()).to.equalByHash([contract1, contract2]);
 	});
 
 	it('should return nested children', () => {
@@ -157,7 +157,7 @@ describe('Contract getChildren', () => {
 
 		container.addChildren([contract1]);
 
-		expect(container.getChildren()).to.deep.equal([contract1, contract2]);
+		expect(container.getChildren()).to.equalByHash([contract1, contract2]);
 	});
 
 	it('should return two level nested children', () => {
@@ -174,7 +174,7 @@ describe('Contract getChildren', () => {
 
 		container.addChildren([contract1]);
 
-		expect(container.getChildren()).to.deep.equal([
+		expect(container.getChildren()).to.equalByHash([
 			contract1,
 			contract2,
 			contract3,
@@ -197,6 +197,6 @@ describe('Contract getChildren', () => {
 			container.getChildren({
 				types: new Set(['sw.blob']),
 			}),
-		).to.deep.equal([contract2]);
+		).to.equalByHash([contract2]);
 	});
 });

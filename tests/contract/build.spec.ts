@@ -21,7 +21,7 @@ describe('Contract build', () => {
 			},
 		});
 
-		expect(contracts).to.deep.equal([
+		expect(contracts).to.equalByHash([
 			new Contract({
 				name: 'Debian Wheezy',
 				slug: 'debian',
@@ -47,7 +47,7 @@ describe('Contract build', () => {
 			},
 		});
 
-		expect(contracts).to.deep.equal([
+		expect(contracts).to.equalByHash([
 			new Contract({
 				name: 'Debian Wheezy',
 				slug: 'debian',
@@ -78,7 +78,7 @@ describe('Contract build', () => {
 			],
 		});
 
-		expect(contracts).to.deep.equal([
+		expect(contracts).to.equalByHash([
 			new Contract({
 				slug: 'debian',
 				version: 'wheezy',
@@ -115,7 +115,7 @@ describe('Contract build', () => {
 			],
 		});
 
-		expect(contracts).to.deep.equal([
+		expect(contracts).to.equalByHash([
 			new Contract({
 				name: 'debian wheezy',
 				slug: 'debian',
@@ -199,7 +199,7 @@ describe('Contract build', () => {
 			{ type: 'sw.blob', slug: 'entry' },
 		];
 
-		expect(contracts).to.deep.equal([
+		expect(contracts).to.equalByHash([
 			new Contract({
 				slug: 'fedora',
 				type: 'sw.os',
@@ -253,7 +253,7 @@ describe('Contract build', () => {
 			aliases: ['foo', 'bar'],
 		});
 
-		expect(contracts).to.deep.equal([
+		expect(contracts).to.equalByHash([
 			new Contract({
 				slug: 'foo',
 				version: 'jessie',
@@ -290,7 +290,7 @@ describe('Contract build', () => {
 			aliases: ['foo', 'bar'],
 		});
 
-		expect(contracts).to.deep.equal([
+		expect(contracts).to.equalByHash([
 			new Contract({
 				name: 'debian wheezy',
 				slug: 'foo',

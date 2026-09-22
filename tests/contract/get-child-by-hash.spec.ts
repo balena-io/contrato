@@ -23,7 +23,9 @@ describe('Contract getChildByHash', () => {
 
 		container.addChildren([contract1, contract2, contract3, contract4]);
 
-		expect(container.getChildByHash(contract2.hash())).to.deep.equal(contract2);
+		expect(container.getChildByHash(contract2.hash())).to.equalByHash(
+			contract2,
+		);
 	});
 
 	it('should return nothing if the hash does not exist', () => {
@@ -39,6 +41,6 @@ describe('Contract getChildByHash', () => {
 
 		container.addChildren([contract1, contract2, contract3, contract4]);
 
-		expect(container.getChildByHash('aaaaaaa')).to.deep.equal(undefined);
+		expect(container.getChildByHash('aaaaaaa')).to.be.undefined;
 	});
 });

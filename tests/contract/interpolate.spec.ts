@@ -20,7 +20,7 @@ describe('Contract interpolate', () => {
 			},
 		});
 
-		expect(contract.interpolate()).to.deep.equal(contract);
+		expect(contract.interpolate()).to.equal(contract);
 	});
 
 	it('should not perform interpolation on children', () => {

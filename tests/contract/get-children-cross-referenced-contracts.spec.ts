@@ -78,7 +78,7 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 			from: contract,
 		});
 
-		expect(contracts).to.deep.equal([
+		expect(contracts).to.equalByHash([
 			new Contract({
 				type: 'arch.sw',
 				slug: 'armv7hf',
@@ -141,7 +141,7 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 			from: contract,
 		});
 
-		expect(references).to.deep.equal([]);
+		expect(references).to.equalByHash([]);
 	});
 
 	it('should compute the intersection of more than one type, from more than two contracts', () => {
@@ -271,7 +271,7 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 			from: contract,
 		});
 
-		expect(references).to.deep.equal([
+		expect(references).to.equalByHash([
 			new Contract({
 				type: 'arch.sw',
 				slug: 'armv7hf',
@@ -346,7 +346,7 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 			from: contract,
 		});
 
-		expect(references).to.deep.equal([]);
+		expect(references).to.equalByHash([]);
 	});
 
 	it('should not discard contracts of a type not defined in another contracts', () => {
@@ -402,7 +402,7 @@ describe('Contract getChildrenCrossReferencedContracts', () => {
 			from: contract,
 		});
 
-		expect(references).to.deep.equal([
+		expect(references).to.equalByHash([
 			new Contract({
 				type: 'arch.sw',
 				slug: 'armv7hf',

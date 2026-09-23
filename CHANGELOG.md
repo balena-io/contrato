@@ -5,6 +5,11 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## v0.0.6 - 2018-08-17
 
+# v0.18.3
+## (2026-09-23)
+
+* Add TryFrom<Value> for Contract and RawContract [Felipe Lalanne]
+
 # v0.18.2
 ## (2026-09-22)
 

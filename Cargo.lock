@@ -46,7 +46,7 @@ dependencies = [
 
 [[package]]
 name = "contrato-wasm"
-version = "0.18.2"
+version = "0.18.3"
 dependencies = [
  "contrato",
  "js-sys",

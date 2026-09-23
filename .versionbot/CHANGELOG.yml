@@ -1,4 +1,19 @@
 - commits:
+    - subject: Add TryFrom<Value> for Contract and RawContract
+      hash: eb97564b82925f75870d2a13b7a9ed5273fd159e
+      body: |
+        The new trait implementations improve the ergonomy of building a
+        contract, since building from JSON is the most common build
+        mechanism.
+      footer:
+        Change-type: patch
+        change-type: patch
+      author: Felipe Lalanne
+      nested: []
+  version: 0.18.3
+  title: ""
+  date: 2026-09-23T22:30:16.525Z
+- commits:
     - subject: Include README in crate docs
       hash: f087cd265c35bc1beb3712ba5e48d23989c85dc4
       body: |

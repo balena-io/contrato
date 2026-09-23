@@ -1,6 +1,6 @@
 {
   "name": "@balena/contrato",
-  "version": "0.18.2",
+  "version": "0.18.3",
   "description": "A simple, yet effective system for capability/requirements description and validation via contracts",
   "homepage": "https://github.com/balena-io/contrato",
   "main": "build/index.js",
@@ -74,6 +74,6 @@
     "npm": ">=10.0.0"
   },
   "versionist": {
-    "publishedAt": "2026-09-22T23:40:40.978Z"
+    "publishedAt": "2026-09-23T22:30:16.608Z"
   }
 }

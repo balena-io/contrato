@@ -13,6 +13,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 
 use crate::children_tree::ChildrenTree;
+use crate::error::JsonError;
 use crate::template;
 
 /// Type constant for universe contracts (collection of all available contracts).
@@ -647,8 +648,9 @@ impl Matcher {
 ///
 /// ```rust
 /// use contrato::Requirement;
+/// use serde_json::json;
 ///
-/// let req: Requirement = serde_json::from_value(serde_json::json!({
+/// let req: Requirement = serde_json::from_value(json!({
 ///     "or": [
 ///         { "type": "hw.device-type", "slug": "raspberrypi4-64" },
 ///         { "type": "hw.device-type", "slug": "raspberrypi5" }
@@ -783,8 +785,9 @@ pub struct PartialContract {
 ///
 /// ```rust
 /// use contrato::RawContract;
+/// use serde_json::json;
 ///
-/// let raw: RawContract = serde_json::from_value(serde_json::json!({
+/// let raw = RawContract::try_from(json!({
 ///     "type": "sw.library",
 ///     "slug": "glibc",
 ///     "version": "2.40"
@@ -792,7 +795,7 @@ pub struct PartialContract {
 ///
 /// assert_eq!(raw.kind.as_str(), "sw.library");
 /// assert_eq!(raw.body.version.map(|v| v.to_string()), Some("2.40".into()));
-/// # Ok::<(), serde_json::Error>(())
+/// # Ok::<(), contrato::JsonError>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct RawContract {
@@ -818,6 +821,36 @@ pub struct RawContract {
     pub extra: Map<String, Value>,
 }
 
+impl TryFrom<Value> for RawContract {
+    type Error = JsonError;
+
+    /// Reads raw contract data from a JSON [`Value`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JsonError`] when the value is not a valid contract
+    /// document.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use contrato::RawContract;
+    /// use serde_json::json;
+    ///
+    /// let raw = RawContract::try_from(json!({
+    ///     "type": "sw.library",
+    ///     "slug": "glibc",
+    ///     "version": "2.40"
+    /// }))?;
+    ///
+    /// assert_eq!(raw.kind.as_str(), "sw.library");
+    /// # Ok::<(), contrato::JsonError>(())
+    /// ```
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        serde_json::from_value(value).map_err(JsonError::from)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -826,6 +859,23 @@ mod tests {
     /// Deserializes a contract, returning the serde error message on failure.
     fn parse(value: Value) -> Result<RawContract, String> {
         serde_json::from_value::<RawContract>(value).map_err(|e| e.to_string())
+    }
+
+    #[test]
+    fn raw_contract_try_from_value() {
+        let raw = RawContract::try_from(json!({
+            "type": "sw.library",
+            "slug": "glibc",
+            "version": "2.40"
+        }))
+        .expect("valid raw contract");
+
+        assert_eq!(raw.kind.as_str(), "sw.library");
+
+        let err = RawContract::try_from(json!({ "slug": "glibc" }))
+            .expect_err("a contract without a type cannot be deserialized");
+
+        assert!(err.to_string().contains("type"), "{err}");
     }
 
     #[test]

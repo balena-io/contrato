@@ -35,18 +35,19 @@ use crate::types::RawContract;
 ///
 /// ```rust
 /// use contrato::Contract;
+/// use serde_json::json;
 ///
-/// let os: Contract = serde_json::from_value(serde_json::json!({
+/// let os = Contract::try_from(json!({
 ///     "type": "sw.os",
 ///     "slug": "balenaos",
 ///     "children": [{ "type": "sw.feature", "slug": "secureboot" }]
 /// }))?;
 ///
 /// assert_eq!(
-///     serde_json::to_value(&os)?["children"],
-///     serde_json::json!({ "sw": { "feature": { "type": "sw.feature", "slug": "secureboot" } } })
+///     serde_json::to_value(&os).unwrap()["children"],
+///     json!({ "sw": { "feature": { "type": "sw.feature", "slug": "secureboot" } } })
 /// );
-/// # Ok::<(), serde_json::Error>(())
+/// # Ok::<(), contrato::Error>(())
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChildrenTree {

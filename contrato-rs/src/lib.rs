@@ -14,7 +14,7 @@ mod variants;
 
 pub use children_tree::ChildrenTree;
 pub use contract::Contract;
-pub use error::Error;
+pub use error::{Error, JsonError};
 pub use types::{
     Asset, InvalidIdentifier, InvalidSemver, Kind, Matcher, PartialContract, RawContract,
     Requirement, Slug, UNIVERSE, Version, VersionReq,

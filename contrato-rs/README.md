@@ -9,14 +9,15 @@ Add `contrato` to your `Cargo.toml`:
 ```toml
 [dependencies]
 contrato = "0"
+# not strictly required, but useful for creating contracts from JSON
 serde_json = "1"
 ```
 
 ```rust
 use contrato::Contract;
-use serde_json::{from_value, json};
+use serde_json::json;
 
-let os_contract: Contract = from_value(json!({
+let os_contract = Contract::try_from(json!({
     "type": "sw.os",
     "slug": "balenaos",
     "version": "6.1.2",
@@ -27,7 +28,7 @@ let os_contract: Contract = from_value(json!({
     ]
 })).unwrap();
 
-let service_contract: Contract = from_value(json!({
+let service_contract = Contract::try_from(json!({
     "type": "sw.application",
     "slug": "myapp",
     "requires": [
@@ -55,9 +56,9 @@ Describe a _thing_
 
 ```rust
 use contrato::Contract;
-use serde_json::{from_value, json};
+use serde_json::json;
 
-let glibc: Contract = from_value(json!({
+let glibc = Contract::try_from(json!({
     "type": "sw.library",
     "slug": "glibc",
     "version": "2.40",
@@ -76,9 +77,9 @@ Describe a _thing_ that requires a _thing_
 
 ```rust
 use contrato::Contract;
-use serde_json::{from_value, json};
+use serde_json::json;
 
-let curl: Contract = from_value(json!({
+let curl = Contract::try_from(json!({
     "type": "sw.utility",
     "slug": "curl",
     "version": "8.11.1",
@@ -96,9 +97,9 @@ Describe a complex _thing_ via a composite contract
 
 ```rust
 use contrato::Contract;
-use serde_json::{from_value, json};
+use serde_json::json;
 
-let os: Contract = from_value(json!({
+let os = Contract::try_from(json!({
     "type": "sw.os",
     "slug": "balenaos",
     "version": "4.1.5",
@@ -130,9 +131,9 @@ Describe a set of things via [templating](#contract-templating)
 
 ```rust
 use contrato::{Contract, RawContract};
-use serde_json::{from_value, json};
+use serde_json::json;
 
-let template: RawContract = from_value(json!({
+let template = RawContract::try_from(json!({
     "slug": "alpine",
     "type": "sw.os",
     "version": "1",
@@ -186,16 +187,14 @@ engine: it provides capabilities for constructing, searching, comparing
 and validating contracts, as well as expanding contract templates into concrete
 contracts.
 
-Contracts are normally read from JSON, so `Contract` is constructed by
-deserializing with `serde_json`. Deserialization processes the children tree,
-interpolates `{{this.*}}` templates, builds the requirements index, and prepares
-a lazily computed deterministic hash.
+Contracts are normally read from JSON, so `Contract` implements `TryFrom<serde_json::Value>`
+for ease of use.
 
 ```rust
 use contrato::Contract;
-use serde_json::{from_value, json};
+use serde_json::json;
 
-let contract: Contract = from_value(json!({
+let contract = Contract::try_from(json!({
     "type": "sw.os",
     "slug": "balenaos",
     "version": "6.1.2",
@@ -217,9 +216,9 @@ fields.
 
 ```rust
 use contrato::{Contract, Matcher};
-use serde_json::{from_value, json};
+use serde_json::json;
 
-let os: Contract = from_value(json!({
+let os = Contract::try_from(json!({
     "type": "sw.os",
     "slug": "balenaos",
     "version": "6.1.2",
@@ -243,9 +242,9 @@ A contract is valid within a context if all requirements of the contract and its
 
 ```rust
 use contrato::Contract;
-use serde_json::{from_value, json};
+use serde_json::json;
 
-let os_contract: Contract = from_value(json!({
+let os_contract = Contract::try_from(json!({
     "type": "sw.os",
     "slug": "balenaos",
     "version": "4.1.5",
@@ -256,7 +255,7 @@ let os_contract: Contract = from_value(json!({
 
 // This is true
 assert!(os_contract.satisfies_child_contract(
-    &from_value(json!({
+    &Contract::try_from(json!({
         "type": "sw.utility",
         "slug": "myapp",
         "version": "8.11.1",
@@ -267,7 +266,7 @@ assert!(os_contract.satisfies_child_contract(
 
 // This is false
 assert!(!os_contract.satisfies_child_contract(
-    &from_value(json!({
+    &Contract::try_from(json!({
         "type": "sw.utility",
         "slug": "myapp",
         "version": "8.11.1",
@@ -281,9 +280,9 @@ Requirements support `or` and `not` combinators:
 
 ```rust
 use contrato::Contract;
-use serde_json::{from_value, json};
+use serde_json::json;
 
-let board: Contract = from_value(json!({
+let board = Contract::try_from(json!({
     "type": "hw.board",
     "slug": "rpi4",
     "children": [
@@ -291,7 +290,7 @@ let board: Contract = from_value(json!({
     ]
 })).unwrap();
 
-let stack: Contract = from_value(json!({
+let stack = Contract::try_from(json!({
     "type": "sw.stack",
     "slug": "node",
     "requires": [
@@ -309,9 +308,9 @@ Contrato also allows to find unsatisfied requirements, e.g.
 
 ```rust
 use contrato::Contract;
-use serde_json::{from_value, json};
+use serde_json::json;
 
-let os_contract: Contract = from_value(json!({
+let os_contract = Contract::try_from(json!({
     "type": "sw.os",
     "slug": "balenaos",
     "version": "4.1.5",
@@ -320,7 +319,7 @@ let os_contract: Contract = from_value(json!({
     ]
 })).unwrap();
 
-let curl: Contract = from_value(json!({
+let curl = Contract::try_from(json!({
     "type": "sw.utility",
     "slug": "curl",
     "version": "8.11.1",
@@ -367,9 +366,9 @@ recursively.
 
 ```rust
 use contrato::{Contract, RawContract};
-use serde_json::{from_value, json};
+use serde_json::json;
 
-let source: RawContract = from_value(json!({
+let source = RawContract::try_from(json!({
     "type": "sw.os",
     "slug": "alpine",
     "variants": [
@@ -396,15 +395,15 @@ operation is available on it.
 
 ```rust
 use contrato::{Contract, Matcher, Universe};
-use serde_json::{from_value, json};
+use serde_json::json;
 
 let mut universe = Universe::new();
 
 universe.add_children(vec![
-    from_value(json!({
+    Contract::try_from(json!({
         "type": "sw.os", "slug": "debian", "version": "12"
     })).unwrap(),
-    from_value(json!({
+    Contract::try_from(json!({
         "type": "sw.os", "slug": "alpine", "version": "3.20"
     })).unwrap(),
 ]).unwrap();

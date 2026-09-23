@@ -15,16 +15,18 @@ use crate::types::{Kind, RawContract, UNIVERSE};
 ///
 /// ```rust
 /// use contrato::{Contract, Matcher, Universe};
+/// use serde_json::json;
 ///
 /// let mut universe = Universe::new();
-/// let os: Contract = serde_json::from_value(
-///     serde_json::json!({ "type": "sw.os", "slug": "balenaos", "version": "6.1.2" }))?;
+/// let os = Contract::try_from(json!({
+///     "type": "sw.os", "slug": "balenaos", "version": "6.1.2"
+/// }))?;
 ///
 /// universe.add_child(os).unwrap();
 ///
 /// let found = universe.find_children(&Matcher::new("sw.os"));
 /// assert_eq!(found.len(), 1);
-/// # Ok::<(), serde_json::Error>(())
+/// # Ok::<(), contrato::Error>(())
 /// ```
 #[derive(Debug, Clone)]
 pub struct Universe(Contract);

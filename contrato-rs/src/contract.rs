@@ -109,8 +109,9 @@ struct RequirementsIndex {
 ///
 /// ```rust
 /// use contrato::Contract;
+/// use serde_json::json;
 ///
-/// let os: Contract = serde_json::from_value(serde_json::json!({
+/// let os = Contract::try_from(json!({
 ///     "type": "sw.os",
 ///     "slug": "balenaos",
 ///     "version": "6.1.2",
@@ -121,7 +122,7 @@ struct RequirementsIndex {
 ///
 /// assert_eq!(os.get_reference_string(), "balenaos@6.1.2");
 /// assert_eq!(os.get_children_by_type("sw.service").len(), 1);
-/// # Ok::<(), serde_json::Error>(())
+/// # Ok::<(), contrato::Error>(())
 /// ```
 #[derive(Clone)]
 pub struct Contract {
@@ -213,8 +214,9 @@ impl Contract {
     ///
     /// ```rust
     /// use contrato::Contract;
+    /// use serde_json::json;
     ///
-    /// let mut contract: Contract = serde_json::from_value(serde_json::json!({
+    /// let mut contract = Contract::try_from(json!({
     ///     "type": "sw.os",
     ///     "slug": "balenaos",
     ///     "version": "6.1.2",
@@ -222,7 +224,7 @@ impl Contract {
     /// }))?;
     ///
     /// contract.interpolate().unwrap();
-    /// # Ok::<(), serde_json::Error>(())
+    /// # Ok::<(), contrato::Error>(())
     /// ```
     pub fn interpolate(&mut self) -> Result<(), Error> {
         self.compile_templates()?;
@@ -395,14 +397,13 @@ impl Contract {
     ///
     /// ```rust
     /// use contrato::Contract;
+    /// use serde_json::json;
     ///
-    /// let a: Contract = serde_json::from_value(
-    ///     serde_json::json!({ "type": "sw.os", "slug": "debian" }))?;
-    /// let b: Contract = serde_json::from_value(
-    ///     serde_json::json!({ "slug": "debian", "type": "sw.os" }))?;
+    /// let a = Contract::try_from(json!({ "type": "sw.os", "slug": "debian" }))?;
+    /// let b = Contract::try_from(json!({ "slug": "debian", "type": "sw.os" }))?;
     ///
     /// assert_eq!(a.hash(), b.hash());
-    /// # Ok::<(), serde_json::Error>(())
+    /// # Ok::<(), contrato::Error>(())
     /// ```
     pub fn hash(&self) -> &str {
         self.hash.get_or_init(|| {
@@ -439,17 +440,18 @@ impl Contract {
     ///
     /// ```rust
     /// use contrato::{Contract, Universe};
+    /// use serde_json::json;
     ///
     /// let mut universe = Universe::new();
     /// for candidate in [
-    ///     serde_json::json!({ "type": "sw.library", "slug": "glibc", "version": "2.31" }),
-    ///     serde_json::json!({ "type": "sw.library", "slug": "glibc", "version": "2.10" }),
-    ///     serde_json::json!({ "type": "sw.library", "slug": "openssl", "version": "3.0.0" }),
+    ///     json!({ "type": "sw.library", "slug": "glibc", "version": "2.31" }),
+    ///     json!({ "type": "sw.library", "slug": "glibc", "version": "2.10" }),
+    ///     json!({ "type": "sw.library", "slug": "openssl", "version": "3.0.0" }),
     /// ] {
-    ///     universe.add_child(serde_json::from_value(candidate)?).unwrap();
+    ///     universe.add_child(Contract::try_from(candidate)?).unwrap();
     /// }
     ///
-    /// let app: Contract = serde_json::from_value(serde_json::json!({
+    /// let app = Contract::try_from(json!({
     ///     "type": "sw.application",
     ///     "slug": "myapp",
     ///     "requires": [{ "type": "sw.library", "slug": "glibc", "version": ">=2.17" }]
@@ -462,7 +464,7 @@ impl Contract {
     ///     .collect();
     ///
     /// assert_eq!(resolved, ["glibc@2.31"]);
-    /// # Ok::<(), serde_json::Error>(())
+    /// # Ok::<(), contrato::Error>(())
     /// ```
     pub fn requirement_matchers_for_type(&self, kind: &str) -> impl Iterator<Item = &Matcher> {
         self.requirements.matchers.get(kind).into_iter().flatten()
@@ -494,8 +496,9 @@ impl Contract {
     ///
     /// ```rust
     /// use contrato::{Contract, RawContract};
+    /// use serde_json::json;
     ///
-    /// let raw: RawContract = serde_json::from_value(serde_json::json!({
+    /// let raw = RawContract::try_from(json!({
     ///     "type": "hw.device-type",
     ///     "slug": "raspberrypi4-64",
     ///     "aliases": ["rpi4"],
@@ -505,7 +508,7 @@ impl Contract {
     /// let expanded = Contract::build(raw).unwrap();
     /// let refs: Vec<_> = expanded.iter().map(|c| c.get_reference_string()).collect();
     /// assert_eq!(refs, ["rpi4@1", "raspberrypi4-64@1", "rpi4@2", "raspberrypi4-64@2"]);
-    /// # Ok::<(), serde_json::Error>(())
+    /// # Ok::<(), contrato::Error>(())
     /// ```
     pub fn build(source: RawContract) -> Result<Vec<Contract>, Error> {
         let mut result = Vec::new();
@@ -542,15 +545,16 @@ impl Contract {
     ///
     /// ```rust
     /// use contrato::Contract;
+    /// use serde_json::json;
     ///
-    /// let mut os: Contract = serde_json::from_value(
-    ///     serde_json::json!({ "type": "sw.os", "slug": "balenaos" }))?;
-    /// let service: Contract = serde_json::from_value(
-    ///     serde_json::json!({ "type": "sw.service", "slug": "balena-engine" }))?;
+    /// let mut os = Contract::try_from(json!({ "type": "sw.os", "slug": "balenaos" }))?;
+    /// let service = Contract::try_from(json!({
+    ///     "type": "sw.service", "slug": "balena-engine"
+    /// }))?;
     ///
     /// os.add_child(service).unwrap();
     /// assert_eq!(os.get_children().len(), 1);
-    /// # Ok::<(), serde_json::Error>(())
+    /// # Ok::<(), contrato::Error>(())
     /// ```
     pub fn add_child(&mut self, contract: Contract) -> Result<&mut Self, Error> {
         self.add_children([contract])
@@ -609,8 +613,9 @@ impl Contract {
     ///
     /// ```rust
     /// use contrato::Contract;
+    /// use serde_json::json;
     ///
-    /// let os: Contract = serde_json::from_value(serde_json::json!({
+    /// let os = Contract::try_from(json!({
     ///     "type": "sw.os",
     ///     "slug": "balenaos",
     ///     "children": [{
@@ -621,7 +626,7 @@ impl Contract {
     /// }))?;
     ///
     /// assert_eq!(os.get_children().len(), 2);
-    /// # Ok::<(), serde_json::Error>(())
+    /// # Ok::<(), contrato::Error>(())
     /// ```
     pub fn get_children(&self) -> Vec<&Contract> {
         let mut out = Vec::new();
@@ -704,7 +709,7 @@ impl Contract {
     /// use contrato::{Contract, Matcher};
     /// use serde_json::json;
     ///
-    /// let os: Contract = serde_json::from_value(json!({
+    /// let os = Contract::try_from(json!({
     ///     "type": "sw.os",
     ///     "slug": "balenaos",
     ///     "children": [
@@ -718,7 +723,7 @@ impl Contract {
     ///
     /// assert_eq!(found.len(), 1);
     /// assert_eq!(found[0].get_slug(), Some("balena-engine"));
-    /// # Ok::<(), serde_json::Error>(())
+    /// # Ok::<(), contrato::Error>(())
     /// ```
     pub fn find_children(&self, matcher: &Matcher) -> Vec<&Contract> {
         let target_type = matcher.kind.as_str();
@@ -917,21 +922,22 @@ impl Contract {
     ///
     /// ```rust
     /// use contrato::Contract;
+    /// use serde_json::json;
     ///
-    /// let os: Contract = serde_json::from_value(serde_json::json!({
+    /// let os = Contract::try_from(json!({
     ///     "type": "sw.os",
     ///     "slug": "balenaos",
     ///     "children": [{ "type": "sw.library", "slug": "glibc", "version": "2.31" }]
     /// }))?;
     ///
-    /// let app: Contract = serde_json::from_value(serde_json::json!({
+    /// let app = Contract::try_from(json!({
     ///     "type": "sw.application",
     ///     "slug": "myapp",
     ///     "requires": [{ "type": "sw.library", "slug": "glibc", "version": ">=2.17" }]
     /// }))?;
     ///
     /// assert!(os.satisfies_child_contract(&app, None));
-    /// # Ok::<(), serde_json::Error>(())
+    /// # Ok::<(), contrato::Error>(())
     /// ```
     pub fn satisfies_child_contract(&self, contract: &Contract, types: Option<&[&str]>) -> bool {
         Self::check_contract_satisfied_recursive(&self.children, contract, types)
@@ -968,14 +974,15 @@ impl Contract {
     ///
     /// ```rust
     /// use contrato::Contract;
+    /// use serde_json::json;
     ///
-    /// let os: Contract = serde_json::from_value(serde_json::json!({
+    /// let os = Contract::try_from(json!({
     ///     "type": "sw.os",
     ///     "slug": "balenaos",
     ///     "children": [{ "type": "sw.library", "slug": "glibc", "version": "2.10" }]
     /// }))?;
     ///
-    /// let app: Contract = serde_json::from_value(serde_json::json!({
+    /// let app = Contract::try_from(json!({
     ///     "type": "sw.application",
     ///     "slug": "myapp",
     ///     "requires": [{ "type": "sw.library", "slug": "glibc", "version": ">=2.17" }]
@@ -983,7 +990,7 @@ impl Contract {
     ///
     /// let missing = os.get_not_satisfied_child_requirements(&app, None);
     /// assert_eq!(missing.len(), 1);
-    /// # Ok::<(), serde_json::Error>(())
+    /// # Ok::<(), contrato::Error>(())
     /// ```
     pub fn get_not_satisfied_child_requirements(
         &self,
@@ -1028,8 +1035,9 @@ impl Contract {
     ///
     /// ```rust
     /// use contrato::Contract;
+    /// use serde_json::json;
     ///
-    /// let os: Contract = serde_json::from_value(serde_json::json!({
+    /// let os = Contract::try_from(json!({
     ///     "type": "sw.os",
     ///     "slug": "balenaos",
     ///     "children": [
@@ -1043,7 +1051,7 @@ impl Contract {
     /// }))?;
     ///
     /// assert!(os.are_children_satisfied(None));
-    /// # Ok::<(), serde_json::Error>(())
+    /// # Ok::<(), contrato::Error>(())
     /// ```
     pub fn are_children_satisfied(&self, types: Option<&[&str]>) -> bool {
         let root_children = &self.children;
@@ -1224,6 +1232,41 @@ impl Contract {
     }
 }
 
+impl TryFrom<Value> for Contract {
+    type Error = Error;
+
+    /// Builds a contract from a JSON [`Value`], nesting its children and
+    /// interpolating its `{{this.*}}` expressions.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Deserialization`] when the value is not a
+    /// contract document, and the errors of construction —
+    /// [`Error::InvalidIdentifier`], [`Error::OverlappingChildTypes`],
+    /// [`Error::MissingChildSlug`] or [`Error::InvalidChildType`] —
+    /// when the document is well formed but the contract it describes
+    /// is not.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use contrato::Contract;
+    /// use serde_json::json;
+    ///
+    /// let os = Contract::try_from(json!({
+    ///     "type": "sw.os",
+    ///     "slug": "balenaos",
+    ///     "version": "6.1.2"
+    /// }))?;
+    ///
+    /// assert_eq!(os.get_reference_string(), "balenaos@6.1.2");
+    /// # Ok::<(), contrato::Error>(())
+    /// ```
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        Self::new(RawContract::try_from(value)?)
+    }
+}
+
 impl Serialize for Contract {
     /// Serializes a contract by serializing its underlying raw data.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -1298,6 +1341,47 @@ mod tests {
         assert_eq!(c.children.types().count(), 0);
         assert!(c.requirements.matchers.is_empty());
         assert!(c.requirements.compiled.is_empty());
+    }
+
+    #[test]
+    fn try_from_value_builds_the_contract() {
+        let c = Contract::try_from(json!({
+            "type": "sw.os",
+            "slug": "balenaos",
+            "version": "6.1.2",
+            "children": [{ "type": "sw.service", "slug": "balena-engine" }]
+        }))
+        .expect("valid contract");
+
+        assert_eq!(c.get_reference_string(), "balenaos@6.1.2");
+        assert_eq!(c.get_children().len(), 1);
+    }
+
+    #[test]
+    fn try_from_value_reports_deserialization_failures() {
+        let err = Contract::try_from(json!({ "slug": "balenaos" }))
+            .expect_err("a contract without a type cannot be deserialized");
+
+        assert!(matches!(err, Error::Deserialization { .. }), "{err:?}");
+        assert!(err.to_string().contains("type"), "{err}");
+    }
+
+    #[test]
+    fn try_from_value_reports_construction_failures() {
+        let err = Contract::try_from(json!({
+            "type": "sw.os",
+            "slug": "balenaos",
+            "children": [
+                { "type": "sw.os", "slug": "debian" },
+                { "type": "sw.os.kernel", "slug": "linux" }
+            ]
+        }))
+        .expect_err("overlapping child types cannot be nested");
+
+        assert!(
+            matches!(err, Error::OverlappingChildTypes { .. }),
+            "{err:?}"
+        );
     }
 
     #[test]

@@ -4,11 +4,42 @@ use std::fmt;
 
 use crate::types::InvalidIdentifier;
 
+/// Error produced when a JSON document cannot be read as a contract.
+///
+/// An opaque wrapper over [`serde_json::Error`], the failure itself is
+/// reachable through [`std::error::Error::source`].
+#[derive(Debug)]
+pub struct JsonError(serde_json::Error);
+
+impl From<serde_json::Error> for JsonError {
+    fn from(source: serde_json::Error) -> Self {
+        Self(source)
+    }
+}
+
+impl fmt::Display for JsonError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl std::error::Error for JsonError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
+    }
+}
+
 /// Error produced when a [`Contract`](crate::Contract) cannot be
 /// constructed or updated.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Error {
+    /// The JSON document cannot be deserialized as a contract.
+    Deserialization {
+        /// Why the document could not be deserialized.
+        source: JsonError,
+    },
+
     /// A field that must hold an identifier does not, once its
     /// `{{this.*}}` templates are interpolated.
     InvalidIdentifier {
@@ -44,6 +75,7 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Error::Deserialization { source } => write!(f, "invalid contract: {source}"),
             Error::InvalidIdentifier { field, source } => {
                 write!(f, "invalid contract: invalid {field}: {source}")
             }
@@ -64,9 +96,16 @@ impl fmt::Display for Error {
     }
 }
 
+impl From<JsonError> for Error {
+    fn from(source: JsonError) -> Self {
+        Error::Deserialization { source }
+    }
+}
+
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Error::Deserialization { source } => Some(source),
             Error::InvalidIdentifier { source, .. } => Some(source),
             _ => None,
         }
@@ -76,6 +115,16 @@ impl std::error::Error for Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_contract_renders_the_serde_message() {
+        let source = serde_json::from_value::<crate::RawContract>(serde_json::json!({}))
+            .expect_err("a contract without a type cannot be deserialized");
+        let message = source.to_string();
+        let err = Error::from(JsonError::from(source));
+
+        assert_eq!(err.to_string(), format!("invalid contract: {message}"));
+    }
 
     #[test]
     fn display_names_the_offending_values() {
